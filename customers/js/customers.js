@@ -276,6 +276,11 @@ const CustomersApp = (() => {
     }
 
     function bindStaticEvents() {
+        byId('addCustomerBtn')?.addEventListener('click', startNewCustomerFlow);
+        byId('customerQuickSearch')?.addEventListener('change', handleQuickCustomerSearch);
+        byId('customerQuickSearch')?.addEventListener('keydown', handleQuickSearchKeydown);
+        byId('customerQuickSearchBtn')?.addEventListener('click', handleQuickCustomerSearch);
+        byId('customerQuickClearBtn')?.addEventListener('click', clearQuickCustomerSearch);
         byId('serialSearchInput')?.addEventListener('input', MargaUtils.debounce(handleSerialSearchInput, 160));
         byId('serialSearchInput')?.addEventListener('keydown', handleSerialSearchKeydown);
         byId('serialSearchResults')?.addEventListener('change', handleSerialSearchPicked);
@@ -473,6 +478,41 @@ const CustomersApp = (() => {
         beginNewCompanyDraft(value);
     }
 
+    function handleQuickCustomerSearch() {
+        const value = clean(byId('customerQuickSearch')?.value);
+        if (!value) {
+            MargaUtils.showToast('Type a customer name or customer number first.', 'info');
+            return;
+        }
+
+        const company = findCompanyFromPickerValue(value);
+        if (!company) {
+            MargaUtils.showToast(`No customer matched "${value}".`, 'error');
+            return;
+        }
+
+        selectCompany(clean(company.id));
+        setStatus(`Loaded ${companyName(company)}`);
+    }
+
+    function handleQuickSearchKeydown(event) {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        handleQuickCustomerSearch();
+    }
+
+    function clearQuickCustomerSearch() {
+        setInput('customerQuickSearch', '');
+        byId('customerQuickSearch')?.focus();
+    }
+
+    function startNewCustomerFlow() {
+        setInput('customerQuickSearch', '');
+        setInput('customerCompanyPicker', '');
+        beginNewCompanyDraft('');
+        byId('companyName')?.focus();
+    }
+
     function findCompanyFromPickerValue(value) {
         const normalizedValue = clean(value);
         if (!normalizedValue) return null;
@@ -505,6 +545,7 @@ const CustomersApp = (() => {
         state.newBranchMode = true;
 
         setInput('companyName', typedName);
+        setInput('customerQuickSearch', typedName);
         setInput('companyTin', '');
         setInput('businessStyle', '');
         setInput('natureOfBusiness', '');
@@ -526,6 +567,7 @@ const CustomersApp = (() => {
         state.selectedCompanyId = clean(company.id);
         state.newBranchMode = false;
         byId('customerCompanyPicker').value = companyPickerValue(company);
+        setInput('customerQuickSearch', companyPickerValue(company));
         fillCompanyForm(company);
         renderBranchPicker(preferredBranchId);
         setStatus(`Company ${state.selectedCompanyId}`);

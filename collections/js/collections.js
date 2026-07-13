@@ -18,7 +18,7 @@ const pageSize = 50;
 let currentPriorityFilter = null;
 let currentWorkQueueMode = 'all';
 let currentPriorityWorklistView = 'list';
-let collectorComparisonViewMode = 'grid';
+let collectorComparisonViewMode = 'list';
 let quickAgeFilter = 'all';
 let dataMode = 'active';
 let todayFollowups = [];
@@ -997,7 +997,7 @@ function collectionEmployeeRole(employee) {
 
 function isCollectionAssignableRole(role) {
     const roleKey = String(role || '').toLowerCase();
-    return /collection|technician|messenger|driver|service|csr/i.test(roleKey);
+    return /technician|messenger|driver|production/i.test(roleKey);
 }
 
 function isCollectionFollowupRole(role) {
@@ -1070,18 +1070,18 @@ function rebuildCollectionAssignableStaff(employeeDocs = []) {
         if (id) employeeRoleLookupMap.set(id, role);
     });
 
-    if (window.MargaUtils?.filterEmployeeAssignmentOptions) {
-        collectionAssignableStaff = MargaUtils.filterEmployeeAssignmentOptions(
+    if (window.MargaUtils?.getActiveAssignmentEmployees) {
+        collectionAssignableStaff = MargaUtils.getActiveAssignmentEmployees(
             employeeRows.filter(isActiveCollectionEmployee),
-            {
-                positions: collectionPositionMap,
-                includeRoleKeys: ['collection', 'technician', 'messenger', 'driver', 'service', 'production']
-            }
+            { positions: collectionPositionMap }
         ).map((staff) => ({
             id: normalizeLookupId(staff.id),
             name: staff.name,
-            role: staff.designation || staff.role || 'Staff'
-        }));
+            role: staff.designation || staff.role || 'Staff',
+            roleKey: String(staff.roleKey || '').toLowerCase()
+        }))
+            .filter((staff) => isCollectionAssignableRole(staff.roleKey))
+            .map(({ roleKey, ...staff }) => staff);
     } else {
         collectionAssignableStaff = [];
         employeeRows.forEach((row) => {
@@ -9653,6 +9653,7 @@ function renderPaymentHistoryRows(payments) {
 function formatPaymentTypeLabel(value) {
     const raw = String(value ?? '').trim().toLowerCase();
     if (raw === '1' || raw.includes('check')) return 'CHECK';
+    if (raw.includes('bank') && raw.includes('transfer')) return 'BANK TRANSFER';
     if (raw === '0' || raw.includes('cash')) return 'CASH';
     return raw ? raw.toUpperCase() : '-';
 }

@@ -203,6 +203,16 @@ body {
     max-height: 20rem;
 }
 
+.gp-serial-change-toolbar {
+    grid-template-columns: minmax(13rem, 1fr) minmax(18rem, 2fr) auto;
+}
+
+.gp-serial-change-note {
+    color: var(--gp-muted);
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
 .gp-panel .gp-table-shell {
     max-height: 15rem;
 }
@@ -258,6 +268,52 @@ body {
 
 .gp-table .gp-muted-cell {
     color: var(--gp-muted);
+}
+
+.gp-inline-actions {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    white-space: nowrap;
+}
+
+.gp-inline-actions .btn {
+    min-height: 1.9rem;
+    padding: 0 0.6rem;
+}
+
+.gp-status-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem 0.55rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.gp-status-chip.is-pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.gp-status-chip.is-approved {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.gp-status-chip.is-rejected {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.gp-status-chip.is-applied {
+    background: #dbeafe;
+    color: #1d4ed8;
 }
 
 .gp-table .gp-attention {

@@ -1,0 +1,1267 @@
+{
+  "dry_run": false,
+  "workbook": "/Users/mike/Downloads/PAYROLL DEDUCTIONS.xlsx",
+  "source_label": "PAYROLL DEDUCTIONS.xlsx",
+  "updated_at": "2026-06-11T02:58:57.457038Z",
+  "rows": [
+    {
+      "employee": "Agustin, Arlene",
+      "normalized_name": "arlene agustin",
+      "employee_doc_id": "3",
+      "employee_record_name": "Arlene Agustin",
+      "candidate_doc_ids": [
+        "3",
+        "3"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-3-cash_advance",
+          "fields": {
+            "employee_id": "3",
+            "employee_name": "Arlene Agustin",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 45209.64,
+            "balance_amount": 45209.64,
+            "deduction_per_payroll": 1000.0,
+            "deduction_per_payroll_15th": 1000.0,
+            "deduction_per_payroll_30th": 1000.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-3-pagibig_loan",
+          "fields": {
+            "employee_id": "3",
+            "employee_name": "Arlene Agustin",
+            "type": "pagibig_loan",
+            "source": "Pag-IBIG",
+            "total_amount": 42170.73,
+            "balance_amount": 42170.73,
+            "deduction_per_payroll": 2008.13,
+            "deduction_per_payroll_15th": 2008.13,
+            "deduction_per_payroll_30th": 0.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Alegre, Gemar",
+      "normalized_name": "gemar alegre",
+      "employee_doc_id": "3339",
+      "employee_record_name": "Gemar Alegre",
+      "candidate_doc_ids": [
+        "3339",
+        "3339",
+        "260"
+      ],
+      "deductions": [],
+      "status": "matched"
+    },
+    {
+      "employee": "Ario, Teodorico",
+      "normalized_name": "teodorico ario",
+      "employee_doc_id": "7",
+      "employee_record_name": "Ario Teodorico",
+      "candidate_doc_ids": [
+        "7"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-7-cash_advance",
+          "fields": {
+            "employee_id": "7",
+            "employee_name": "Ario Teodorico",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 19847.0,
+            "balance_amount": 19847.0,
+            "deduction_per_payroll": 1000.0,
+            "deduction_per_payroll_15th": 1000.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-7-bank_loan",
+          "fields": {
+            "employee_id": "7",
+            "employee_name": "Ario Teodorico",
+            "type": "bank_loan",
+            "source": "Bank",
+            "total_amount": 18504.92,
+            "balance_amount": 18504.92,
+            "deduction_per_payroll": 1321.78,
+            "deduction_per_payroll_15th": 1321.78,
+            "deduction_per_payroll_30th": 1321.78,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-7-pagibig_loan",
+          "fields": {
+            "employee_id": "7",
+            "employee_name": "Ario Teodorico",
+            "type": "pagibig_loan",
+            "source": "Pag-IBIG",
+            "total_amount": 5570.56,
+            "balance_amount": 5570.56,
+            "deduction_per_payroll": 696.32,
+            "deduction_per_payroll_15th": 696.32,
+            "deduction_per_payroll_30th": 0.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Arnedo Jr., Ruben",
+      "normalized_name": "ruben arnedo jr",
+      "employee_doc_id": "333",
+      "employee_record_name": "Ruben Arnedo",
+      "candidate_doc_ids": [
+        "333"
+      ],
+      "deductions": [],
+      "status": "matched"
+    },
+    {
+      "employee": "Bias, John Ronniel",
+      "normalized_name": "john ronniel bias",
+      "employee_doc_id": "273",
+      "employee_record_name": "John Ronniel Bias",
+      "candidate_doc_ids": [
+        "273",
+        "273",
+        "249"
+      ],
+      "deductions": [],
+      "status": "matched"
+    },
+    {
+      "employee": "Ciar, Joan",
+      "normalized_name": "joan ciar",
+      "employee_doc_id": "118",
+      "employee_record_name": "Joan Ciar",
+      "candidate_doc_ids": [
+        "106",
+        "118",
+        "118"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-118-cash_advance",
+          "fields": {
+            "employee_id": "118",
+            "employee_name": "Joan Ciar",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 25380.11,
+            "balance_amount": 25380.11,
+            "deduction_per_payroll": 1000.0,
+            "deduction_per_payroll_15th": 1000.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-118-bank_loan",
+          "fields": {
+            "employee_id": "118",
+            "employee_name": "Joan Ciar",
+            "type": "bank_loan",
+            "source": "Bank",
+            "total_amount": 28620.65,
+            "balance_amount": 28620.65,
+            "deduction_per_payroll": 1506.35,
+            "deduction_per_payroll_15th": 1506.35,
+            "deduction_per_payroll_30th": 1506.35,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Claveria, Hener",
+      "normalized_name": "hener claveria",
+      "employee_doc_id": "54",
+      "employee_record_name": "Hener Claveria",
+      "candidate_doc_ids": [
+        "54",
+        "54"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-54-bank_loan",
+          "fields": {
+            "employee_id": "54",
+            "employee_name": "Hener Claveria",
+            "type": "bank_loan",
+            "source": "Bank",
+            "total_amount": 5710.08,
+            "balance_amount": 5710.08,
+            "deduction_per_payroll": 1903.36,
+            "deduction_per_payroll_15th": 1903.36,
+            "deduction_per_payroll_30th": 1903.36,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "De Guzman, Jonathan",
+      "normalized_name": "jonathan de guzman",
+      "employee_doc_id": "15",
+      "employee_record_name": "Jonathan De Guzman",
+      "candidate_doc_ids": [
+        "15",
+        "15"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-15-cash_advance",
+          "fields": {
+            "employee_id": "15",
+            "employee_name": "Jonathan De Guzman",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 3248.91,
+            "balance_amount": 3248.91,
+            "deduction_per_payroll": 500.0,
+            "deduction_per_payroll_15th": 500.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-15-sss_loan",
+          "fields": {
+            "employee_id": "15",
+            "employee_name": "Jonathan De Guzman",
+            "type": "sss_loan",
+            "source": "SSS",
+            "total_amount": 6264.21,
+            "balance_amount": 6264.21,
+            "deduction_per_payroll": 2088.07,
+            "deduction_per_payroll_15th": 2088.07,
+            "deduction_per_payroll_30th": 0.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-15-pagibig_loan",
+          "fields": {
+            "employee_id": "15",
+            "employee_name": "Jonathan De Guzman",
+            "type": "pagibig_loan",
+            "source": "Pag-IBIG",
+            "total_amount": 9625.5,
+            "balance_amount": 9625.5,
+            "deduction_per_payroll": 641.7,
+            "deduction_per_payroll_15th": 641.7,
+            "deduction_per_payroll_30th": 0.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Edaño, Analee",
+      "normalized_name": "analee edano",
+      "employee_doc_id": "223",
+      "employee_record_name": "Analee Edano",
+      "candidate_doc_ids": [
+        "223",
+        "223"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-223-cash_advance",
+          "fields": {
+            "employee_id": "223",
+            "employee_name": "Analee Edano",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 3000.0,
+            "balance_amount": 3000.0,
+            "deduction_per_payroll": 500.0,
+            "deduction_per_payroll_15th": 500.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Edaño, Arriane",
+      "normalized_name": "arriane edano",
+      "employee_doc_id": "19",
+      "employee_record_name": "Arriane Edaño",
+      "candidate_doc_ids": [
+        "19",
+        "19",
+        "255"
+      ],
+      "deductions": [],
+      "status": "matched"
+    },
+    {
+      "employee": "Edaño, Carlos",
+      "normalized_name": "carlos edano",
+      "employee_doc_id": "20",
+      "employee_record_name": "Carlos Edaño",
+      "candidate_doc_ids": [
+        "20",
+        "20"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-20-cash_advance",
+          "fields": {
+            "employee_id": "20",
+            "employee_name": "Carlos Edaño",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 22363.0,
+            "balance_amount": 22363.0,
+            "deduction_per_payroll": 1000.0,
+            "deduction_per_payroll_15th": 1000.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Edaño, Charlotte",
+      "normalized_name": "charlotte edano",
+      "employee_doc_id": "67",
+      "employee_record_name": "Charlotte Edaño",
+      "candidate_doc_ids": [
+        "67",
+        "67",
+        "245"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-67-cash_advance",
+          "fields": {
+            "employee_id": "67",
+            "employee_name": "Charlotte Edaño",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 13829.65,
+            "balance_amount": 13829.65,
+            "deduction_per_payroll": 1000.0,
+            "deduction_per_payroll_15th": 1000.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-67-bank_loan",
+          "fields": {
+            "employee_id": "67",
+            "employee_name": "Charlotte Edaño",
+            "type": "bank_loan",
+            "source": "Bank",
+            "total_amount": 3608.46,
+            "balance_amount": 3608.46,
+            "deduction_per_payroll": 1202.82,
+            "deduction_per_payroll_15th": 1202.82,
+            "deduction_per_payroll_30th": 1202.82,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Edaño, Cynthia",
+      "normalized_name": "cynthia edano",
+      "employee_doc_id": "104",
+      "employee_record_name": "Cynthia Edaño",
+      "candidate_doc_ids": [
+        "104",
+        "104"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-104-pagibig_loan",
+          "fields": {
+            "employee_id": "104",
+            "employee_name": "Cynthia Edaño",
+            "type": "pagibig_loan",
+            "source": "Pag-IBIG",
+            "total_amount": 20431.84,
+            "balance_amount": 20431.84,
+            "deduction_per_payroll": 1075.36,
+            "deduction_per_payroll_15th": 1075.36,
+            "deduction_per_payroll_30th": 0.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Escaraman Jr, Crispin",
+      "normalized_name": "crispin escaraman jr",
+      "employee_doc_id": "18",
+      "employee_record_name": "Crispin Escaraman Jr",
+      "candidate_doc_ids": [
+        "18",
+        "18"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-18-cash_advance",
+          "fields": {
+            "employee_id": "18",
+            "employee_name": "Crispin Escaraman Jr",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 8174.48,
+            "balance_amount": 8174.48,
+            "deduction_per_payroll": 1000.0,
+            "deduction_per_payroll_15th": 1000.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-18-bank_loan",
+          "fields": {
+            "employee_id": "18",
+            "employee_name": "Crispin Escaraman Jr",
+            "type": "bank_loan",
+            "source": "Bank",
+            "total_amount": 4599.78,
+            "balance_amount": 4599.78,
+            "deduction_per_payroll": 1533.26,
+            "deduction_per_payroll_15th": 1533.26,
+            "deduction_per_payroll_30th": 1533.26,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Francisco, Evelyn",
+      "normalized_name": "evelyn francisco",
+      "employee_doc_id": "",
+      "employee_record_name": "",
+      "candidate_doc_ids": [],
+      "deductions": [],
+      "status": "missing_employee"
+    },
+    {
+      "employee": "Francisco, Merila",
+      "normalized_name": "merila francisco",
+      "employee_doc_id": "134",
+      "employee_record_name": "Merila Francisco",
+      "candidate_doc_ids": [
+        "134",
+        "134"
+      ],
+      "deductions": [],
+      "status": "matched"
+    },
+    {
+      "employee": "Garcia, Mic Jagger",
+      "normalized_name": "mic jagger garcia",
+      "employee_doc_id": "155",
+      "employee_record_name": "Mic Jagger Garcia",
+      "candidate_doc_ids": [
+        "155",
+        "155"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-155-cash_advance",
+          "fields": {
+            "employee_id": "155",
+            "employee_name": "Mic Jagger Garcia",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 24000.0,
+            "balance_amount": 24000.0,
+            "deduction_per_payroll": 1000.0,
+            "deduction_per_payroll_15th": 1000.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-155-bank_loan",
+          "fields": {
+            "employee_id": "155",
+            "employee_name": "Mic Jagger Garcia",
+            "type": "bank_loan",
+            "source": "Bank",
+            "total_amount": 6833.58,
+            "balance_amount": 6833.58,
+            "deduction_per_payroll": 1242.47,
+            "deduction_per_payroll_15th": 1242.47,
+            "deduction_per_payroll_30th": 1242.47,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-155-pagibig_loan",
+          "fields": {
+            "employee_id": "155",
+            "employee_name": "Mic Jagger Garcia",
+            "type": "pagibig_loan",
+            "source": "Pag-IBIG",
+            "total_amount": 16725.32,
+            "balance_amount": 16725.32,
+            "deduction_per_payroll": 880.28,
+            "deduction_per_payroll_15th": 880.28,
+            "deduction_per_payroll_30th": 0.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Garcia, Regina",
+      "normalized_name": "regina garcia",
+      "employee_doc_id": "262",
+      "employee_record_name": "Regina Garcia",
+      "candidate_doc_ids": [
+        "262",
+        "262"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-262-cash_advance",
+          "fields": {
+            "employee_id": "262",
+            "employee_name": "Regina Garcia",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 5000.0,
+            "balance_amount": 5000.0,
+            "deduction_per_payroll": 1000.0,
+            "deduction_per_payroll_15th": 1000.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Genova, Emmanuel",
+      "normalized_name": "emmanuel genova",
+      "employee_doc_id": "22",
+      "employee_record_name": "Emmanuel Genova",
+      "candidate_doc_ids": [
+        "22",
+        "22"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-22-cash_advance",
+          "fields": {
+            "employee_id": "22",
+            "employee_name": "Emmanuel Genova",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 20000.0,
+            "balance_amount": 20000.0,
+            "deduction_per_payroll": 1000.0,
+            "deduction_per_payroll_15th": 1000.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Gonzales, Marites",
+      "normalized_name": "marites gonzales",
+      "employee_doc_id": "122",
+      "employee_record_name": "Marites Gonzales",
+      "candidate_doc_ids": [
+        "122",
+        "122"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-122-bank_loan",
+          "fields": {
+            "employee_id": "122",
+            "employee_name": "Marites Gonzales",
+            "type": "bank_loan",
+            "source": "Bank",
+            "total_amount": 6565.12,
+            "balance_amount": 6565.12,
+            "deduction_per_payroll": 3282.56,
+            "deduction_per_payroll_15th": 3282.56,
+            "deduction_per_payroll_30th": 3282.56,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Heriales, Raffy",
+      "normalized_name": "raffy heriales",
+      "employee_doc_id": "263",
+      "employee_record_name": "Raffy Heriales",
+      "candidate_doc_ids": [
+        "263",
+        "263",
+        "239",
+        "238"
+      ],
+      "deductions": [],
+      "status": "matched"
+    },
+    {
+      "employee": "Iballo, John Bonifacio",
+      "normalized_name": "john bonifacio iballo",
+      "employee_doc_id": "192",
+      "employee_record_name": "John Bonifacio Iballo",
+      "candidate_doc_ids": [
+        "192",
+        "192"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-192-cash_advance",
+          "fields": {
+            "employee_id": "192",
+            "employee_name": "John Bonifacio Iballo",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 892.0,
+            "balance_amount": 892.0,
+            "deduction_per_payroll": 500.0,
+            "deduction_per_payroll_15th": 500.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Ladia, Jonathan",
+      "normalized_name": "jonathan ladia",
+      "employee_doc_id": "145",
+      "employee_record_name": "Jonathan Ladia",
+      "candidate_doc_ids": [
+        "145",
+        "145"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-145-bank_loan",
+          "fields": {
+            "employee_id": "145",
+            "employee_name": "Jonathan Ladia",
+            "type": "bank_loan",
+            "source": "Bank",
+            "total_amount": 11103.12,
+            "balance_amount": 11103.12,
+            "deduction_per_payroll": 793.08,
+            "deduction_per_payroll_15th": 793.08,
+            "deduction_per_payroll_30th": 793.08,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Laurenciano, Richard",
+      "normalized_name": "richard laurenciano",
+      "employee_doc_id": "27",
+      "employee_record_name": "Richard Laurenciano",
+      "candidate_doc_ids": [
+        "27",
+        "27"
+      ],
+      "deductions": [],
+      "status": "matched"
+    },
+    {
+      "employee": "Lozano, Erlinda",
+      "normalized_name": "erlinda lozano",
+      "employee_doc_id": "30",
+      "employee_record_name": "Erlinda Lozano",
+      "candidate_doc_ids": [
+        "30",
+        "30"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-30-cash_advance",
+          "fields": {
+            "employee_id": "30",
+            "employee_name": "Erlinda Lozano",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 6394.27,
+            "balance_amount": 6394.27,
+            "deduction_per_payroll": 1000.0,
+            "deduction_per_payroll_15th": 1000.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-30-pagibig_loan",
+          "fields": {
+            "employee_id": "30",
+            "employee_name": "Erlinda Lozano",
+            "type": "pagibig_loan",
+            "source": "Pag-IBIG",
+            "total_amount": 19084.56,
+            "balance_amount": 19084.56,
+            "deduction_per_payroll": 1590.38,
+            "deduction_per_payroll_15th": 1590.38,
+            "deduction_per_payroll_30th": 0.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Magdaraog, Marlon",
+      "normalized_name": "marlon magdaraog",
+      "employee_doc_id": "31",
+      "employee_record_name": "Marlon Magdaraog",
+      "candidate_doc_ids": [
+        "31",
+        "31"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-31-cash_advance",
+          "fields": {
+            "employee_id": "31",
+            "employee_name": "Marlon Magdaraog",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 13199.69,
+            "balance_amount": 13199.69,
+            "deduction_per_payroll": 1000.0,
+            "deduction_per_payroll_15th": 1000.0,
+            "deduction_per_payroll_30th": 500.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-31-bank_loan",
+          "fields": {
+            "employee_id": "31",
+            "employee_name": "Marlon Magdaraog",
+            "type": "bank_loan",
+            "source": "Bank",
+            "total_amount": 7930.7,
+            "balance_amount": 7930.7,
+            "deduction_per_payroll": 1586.14,
+            "deduction_per_payroll_15th": 1586.14,
+            "deduction_per_payroll_30th": 1586.14,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-31-sss_loan",
+          "fields": {
+            "employee_id": "31",
+            "employee_name": "Marlon Magdaraog",
+            "type": "sss_loan",
+            "source": "SSS",
+            "total_amount": 3481.4,
+            "balance_amount": 3481.4,
+            "deduction_per_payroll": 1740.7,
+            "deduction_per_payroll_15th": 1740.7,
+            "deduction_per_payroll_30th": 0.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-31-pagibig_loan",
+          "fields": {
+            "employee_id": "31",
+            "employee_name": "Marlon Magdaraog",
+            "type": "pagibig_loan",
+            "source": "Pag-IBIG",
+            "total_amount": 36554.7,
+            "balance_amount": 36554.7,
+            "deduction_per_payroll": 1740.7,
+            "deduction_per_payroll_15th": 1740.7,
+            "deduction_per_payroll_30th": 0.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Mortel, Johnny",
+      "normalized_name": "johnny mortel",
+      "employee_doc_id": "35",
+      "employee_record_name": "Johnny Mortel",
+      "candidate_doc_ids": [
+        "35",
+        "35"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-35-bank_loan",
+          "fields": {
+            "employee_id": "35",
+            "employee_name": "Johnny Mortel",
+            "type": "bank_loan",
+            "source": "Bank",
+            "total_amount": 3965.4,
+            "balance_amount": 3965.4,
+            "deduction_per_payroll": 793.08,
+            "deduction_per_payroll_15th": 793.08,
+            "deduction_per_payroll_30th": 793.08,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Olbedo, John Emmanuel",
+      "normalized_name": "john emmanuel olbedo",
+      "employee_doc_id": "264",
+      "employee_record_name": "John Emmanuel Olbedo",
+      "candidate_doc_ids": [
+        "264",
+        "264",
+        "253"
+      ],
+      "deductions": [],
+      "status": "matched"
+    },
+    {
+      "employee": "Pineda, Irene",
+      "normalized_name": "irene pineda",
+      "employee_doc_id": "268",
+      "employee_record_name": "Irene Pineda",
+      "candidate_doc_ids": [
+        "268",
+        "268",
+        "106"
+      ],
+      "deductions": [
+        {
+          "doc_id": "ded-268-cash_advance",
+          "fields": {
+            "employee_id": "268",
+            "employee_name": "Irene Pineda",
+            "type": "cash_advance",
+            "source": "Office",
+            "total_amount": 50133.0,
+            "balance_amount": 50133.0,
+            "deduction_per_payroll": 0.0,
+            "deduction_per_payroll_15th": 0.0,
+            "deduction_per_payroll_30th": 0.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        },
+        {
+          "doc_id": "ded-268-pagibig_loan",
+          "fields": {
+            "employee_id": "268",
+            "employee_name": "Irene Pineda",
+            "type": "pagibig_loan",
+            "source": "Pag-IBIG",
+            "total_amount": 274364.49,
+            "balance_amount": 274364.49,
+            "deduction_per_payroll": 0.0,
+            "deduction_per_payroll_15th": 0.0,
+            "deduction_per_payroll_30th": 0.0,
+            "start_date": "",
+            "reference": "PAYROLL DEDUCTIONS.xlsx",
+            "status": "active",
+            "remarks": "Imported from PAYROLL DEDUCTIONS.xlsx. 15th cutoff uses deduction_per_payroll_15th; 30th cutoff uses deduction_per_payroll_30th.",
+            "transactions": [],
+            "updated_at": "2026-06-11T02:58:57.457038Z",
+            "updated_by": "codex-local-margabase",
+            "created_at": "2026-06-11T02:58:57.457038Z",
+            "created_by": "codex-local-margabase"
+          },
+          "status": "upserted"
+        }
+      ],
+      "status": "matched"
+    },
+    {
+      "employee": "Rubiz, Armond",
+      "normalized_name": "armond rubiz",
+      "employee_doc_id": "265",
+      "employee_record_name": "Armond Rubiz",
+      "candidate_doc_ids": [
+        "265",
+        "265"
+      ],
+      "deductions": [],
+      "status": "matched"
+    },
+    {
+      "employee": "Toledo, Jemuel",
+      "normalized_name": "jemuel toledo",
+      "employee_doc_id": "274",
+      "employee_record_name": "Jemuel Toledo",
+      "candidate_doc_ids": [
+        "274",
+        "274",
+        "135",
+        "269",
+        "266",
+        "234"
+      ],
+      "deductions": [],
+      "status": "matched"
+    },
+    {
+      "employee": "Vasquez, Perlie",
+      "normalized_name": "perlie vasquez",
+      "employee_doc_id": "270",
+      "employee_record_name": "Perlie Vasquez",
+      "candidate_doc_ids": [
+        "270",
+        "270",
+        "240"
+      ],
+      "deductions": [],
+      "status": "matched"
+    }
+  ],
+  "summary": {
+    "workbook_rows": 32,
+    "matched_employees": 31,
+    "missing_employees": 1,
+    "deduction_plans": 35,
+    "upserted": 35,
+    "skipped_zero": 0
+  }
+}

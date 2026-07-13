@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Register — Marga Care</title>
+  <link rel="icon" href="/assets/favicon.ico" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --brand: #4f46e5; --brand-light: #eef2ff; --brand-dark: #3730a3;
+      --ok: #16a34a; --ok-light: #dcfce7; --warn: #d97706; --warn-light: #fef3c7;
+      --danger: #dc2626; --danger-light: #fee2e2;
+      --text: #1e293b; --muted: #64748b; --border: #e2e8f0;
+      --bg: #f8fafc; --white: #ffffff; --radius: 12px;
+      --shadow: 0 4px 24px rgba(0,0,0,.08);
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding: 2rem 1rem 4rem; }
+    .reg-header { text-align: center; margin-bottom: 2rem; }
+    .reg-logo { width: 48px; height: 48px; background: var(--brand); border-radius: 14px; display: flex; align-items: center; justify-content: center; margin: 0 auto .75rem; color: #fff; font-size: 1.4rem; font-weight: 900; }
+    .reg-header h1 { font-size: 1.5rem; font-weight: 800; }
+    .reg-header p { color: var(--muted); font-size: .9rem; margin-top: .3rem; }
+    .reg-card { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); width: 100%; max-width: 520px; padding: 2rem; }
+    .steps { display: flex; align-items: center; margin-bottom: 1.75rem; }
+    .step { display: flex; flex-direction: column; align-items: center; flex: 1; }
+    .step-circle { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 700; border: 2px solid var(--border); background: var(--white); color: var(--muted); transition: all .25s; }
+    .step.active .step-circle { border-color: var(--brand); background: var(--brand); color: #fff; }
+    .step.done .step-circle { border-color: var(--ok); background: var(--ok); color: #fff; }
+    .step-label { font-size: .7rem; font-weight: 600; color: var(--muted); margin-top: .3rem; }
+    .step.active .step-label { color: var(--brand); }
+    .step.done .step-label { color: var(--ok); }
+    .step-line { flex: 1; height: 2px; background: var(--border); position: relative; top: -12px; }
+    .step-line.done { background: var(--ok); }
+    .field { display: flex; flex-direction: column; gap: .35rem; margin-bottom: 1rem; }
+    .field label { font-size: .82rem; font-weight: 700; color: var(--muted); }
+    .field input, .field select { padding: .65rem .85rem; border: 1.5px solid var(--border); border-radius: 9px; font-size: .95rem; color: var(--text); background: var(--white); width: 100%; transition: border-color .15s; }
+    .field input:focus, .field select:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px rgba(79,70,229,.1); }
+    .field-hint { font-size: .75rem; color: var(--muted); }
+    .company-result { background: var(--brand-light); border: 1.5px solid #c7d2fe; border-radius: 10px; padding: .85rem 1rem; margin-bottom: 1rem; display: none; }
+    .company-result.visible { display: block; }
+    .company-result-name { font-weight: 700; font-size: 1rem; color: var(--brand-dark); }
+    .company-result-code { font-size: .78rem; color: var(--muted); font-family: monospace; }
+    .branch-list { max-height: 260px; overflow-y: auto; border: 1.5px solid var(--border); border-radius: 10px; background: var(--white); margin-bottom: 1rem; }
+    .branch-item { display: flex; align-items: center; gap: .75rem; padding: .65rem .85rem; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .1s; }
+    .branch-item:last-child { border-bottom: none; }
+    .branch-item:hover:not(.taken) { background: var(--brand-light); }
+    .branch-item.selected { background: var(--brand-light); border-left: 3px solid var(--brand); }
+    .branch-item.taken { opacity: .5; cursor: not-allowed; }
+    .branch-item-radio { width: 18px; height: 18px; border: 2px solid var(--border); border-radius: 50%; flex-shrink: 0; }
+    .branch-item.selected .branch-item-radio { border-color: var(--brand); background: var(--brand); }
+    .branch-item-info { flex: 1; min-width: 0; }
+    .branch-item-name { font-size: .88rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .branch-item-code { font-size: .72rem; color: var(--muted); font-family: monospace; }
+    .branch-taken-badge { font-size: .68rem; font-weight: 700; background: #f1f5f9; color: var(--muted); border-radius: 6px; padding: .15rem .4rem; white-space: nowrap; }
+    .branch-empty { padding: 1.5rem; text-align: center; color: var(--muted); font-size: .85rem; }
+    .branch-search { width: 100%; padding: .6rem .85rem; border: 1.5px solid var(--border); border-radius: 9px; font-size: .88rem; margin-bottom: .5rem; }
+    .branch-search:focus { outline: none; border-color: var(--brand); }
+    .pw-strength { height: 4px; border-radius: 4px; background: var(--border); margin-top: .4rem; overflow: hidden; }
+    .pw-strength-bar { height: 100%; border-radius: 4px; transition: width .3s, background .3s; width: 0; }
+    .btn { padding: .7rem 1.25rem; border-radius: 9px; font-size: .92rem; font-weight: 700; cursor: pointer; border: none; transition: all .15s; }
+    .btn-primary { background: var(--brand); color: #fff; width: 100%; }
+    .btn-primary:hover:not(:disabled) { background: var(--brand-dark); }
+    .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+    .btn-secondary { background: var(--bg); color: var(--text); border: 1.5px solid var(--border); width: 100%; }
+    .notice { padding: .75rem 1rem; border-radius: 10px; font-size: .85rem; font-weight: 500; margin-bottom: 1rem; display: none; }
+    .notice.visible { display: block; }
+    .notice.error { background: var(--danger-light); color: var(--danger); border: 1px solid #fca5a5; }
+    .notice.success { background: var(--ok-light); color: var(--ok); border: 1px solid #86efac; }
+    .success-screen { text-align: center; padding: 1rem 0; display: none; }
+    .success-screen.visible { display: block; }
+    .success-icon { font-size: 3.5rem; margin-bottom: .75rem; }
+    .success-screen h2 { font-size: 1.3rem; font-weight: 800; margin-bottom: .5rem; }
+    .success-screen p { color: var(--muted); font-size: .9rem; line-height: 1.6; margin-bottom: 1.25rem; }
+    .success-login-box { background: var(--bg); border-radius: 10px; padding: .85rem 1rem; text-align: left; margin-bottom: 1.25rem; }
+    .success-login-label { font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+    .success-login-value { font-size: 1rem; font-weight: 700; font-family: monospace; color: var(--brand-dark); margin-top: .2rem; }
+    .step-pane { display: none; }
+    .step-pane.active { display: block; }
+    .row-btns { display: flex; gap: .6rem; margin-top: .5rem; }
+    .row-btns .btn { flex: 1; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; margin-right: .4rem; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .back-link { text-align: center; margin-top: 1.25rem; font-size: .85rem; color: var(--muted); }
+    .back-link a { color: var(--brand); font-weight: 600; text-decoration: none; }
+    @media (max-width: 540px) { .reg-card { padding: 1.5rem 1.1rem; } .step-label { font-size: .62rem; } }
+  </style>
+</head>
+<body>
+  <header class="reg-header">
+    <div class="reg-logo">M</div>
+    <h1>Marga Care Portal</h1>
+    <p>Register your branch or department access</p>
+  </header>
+
+  <div class="reg-card">
+    <div class="steps" id="stepsBar">
+      <div class="step active" id="s1"><div class="step-circle">1</div><div class="step-label">Company</div></div>
+      <div class="step-line" id="l1"></div>
+      <div class="step" id="s2" style="opacity:.4"><div class="step-circle">2</div><div class="step-label">Branch</div></div>
+      <div class="step-line" id="l2"></div>
+      <div class="step" id="s3" style="opacity:.4"><div class="step-circle">3</div><div class="step-label">Account</div></div>
+    </div>
+
+    <div id="regNotice" class="notice"></div>
+
+    <!-- Step 1 -->
+    <div class="step-pane active" id="pane1">
+      <div class="field">
+        <label>Company Access Code</label>
+        <input id="codeInput" type="text" placeholder="e.g. C00072" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+        <span class="field-hint">Your company overseer will give you this code.</span>
+      </div>
+      <div class="company-result" id="companyResult">
+        <div class="company-result-name" id="companyName"></div>
+        <div class="company-result-code" id="companyCode"></div>
+      </div>
+      <button class="btn btn-primary" id="step1Btn">Continue →</button>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="step-pane" id="pane2">
+      <p style="font-size:.85rem;color:var(--muted);margin-bottom:.85rem">
+        Select your branch or department — <strong id="step2Company" style="color:var(--text)"></strong>
+      </p>
+      <input class="branch-search" id="branchSearch" placeholder="Search branch or department…" />
+      <div class="branch-list" id="branchList"><div class="branch-empty">Loading…</div></div>
+      <div class="row-btns">
+        <button class="btn btn-secondary" id="step2Back">← Back</button>
+        <button class="btn btn-primary" id="step2Btn" disabled>Continue →</button>
+      </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="step-pane" id="pane3">
+      <div style="background:var(--brand-light);border-radius:10px;padding:.7rem .9rem;margin-bottom:1rem;font-size:.85rem">
+        Registering for <strong id="step3Branch" style="color:var(--brand-dark)"></strong>
+      </div>
+      <div class="field">
+        <label>Full Name</label>
+        <input id="regName" type="text" placeholder="Your complete full name" autocomplete="name" />
+      </div>
+      <div class="field">
+        <label>Email Address</label>
+        <input id="regEmail" type="email" placeholder="your.name@company.com" autocomplete="email" />
+        <span class="field-hint">This becomes your login email. Use your official work email.</span>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input id="regPassword" type="password" placeholder="At least 8 characters" autocomplete="new-password" />
+        <div class="pw-strength"><div class="pw-strength-bar" id="pwBar"></div></div>
+      </div>
+      <div class="field">
+        <label>Confirm Password</label>
+        <input id="regPasswordConfirm" type="password" placeholder="Re-enter your password" autocomplete="new-password" />
+      </div>
+      <div class="row-btns">
+        <button class="btn btn-secondary" id="step3Back">← Back</button>
+        <button class="btn btn-primary" id="step3Btn">Create Account</button>
+      </div>
+    </div>
+
+    <!-- Success -->
+    <div class="success-screen" id="successScreen">
+      <div class="success-icon">✅</div>
+      <h2>You're registered!</h2>
+      <p>Your Marga Care account is ready. You can now request service, toner, view billing, and chat with our team.</p>
+      <div class="success-login-box">
+        <div class="success-login-label">Login Code (always works)</div>
+        <div class="success-login-value" id="successLogin"></div>
+        <div class="success-login-label" style="margin-top:.6rem">Or sign in with your email</div>
+        <div class="success-login-value" id="successEmail" style="font-size:.88rem;word-break:break-all"></div>
+      </div>
+      <a href="/" class="btn btn-primary" style="display:block;text-decoration:none;text-align:center">Sign In Now →</a>
+    </div>
+  </div>
+
+  <div class="back-link">Already registered? <a href="/">Sign in here</a></div>
+
+<script>
+const reg = { companyId: null, companyName: '', companyCode: '', branchId: null, branchName: '', branchCode: '', all: [], filtered: [] };
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function notice(msg, type='error') { const el = document.getElementById('regNotice'); el.textContent = msg; el.className = `notice visible ${type}`; el.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+function clearNotice() { const el = document.getElementById('regNotice'); el.className = 'notice'; el.textContent = ''; }
+function setBtn(id, loading, text) { const b = document.getElementById(id); if(!b) return; b.disabled = loading; b.innerHTML = loading ? `<span class="spinner"></span>Please wait…` : text; }
+function goPane(n) {
+  document.querySelectorAll('.step-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById(`pane${n}`).classList.add('active');
+  clearNotice();
+  [1,2,3].forEach(i => {
+    const el = document.getElementById(`s${i}`);
+    el.style.opacity = '1';
+    el.className = 'step' + (i < n ? ' done' : i === n ? ' active' : '');
+    el.querySelector('.step-circle').textContent = i < n ? '✓' : String(i);
+  });
+  document.getElementById('l1').className = 'step-line' + (n > 1 ? ' done' : '');
+  document.getElementById('l2').className = 'step-line' + (n > 2 ? ' done' : '');
+}
+
+// Step 1
+const codeInput = document.getElementById('codeInput');
+const urlCode = new URLSearchParams(location.search).get('code');
+if (urlCode) { codeInput.value = urlCode; tryValidate(urlCode); }
+
+let codeTimer;
+codeInput.addEventListener('input', () => {
+  clearTimeout(codeTimer);
+  document.getElementById('companyResult').classList.remove('visible');
+  reg.companyId = null;
+  const v = codeInput.value.trim();
+  if (v.length >= 3) codeTimer = setTimeout(() => tryValidate(v), 500);
+});
+codeInput.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('step1Btn').click(); });
+
+async function tryValidate(code) {
+  try {
+    const r = await fetch(`/portal-api/register/company?code=${encodeURIComponent(code)}`);
+    const d = await r.json();
+    if (d.ok) {
+      reg.companyId = d.company.id; reg.companyName = d.company.name; reg.companyCode = d.company.code;
+      document.getElementById('companyName').textContent = d.company.name;
+      document.getElementById('companyCode').textContent = `Code: ${d.company.code}`;
+      document.getElementById('companyResult').classList.add('visible');
+    } else { document.getElementById('companyResult').classList.remove('visible'); reg.companyId = null; }
+  } catch { reg.companyId = null; }
+}
+
+document.getElementById('step1Btn').addEventListener('click', async () => {
+  const code = codeInput.value.trim();
+  if (!code) { notice('Please enter your company access code.'); return; }
+  if (!reg.companyId) { setBtn('step1Btn', true, 'Continue →'); await tryValidate(code); setBtn('step1Btn', false, 'Continue →'); }
+  if (!reg.companyId) { notice('Company code not found. Ask your overseer for the correct code.'); return; }
+  await loadBranches();
+  goPane(2);
+});
+
+// Step 2
+async function loadBranches() {
+  document.getElementById('branchList').innerHTML = '<div class="branch-empty">Loading…</div>';
+  document.getElementById('step2Company').textContent = reg.companyName;
+  try {
+    const r = await fetch(`/portal-api/register/branches?companyId=${reg.companyId}`);
+    const d = await r.json();
+    reg.all = d.branches || []; reg.filtered = [...reg.all];
+    renderBranches();
+  } catch { document.getElementById('branchList').innerHTML = '<div class="branch-empty">Failed to load. Try again.</div>'; }
+}
+
+document.getElementById('branchSearch').addEventListener('input', e => {
+  const q = e.target.value.trim().toLowerCase();
+  reg.filtered = q ? reg.all.filter(b => b.name.toLowerCase().includes(q) || b.branch_code.toLowerCase().includes(q)) : [...reg.all];
+  renderBranches();
+});
+
+function renderBranches() {
+  const list = document.getElementById('branchList');
+  if (!reg.filtered.length) { list.innerHTML = '<div class="branch-empty">No branches found.</div>'; return; }
+  list.innerHTML = reg.filtered.map(b => `
+    <div class="branch-item${b.status==='taken'?' taken':''}${reg.branchId===b.id?' selected':''}"
+      data-id="${b.id}" data-name="${esc(b.name)}" data-code="${esc(b.branch_code)}" data-taken="${b.status==='taken'}">
+      <div class="branch-item-radio"></div>
+      <div class="branch-item-info">
+        <div class="branch-item-name">${esc(b.name)}</div>
+        <div class="branch-item-code">${esc(b.branch_code)}</div>
+      </div>
+      ${b.status==='taken' ? '<span class="branch-taken-badge">Registered</span>' : ''}
+    </div>`).join('');
+  list.querySelectorAll('.branch-item:not(.taken)').forEach(el => {
+    el.addEventListener('click', () => {
+      reg.branchId = Number(el.dataset.id); reg.branchName = el.dataset.name; reg.branchCode = el.dataset.code;
+      document.getElementById('step2Btn').disabled = false;
+      renderBranches();
+    });
+  });
+}
+
+document.getElementById('step2Back').addEventListener('click', () => goPane(1));
+document.getElementById('step2Btn').addEventListener('click', () => {
+  if (!reg.branchId) { notice('Please select your branch or department.'); return; }
+  document.getElementById('step3Branch').textContent = `${reg.branchName} — ${reg.branchCode}`;
+  goPane(3);
+  document.getElementById('regName').focus();
+});
+
+// Step 3
+document.getElementById('regPassword').addEventListener('input', function() {
+  const v = this.value;
+  const score = [v.length>=8, /[A-Z]/.test(v), /[0-9]/.test(v), /[^A-Za-z0-9]/.test(v), v.length>=12].filter(Boolean).length;
+  const bar = document.getElementById('pwBar');
+  bar.style.width = [0,25,45,65,85,100][score]+'%';
+  bar.style.background = ['#e2e8f0','#ef4444','#f97316','#eab308','#22c55e','#16a34a'][score];
+});
+
+document.getElementById('step3Back').addEventListener('click', () => goPane(2));
+document.getElementById('step3Btn').addEventListener('click', async () => {
+  const fullName = document.getElementById('regName').value.trim();
+  const email = document.getElementById('regEmail').value.trim();
+  const password = document.getElementById('regPassword').value;
+  const confirm = document.getElementById('regPasswordConfirm').value;
+  if (!fullName || fullName.length < 2) { notice('Please enter your full name.'); return; }
+  if (!email || !email.includes('@')) { notice('Please enter a valid email address.'); return; }
+  if (password.length < 8) { notice('Password must be at least 8 characters.'); return; }
+  if (password !== confirm) { notice('Passwords do not match. Please re-enter.'); return; }
+
+  setBtn('step3Btn', true, 'Create Account');
+  clearNotice();
+  try {
+    const r = await fetch('/portal-api/register/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ companyId: reg.companyId, branchId: reg.branchId, fullName, email, password })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      document.querySelectorAll('.step-pane').forEach(p => p.classList.remove('active'));
+      document.getElementById('stepsBar').style.display = 'none';
+      document.getElementById('regNotice').className = 'notice';
+      document.getElementById('successLogin').textContent = d.login;
+      document.getElementById('successEmail').textContent = email;
+      document.getElementById('successScreen').classList.add('visible');
+    } else { notice(d.message || 'Registration failed. Please try again.'); }
+  } catch { notice('Network error. Please check your connection and try again.'); }
+  setBtn('step3Btn', false, 'Create Account');
+});
+</script>
+</body>
+</html>

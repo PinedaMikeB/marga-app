@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "searched_at": "2026-07-01T04:30:09.898Z",
+  "source": "http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents",
+  "invoice_count": 1,
+  "results": [
+    {
+      "invoice_no": "130496",
+      "found": false,
+      "customer": "",
+      "branch": "",
+      "serial_number": "",
+      "machine": "",
+      "billing_month": "",
+      "amount": 0,
+      "paid_amount": 0,
+      "balance_hint": 0,
+      "date_received": "",
+      "received_by": "",
+      "receipt_time": "",
+      "receipt_source": "",
+      "billing_rows": [],
+      "schedules": [],
+      "collection_history": [],
+      "payments": []
+    }
+  ]
+}

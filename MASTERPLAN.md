@@ -1,6 +1,6 @@
 # MARGA Masterplan
 
-Last Updated: 2026-06-01
+Last Updated: 2026-07-13
 Canonical Status: Single source of truth for product strategy, guardrails, and migration rules
 
 Read first in every new Marga-App thread:
@@ -32,8 +32,14 @@ This file exists to protect the project across new chats by recording:
 
 ## Non-Negotiable Constraints
 - Keep Marga App implementation in the `Marga-App` repo/thread. If the active thread or cwd is `marga-biz`, stop and redirect before editing app code.
-- User expects verified Marga App changes to be pushed to `main` so Netlify can deploy automatically.
-- Default release behavior for new Codex threads: after making and verifying Marga-App code changes, commit them and push to `main` unless the user explicitly says not to push.
+- Owner-approved release workflow:
+  - Update local `Marga-App` code first.
+  - Deploy that local code to the live app served at `app.marga.biz` through the current Cloudflare-backed production path so the owner can test the real live behavior before any GitHub push.
+  - Wait for the owner's live test result.
+  - If the owner says the live test worked, sync the same verified change to staging.
+  - After staging sync is complete, commit and push the verified change to GitHub `main`.
+  - Do not push to GitHub `main` before the owner confirms the live `app.marga.biz` test passed, unless the owner explicitly asks for an immediate push.
+  - Always distinguish clearly between: local code change, live deployment to `app.marga.biz`, staging sync, and GitHub `main` push.
 - Cost-protection purpose: Codex must protect the owner from unnecessary spending. Before any task, choose the cheapest safe path that preserves operational truth, avoids recurring SaaS/API/database charges, avoids broad paid reads/writes, and prevents repeated manual work. If a proven fix, query, report, UI pattern, or workflow will likely be reused, save it in `MASTERPLAN.md`, `HANDOFF.md`, `AGENTS.md`, a script, or a skill so it is not rediscovered and reprompted later.
 - Waste-prevention design rule: when building any module, anticipate where staff will make mistakes or ask again. Prefer searchable dropdowns over free text for real records, tables/grids for line-item entry, explicit audit reports for financial changes, reusable helper functions over copy-paste logic, and database-side validation where it prevents bad or duplicate operational records.
 - Build-once rule: if a task solved a real business problem before, check the handoff/masterplan/scripts before reimplementing. Promote repeated procedures into scripts, docs, automation, or skills when they save future time or cost.
@@ -197,8 +203,35 @@ This file exists to protect the project across new chats by recording:
   - Master Schedule and Field App must read the same snapshot payload for the same staff/date.
   - The snapshot must be built from one canonical query/final row universe so totals, carryover, pending parts, unfinished, closed, and visible rows cannot drift between modules.
   - UI modules must not keep separate browser-side bucket/count logic once the shared snapshot read path is complete.
+- Schedule write-path guardrail learned from the June 19, 2026 incident:
+  - `Billing`, `Collections`, `Service`, and `Purchasing` must create and update live schedule rows directly in `tbl_schedule`.
+  - `tbl_schedule_planner` must not be used as a required intermediate write target for operational scheduling, reassignment, field visibility, close request flow, or snapshot truth.
+  - If planner/reference rows still exist for legacy reasons, they are informational only and must never be treated as the source of truth for counts, `new today`, assignment visibility, or route readiness.
+- Schedule assignment guardrail learned from the June 25, 2026 Billing/Collections incident:
+  - Route ownership truth is the numeric `tbl_schedule.tech_id`, not the visible assignee name shown in office UIs.
+  - Billing/Collections schedule pickers must be restricted to real field-capable roles only (`messenger`, `driver`, `technician`, `production`).
+  - Browser flows must resolve a fresh canonical `{staffId, staffName}` pair from the live dropdown immediately before writing `tbl_schedule`; never reuse stale modal memory for assignment fields.
+  - When staff report "the schedule is set but missing in Field App," check recent `tbl_schedule` rows for `tech_id` vs assigned-name drift before assuming the snapshot worker failed.
+- Same-location combine ownership guardrail learned from the June 25, 2026 route-switching issue:
+  - Same-location schedule detection may recommend one shared field-stop owner, but it must not silently rewrite the selected assignee during Billing, Collections, or Service scheduling.
+  - The office must be prompted to choose whether to combine under the suggested owner or keep the newly selected assignee as a separate visit.
+  - Combined-visit grouping remains a read-model and route-efficiency tool; ownership changes must stay explicit and auditable.
+- Closed-route bucket guardrail learned from the July 7, 2026 field incident:
+  - Snapshot/read-model rows are allowed to be temporarily stale, but active route buckets are not allowed to trust stale membership blindly.
+  - Before showing `today`, `past pending`, or other open workload lists, the UI must recheck the canonical close/cancel state from `tbl_schedule` and exclude rows already finished.
+  - Closed rows may still appear in the dedicated Closed view for the selected date, but they must never flow back into open workload tabs/counts.
+- Shared attendance-adjustment guardrail learned from the July 8, 2026 time-record request:
+  - Field App, Dashboard, HR, and the approval page must use one shared attendance-adjustment workflow so time-record rules do not drift between modules.
+  - Widen the UX carefully: allow requesting time-in change, time-out change, or both, but keep the stored request contract backward compatible unless the backend approval path is upgraded in the same change.
+  - Any future attendance-adjustment expansion must be checked against HR payroll behavior, because approved time edits change payroll-facing attendance truth.
+- June 19, 2026 billing schedule failure lesson:
+  - Billing previously wrote a planner/support row first and the real `tbl_schedule` row second. That split path allowed staff to look assigned while `new today` was missing because the second write drifted or failed.
+  - The concrete failure found on Friday, June 19, 2026: `18` billing rows had `original_sched='2026-06-19'` but `task_datetime='2026-06-20'` instead of June 19. The affected staff were Armond A. Rubiz (`15`) and Carlos Edaño (`3`).
+  - Canonical repair method for this class of issue is to correct the source `tbl_schedule` rows first, then let the backend snapshot queue rebuild the read model. Reusable script: `/Volumes/Wotg Drive Mike/GitHub/marga-platform/scripts/repair-shifted-billing-schedule-dates.mjs --date=YYYY-MM-DD [--apply]`
 - Schedule live-update roadmap:
   - **Phase 1:** UI writes directly to `tbl_schedule`; backend queue rebuilds affected snapshots; Master Schedule and Field App read the same snapshot; light partial refresh only; no whole-page automatic refresh; never interrupt active encoding.
+  - Current approved update model: quiet/light polling after writes. The browser should check for refreshed snapshot data and patch only the affected staff/date widgets or rows. The browser must not rebuild the whole schedule from heavy scans and must not auto-reload the full page while staff are encoding.
+  - Backend ownership rule added June 24, 2026: the snapshot rebuild queue must have an always-on owner-controlled worker on the Margabase API stack. A request-triggered debounce alone is not enough, because future-dated schedules can stay queued and then appear "missing" the next day when staff open Field App before any new write wakes the processor.
   - **Phase 2:** move from light polling toward websocket/push notification so only affected widgets/rows refresh after backend snapshot completion. Keep full-page reloads out of the normal workflow.
 - Billing protected operational baseline: commit `8df832d`
 - That protected state means:
@@ -276,9 +309,43 @@ Canonical path:
 - `tbl_contractmain.mach_id` -> `tbl_machine.id`
 - serial display from `tbl_contractmain.xserial` first, then `tbl_machine.serial`
 
+## Care Portal Canonical Rules (established 2026-07-13)
+
+### Portal Account Coverage
+- **Every branch in `api.active_customer_graph` must have a portal account.**
+- The generator (`scripts/generate-care-portal-accounts.mjs`) qualifies companies via `api.active_customer_graph` machine_count (LEFT JOIN), not only via invoice history.
+- The nightly LaunchAgent `com.marga.care-portal-sync` (3:15 AM) keeps this in sync.
+
+### Firestore ID vs Relational ID — Critical Distinction
+- **Firestore `tbl_billing.branch_id` stores the LEGACY branch ID** (from `tbl_branchinfo.id`), NOT the relational `marga.branches.id`.
+- **Firestore `tbl_contractmain.location` stores the LEGACY branch ID** (from `tbl_branchinfo.id`).
+- When joining Firestore billing data to relational branch data, always join on `marga.branches.legacy_id::text`, never on `marga.branches.id`.
+- Wrong join silently returns another customer's data (e.g., relational branch.id=2936 = Model Works, but Firestore branch_id=2936 = Instituto Cervantes).
+
+### Billing Grid Visibility Requirements
+- A contract appears in the billing grid only if:
+  1. `tbl_contractmain.location` is set (branch legacy_id — NULL means invisible)
+  2. `tbl_newmachinehistory` has the machine at that branch with `status_id=2` as its latest entry
+  3. Contract `category_id` is in `FOR_READING_CATEGORY_IDS = [1,2,3,5,8]` (RTP, RTF, STP, RTC, MAP)
+- REF (9), MAT (4), and unclassified categories are intentionally excluded — billed per delivery, not monthly.
+- If a customer appears in service history but not the billing grid, check all three conditions above.
+
+### Machine History Canonical Rule
+- `tbl_newmachinehistory` `status_id=2` = machine at client. Latest entry per branch determines if branch is "active" in billing cohort.
+- If a machine is physically deployed but billing grid shows nothing, the latest history entry may be a pull-out (status=7) from a different machine at the same branch.
+- Fix: add a new `tbl_newmachinehistory` entry with the current machine, `status_id=2`, today's date, as the latest entry for that branch.
+
+### Portal Server Group Switcher Rule
+- `marga-service-portal-server.mjs` handler uses `let user` (not `const`) so the group switcher can rebind `user.activeCompanyId`.
+- Group switcher only applies to overseer accounts (`user.companyIds.length > 1`).
+- The `activeCompanyId` param is validated against `user.companyIds` before applying.
+
+
+
 Rules:
 - Do not treat raw `tbl_companylist` as the active customer list.
 - Do not treat raw `tbl_machine.client_id` as the primary customer locator.
+- Do not treat bare `marga.machines.current_company_id` as the sole care-portal customer scope for grouped billing accounts.
 - Do not let one module invent a different customer/serial truth from another.
 - Customer, Billing, Collections, Service, and General Production must agree on the same serial/customer relationship wherever possible.
 

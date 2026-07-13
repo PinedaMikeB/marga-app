@@ -224,6 +224,10 @@ const MargaUtils = {
         };
     },
 
+    getActiveAssignmentEmployees(employees = [], options = {}) {
+        return this.filterEmployeeAssignmentOptions(employees, options);
+    },
+
     filterEmployeeAssignmentOptions(employees = [], options = {}) {
         const positions = options.positions || null;
         const includeRoleKeys = new Set((options.includeRoleKeys || []).map((role) => String(role || '').toLowerCase()));

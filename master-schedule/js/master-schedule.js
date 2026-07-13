@@ -130,7 +130,10 @@ const masterState = {
 document.addEventListener('DOMContentLoaded', () => {
     const dateInput = document.getElementById('masterDateInput');
     const searchInput = document.getElementById('masterSearchInput');
+    const staffSearchInput = document.getElementById('masterStaffSearchInput');
     dateInput.value = formatDateYmd(new Date());
+    if (searchInput) searchInput.value = '';
+    if (staffSearchInput) staffSearchInput.value = '';
     const forwardDateInput = document.getElementById('masterForwardDateInput');
     if (forwardDateInput) forwardDateInput.value = addDays(dateInput.value, 1);
     dateInput.addEventListener('change', () => {
@@ -1523,7 +1526,10 @@ async function buildMasterStaffFieldBuckets({ scheduleRows, pendingRawRows }) {
         const allCurrentRows = [...directTodayRows]
             .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
         const currentWorkloadRows = allCurrentRows
-            .filter((row) => masterRawStatusKey(row) !== 'cancelled');
+            .filter((row) => {
+                const status = masterRawStatusKey(row);
+                return status !== 'closed' && status !== 'cancelled';
+            });
         const forwardedPastPendingRows = currentWorkloadRows
             .filter(masterRawIsPastPendingByOriginalDate)
             .map((row) => ({
@@ -1551,7 +1557,7 @@ async function buildMasterStaffFieldBuckets({ scheduleRows, pendingRawRows }) {
             const status = masterRawStatusKey(row);
             return ['pending', 'carryover', 'ongoing'].includes(status);
         });
-        const closedRows = totalRows
+        const closedRows = allCurrentRows
             .filter(isMasterRawClosedOnSelectedDate)
             .sort((a, b) => String(getRouteTaskDateTime(a)).localeCompare(String(getRouteTaskDateTime(b))) || (Number(a.id || 0) - Number(b.id || 0)));
         const partsRows = unfinishedRows.filter((row) => {
@@ -2663,6 +2669,36 @@ function renderPriorityGate(rows = []) {
     `;
 }
 
+function buildVisibleStaffGroups(rows = [], pendingRows = [], exceptionRows = []) {
+    const groups = new Map();
+    const addRows = (items, sourceKey) => {
+        (items || []).forEach((row) => {
+            const staffKey = clean(row.assignedTo) || 'Unassigned';
+            if (!groups.has(staffKey)) {
+                groups.set(staffKey, {
+                    staffKey,
+                    activeRows: [],
+                    pendingRows: [],
+                    exceptionRows: []
+                });
+            }
+            const bucket = groups.get(staffKey);
+            if (sourceKey === 'pending') bucket.pendingRows.push(row);
+            else if (sourceKey === 'exception') bucket.exceptionRows.push(row);
+            else bucket.activeRows.push(row);
+        });
+    };
+    addRows(rows, 'active');
+    addRows(pendingRows, 'pending');
+    addRows(exceptionRows, 'exception');
+    return Array.from(groups.values()).sort((left, right) => {
+        const leftTotal = left.activeRows.length + left.pendingRows.length + left.exceptionRows.length;
+        const rightTotal = right.activeRows.length + right.pendingRows.length + right.exceptionRows.length;
+        if (rightTotal !== leftTotal) return rightTotal - leftTotal;
+        return left.staffKey.localeCompare(right.staffKey);
+    });
+}
+
 function renderMasterSchedule() {
     const sourceRows = getVisibleRows();
     const rows = combineMasterRows(sourceRows);
@@ -2696,18 +2732,13 @@ function renderMasterSchedule() {
         acc[row.readyStatus || 'N/A'] = (acc[row.readyStatus || 'N/A'] || 0) + 1;
         return acc;
     }, {});
-
-    const groups = new Map();
-    sourceRows.forEach((row) => {
-        const key = row.assignedTo || 'Unassigned';
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(row);
-    });
+    const staffGroups = buildVisibleStaffGroups(sourceRows, pendingRows, exceptionRows);
 
     sheet.innerHTML = `
         <section class="master-group master-summary">
             <h1>Master Schedule</h1>
             <div class="master-summary-pills">
+                <span>Staff shown: ${staffGroups.length}</span>
                 <span>Route source: ${escapeHtml(masterState.routeSourceLabel || 'Saved')}</span>
                 <span>Route linked: ${masterState.routeCoverage.routed || 0}</span>
                 <span>Awaiting route: ${masterState.routeCoverage.unrouted || 0}</span>
@@ -2719,11 +2750,12 @@ function renderMasterSchedule() {
         </section>
         ${renderPriorityGate(rows)}
         ${exceptionRows.length ? renderAssignmentExceptions(exceptionRows) : ''}
-        ${Array.from(groups.entries()).map(([group, groupRows]) => {
-            const counts = masterStaffBucketCounts(group);
-            const activeBucket = getStaffBucketFilter(group);
-            const storedBucketRows = masterStaffBucketRows(group, activeBucket);
-            const bucketRows = storedBucketRows.length ? storedBucketRows : masterFallbackBucketRows(groupRows, activeBucket);
+        ${staffGroups.map((group) => {
+            const counts = masterStaffBucketCounts(group.staffKey);
+            const activeBucket = getStaffBucketFilter(group.staffKey);
+            const storedBucketRows = masterStaffBucketRows(group.staffKey, activeBucket);
+            const fallbackUniverse = [...group.activeRows, ...group.pendingRows];
+            const bucketRows = storedBucketRows.length ? storedBucketRows : masterFallbackBucketRows(fallbackUniverse, activeBucket);
             const combinedBucketRows = combineMasterRows(bucketRows);
             const labelMap = {
                 total: 'Total Workload',
@@ -2734,20 +2766,21 @@ function renderMasterSchedule() {
                 closed: 'Closed'
             };
             const countMap = {
-                total: counts.total,
-                today: counts.today,
-                past_pending: counts.past_pending,
-                unfinished: counts.unfinished,
-                parts: counts.parts,
-                closed: counts.closed
+                total: Math.max(counts.total, masterFallbackBucketRows(fallbackUniverse, 'total').length),
+                today: Math.max(counts.today, masterFallbackBucketRows(fallbackUniverse, 'today').length),
+                past_pending: Math.max(counts.past_pending, masterFallbackBucketRows(fallbackUniverse, 'past_pending').length),
+                unfinished: Math.max(counts.unfinished, masterFallbackBucketRows(fallbackUniverse, 'unfinished').length),
+                parts: Math.max(counts.parts, masterFallbackBucketRows(fallbackUniverse, 'parts').length),
+                closed: Math.max(counts.closed, masterFallbackBucketRows(fallbackUniverse, 'closed').length)
             };
             return `
                 <section class="master-group">
                     <div class="master-group-header">
-                        <h2>${escapeHtml(group)}</h2>
-                        ${renderStaffBucketFilters(group, counts)}
+                        <h2>${escapeHtml(group.staffKey)}</h2>
+                        ${renderStaffBucketFilters(group.staffKey, countMap)}
                     </div>
-                    <p class="master-note">${escapeHtml(labelMap[activeBucket] || 'Total Workload')}: ${combinedBucketRows.length} shown from ${countMap[activeBucket] ?? counts.total} workload row(s) for this staff, using the same route bucket build as Field App.</p>
+                    <p class="master-note">${escapeHtml(labelMap[activeBucket] || 'Total Workload')}: ${combinedBucketRows.length} shown from ${countMap[activeBucket] ?? countMap.total} workload row(s) for this staff, using the same route bucket build as Field App.</p>
+                    ${(group.pendingRows.length || group.exceptionRows.length) ? `<div class="master-staff-meta">${group.pendingRows.length ? `${group.pendingRows.length} pending not routed` : ''}${group.pendingRows.length && group.exceptionRows.length ? ' · ' : ''}${group.exceptionRows.length ? `${group.exceptionRows.length} needs assignment` : ''}</div>` : ''}
                     ${combinedBucketRows.length ? renderReadyTables(combinedBucketRows) : '<div class="master-empty">No schedules in this staff bucket.</div>'}
                 </section>
             `;
@@ -3199,6 +3232,7 @@ function renderReadyTables(rows) {
 
 function renderScheduleTable(rows) {
     return `
+        <div class="master-table-hint">Swipe left or right to view the full schedule table.</div>
         <div class="master-table-shell">
             <table class="master-table">
                 <thead>

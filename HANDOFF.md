@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-06-16 (Purchasing module + production-first test workflow)
+Last Updated: 2026-07-13 (Care Portal completeness audit + billing grid fixes + portal server group filter bug fix)
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -8,24 +8,85 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 3. `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills/marga-database-migration/SKILL.md` when the work touches database migration, backend cutover, rescue sync, Margabase compatibility APIs, or production write paths.
 
-## Current Focus
+## Current Focus (2026-07-13)
+
+### Care Portal + Billing Grid Completeness — COMPLETED TODAY
+- **Needs Attention count** brought from 7 → 0 for CBS (China Bank Savings).
+- **4 phantom contracts deactivated** (status → 7): ~xxAraneta (46), ~xxMckinley Hill (90), San Fernando scan/cat4 (3569), San Pablo scan/cat4 (3849).
+- **3 legacy CBS contracts deactivated**: ~xx Koronadal (3519), ~xxCebu Lahug #1 (623), ~xxCebu Lahug #2 (624).
+- **Portal generator fixed**: `loadBillingCompanies()` changed from `JOIN billing_companies` (requires invoices) to `LEFT JOIN` so companies with active contracts but no invoice history still get portal accounts.
+- **983 → 1,249 branch portal accounts** created. Total portal accounts: 1,283 → 2,319.
+- **Nightly LaunchAgent installed**: `com.marga.care-portal-sync` runs at 3:15 AM daily to keep portal accounts in sync with active contracts.
+- **Bucket C companies** (service calls but zero billing): 13 branches across 11 companies identified. Root cause — `location` field NULL in `tbl_contractmain` Firestore so billing cohort couldn't link them to a branch. **19 contracts patched** via `scripts/patch-bucket-c-contract-locations.mjs`.
+- **Machine history fixes**: 3K & Percz (machine 2692, branch 1598) and ASYM (machine 2776, branch 983) had stale pull-out entries as latest `tbl_newmachinehistory` rows. New status=2 entries added (doc IDs 27120, 27121) dated 2026-07-13.
+- **ASYM / Uplift Cares / N/A**: REF/MAT category contracts (9, 4, 12) — correctly excluded from `FOR_READING_CATEGORY_IDS` billing grid. These are refill/materials accounts billed per delivery, not monthly meter rental.
+- **Salvador Llanillo**: machines pulled out Aug/Sep 2024, single service call dated 2028 (data entry error). Genuinely inactive — no fix needed.
+- **Bucket A data bug**: earlier audit falsely showed 47 branches with ₱373K billing because Firestore `tbl_billing.branch_id` is legacy_id, not relational id. Joins must use `marga.branches.legacy_id`, not `marga.branches.id`. All corrected.
+- **Portal server group filter bug fixed**: `const user` → `let user` in `marga-service-portal-server.mjs`. Was causing `Assignment to constant variable` 500 error on every group switcher change. Server restarted (PID 37661).
+- **Billing apply-quota per-line checkbox**: added per-meter line "Apply Quota" checkbox in `billing/js/billing.js` (`renderMeterLineCard`, `readLineApplyQuota`, `estimateLineFromSeed`). Default checked; when unchecked, charges actual consumption only.
+
+### Remaining / Deferred
+- **Koronadal and Cebu Lahug CBS** (contracts 3519, 623, 624): deactivated today. Reactivate if client returns.
+- **Bucket C revenue follow-up**: Attila Inc (~₱41,600), Storeminder (~₱44,400), Uplift Cares, Metropolis Construction, etc. Billing team advised. Serial data and addresses documented in this session.
+- **Unknown "N/A" customer** (branch legacy 1137, 49 service calls in 2026): REF/MAT contracts, not in billing grid by design. Operations team must identify who this customer is.
+- **Bucket E (260 branches, 189 companies)**: no billing, no 2026 service. Operations triage needed — dormant, lost contact, or data artifact.
+
+
 - **2026-06-19 Master Schedule / Field App unification plan (canonical next step):**
   - `tbl_schedule` is the only operational source of truth for route/workload rows.
   - `app_meta.master_schedule_snapshot` is read-only cache / read model only. It must never become a second source of truth.
   - Master Schedule and Field App must read the **same snapshot payload**, built from the **same canonical query/bucket logic**, so counts and visible rows are identical for the same staff/date.
   - Neither UI should keep separate browser-side workload counting logic once Phase 1 is complete.
   - Snapshot rebuilds should happen in the backend after `tbl_schedule` writes, not because a browser changed date or ran a heavy page scan.
+- **2026-06-19 schedule incident lesson (do not repeat):**
+  - Billing had been writing a planner/support row first and the real `tbl_schedule` row second. That split write path allowed staff to appear assigned while `new today` was missing in Field App/Master Schedule when the second write drifted or failed.
+  - Canonical rule now: **Billing, Collections, Service, and Purchasing must write schedule rows directly to `tbl_schedule`**. Do not put `tbl_schedule_planner` back into the operational write path for staff schedule creation, reassignment, close request, or route visibility.
+  - `tbl_schedule_planner` may exist only as legacy/reference data while old rows are still present. It is not a source of truth for live route counts, live assignment, or snapshot generation.
+  - Real incident fixed on Friday, June 19, 2026: `18` billing rows were found with `original_sched='2026-06-19'` but `task_datetime='2026-06-20'` (`15` for Armond A. Rubiz, `3` for Carlos Edaño). Those rows were repaired back onto the correct June 19 date from `tbl_schedule`, then the backend snapshot queue was rebuilt.
+  - Reusable repair script for this exact class of issue: `/Volumes/Wotg Drive Mike/GitHub/marga-platform/scripts/repair-shifted-billing-schedule-dates.mjs --date=YYYY-MM-DD [--apply]`
 - **2026-06-19 Master Schedule snapshot queue (already implemented):** backend writes now enqueue affected rebuild dates into Postgres table `app_meta.master_schedule_snapshot_rebuild_queue` through a trigger on `app_meta.firestore_documents`, and the Margabase API can process the queue through `GET/POST /admin/master-schedule-snapshot/queue` or script `scripts/process-master-schedule-snapshot-queue.mjs`. Hot rebuild dates currently include the changed schedule date, its next-day carryover date, plus Manila `today` and `tomorrow` so Master Schedule can stay warm without a browser-triggered rescan.
+- **2026-06-24 snapshot freshness lesson (new canonical guardrail):**
+  - Enqueuing snapshot rebuild dates is not enough. The backend must also run an always-on queue worker so pending `tbl_schedule` writes are rebuilt even when no later browser action wakes the processor.
+  - Canonical behavior now: keep the write-triggered debounce for fast local rebuilds, but also keep a background queue drain on the Margabase API process so future-dated Billing/Collections/Service/Purchasing schedules still appear in Field App the next day without needing a manual Refresh/Rescan/Rebuild click.
+  - If staff say "the schedule saved yesterday but is missing today," check `app_meta.master_schedule_snapshot_rebuild_queue` first before blaming the browser UI.
+- **2026-06-25 Billing/Collections missing route lesson (new canonical guardrail):**
+  - The repeating miss was not only snapshot freshness. Some Billing schedule writes were saving the visible assignee name and the numeric `tech_id` for different people.
+  - Field App and Master Schedule route ownership follow `tbl_schedule.tech_id`, not the displayed assignee name. If those drift apart, office modules can look correct while the intended field staff sees no route.
+  - Canonical protection now: Billing and Collections schedule pickers must allow only real field-capable staff roles (`messenger`, `driver`, `technician`, `production`), and Billing must resolve the live dropdown selection into one canonical `{staffId, staffName}` pair immediately before every `tbl_schedule` write. Never trust stale modal state for assignment.
+  - Reusable live check: compare `tbl_schedule.tech_id` against the visible assigned name for recent Billing/Collections rows before blaming snapshot rebuilds.
+- **2026-06-25 same-location combine ownership rule (new canonical guardrail):**
+  - Do not silently force Billing/Collections/Service schedules onto the existing same-location owner.
+  - When a customer/location already has another same-day schedule, the scheduler must get an explicit choice: combine under the suggested owner, keep the newly selected assignee as a separate visit, or cancel and change staff.
+  - The combined-visit metadata (`combined_visit_*`) is still useful for route grouping, but ownership transfer must be an intentional office decision, not an automatic reassignment hidden behind Save Schedule.
+- **2026-07-07 closed-schedule reappearance lesson (new canonical guardrail):**
+  - Shared snapshot payloads can be briefly stale or can still include rows that belong in the Closed bucket.
+  - Field App and Master Schedule must never rebuild `today` / `past pending` workload buckets directly from snapshot IDs without rechecking the canonical `tbl_schedule` close state first.
+  - Canonical protection now: active workload buckets must exclude rows already marked closed/cancelled in `tbl_schedule` (`date_finished`, `closedby`, route close markers), while the Closed tab/bucket can still display them separately for the selected date.
+- **2026-07-08 attendance adjustment UI rule (new canonical guardrail):**
+  - The shared Time Record adjustment workflow is used by Field App, Dashboard, HR, and the approval page. Do not fork one page's behavior away from the others.
+  - The staff-facing button should be `Fix Time`, not `Fix Time In`, and the same shared request form must support adjusting `time in`, `time out`, or both while preserving the HR approval flow.
+  - Keep the existing attendance-adjustment request family backward compatible when widening the UI, because HR/payroll approval may still rely on the same request collection and approval endpoint.
 - **2026-06-19 planned implementation phases for schedule parity:**
   - **Phase 1:** both UIs write directly to `tbl_schedule`; backend snapshot rebuild picks up the change; both UIs read the same snapshot; add only light/quiet partial refresh behavior; do not auto-refresh whole page; never wipe fields while staff are encoding.
+  - Current update model as of June 19, 2026: yes, **light polling**. The browser should poll quietly for snapshot freshness / partial row refresh after writes, while the backend queue performs the actual snapshot rebuild. The browser must not rebuild the whole schedule from broad scans and must not reload the page automatically during active work.
   - **Phase 2 (next thread / target Saturday 2026-06-20):** replace or reduce light polling with websocket/push-style updates so the browser receives `snapshot updated` events and patches only the affected row/staff/date widgets.
 - **2026-06-16 shipped (verified on `app.marga.biz`):** **Purchasing** module at `/purchasing/` — Money Request item fields + Set Schedule for field staff (`purpose_id: 7`). Dashboard sidebar: **Purchasing** (after Receiving).
-- **2026-06-16 owner testing workflow (canonical):** push and verify on **production first** (`/Volumes/Wotg Drive Mike/GitHub/Marga-App`, `main`, `app.marga.biz`), then sync to **staging** (`Marga-App-staging`, `codex/staging`) **only after live verification succeeds**. Hard refresh after deploy for service worker cache. Staging is not the first acceptance gate for normal UI/module work.
+- **2026-06-22 owner testing workflow (canonical):**
+  - Update local `Marga-App` code in `/Volumes/Wotg Drive Mike/GitHub/Marga-App`.
+  - Deploy that local code to the live app served at `app.marga.biz` through the current Cloudflare-backed production path so the owner can test the real live behavior before any GitHub push.
+  - Wait for the owner's live test result.
+  - If the owner says the live test worked, sync the same verified change to staging (`Marga-App-staging` / `codex/staging`).
+  - After staging sync is complete, commit and push the verified change to GitHub `main`.
+  - Do not push to GitHub `main` before the owner confirms the live `app.marga.biz` test passed, unless the owner explicitly asks for an immediate push.
+  - Always distinguish clearly between: local code change, live deployment to `app.marga.biz`, staging sync, and GitHub `main` push.
+  - Hard refresh after deploy for service worker cache. Staging is not the first acceptance gate for normal UI/module work.
 - Standing Codex purpose from the owner:
   - Protect the owner from unnecessary cost. Before acting, prefer the cheapest safe path that keeps business data accurate and avoids repeated paid reads/writes, recurring services, wasteful scans, duplicate manual work, and repeated prompts for problems already solved.
   - If a workflow, report, query, UI pattern, rescue command, or business rule will likely be reused, preserve it in `MASTERPLAN.md`, `HANDOFF.md`, `AGENTS.md`, a script, an automation, or a skill so future work starts from the proven method instead of rediscovering it.
   - Error-resolution learning rule: every real bug, migration miss, costly mistake, repeated prompt, or staff data-entry failure must be treated as a reusable lesson. After resolving it, Codex should actively decide whether to create or update a skill under `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills`, link it into `/Users/mike/.codex/skills` when broadly useful, and reference it here/masterplan/agents so the same mistake is prevented next time.
   - When building modules, anticipate preventable mistakes: use searchable dropdowns for real records, line-item tables/grids for financial details, explicit validation and audit reports for money/status changes, and reusable shared helpers where repeated logic would drift.
+  - UI copy should stay minimalist by default. If a control already has a clear label like `Customer` or `Branch / Department`, do not add extra helper text that merely restates the label. Prefer plain white controls and low-noise layouts unless the extra instruction prevents a real user mistake.
+  - Mobile-first module rule: every module must adapt cleanly to phone and tablet screens. Tables must remain horizontally swipeable left/right instead of crushing columns, search boxes must resize and stay usable on narrow widths, and controls should remain responsive/adaptive without hiding critical actions.
   - Always ask: what can go wrong, what can create cost, what can create duplicate work, and what can be prevented now without overbuilding?
 - 2026-06-01 DigitalOcean managed Postgres incident and infrastructure direction:
   - 2026-06-01 10:37 PM Manila Collections summary checkpoint:
@@ -99,6 +160,26 @@ Start every new Marga-App thread by reading:
   - Customer portal stays normal browser access at `care.marga.biz`.
   - Use Cloudflare Tunnel to route `care.marga.biz` to the Mac mini server without customers installing Tailscale/VPN.
   - Tailscale may be used only for internal/admin/private access, not for customer portal users.
+- 2026-06-29 Marga Care credential generation checkpoint:
+  - Active portal accounts are now generated from the **Billing-backed customer universe**, not from a hardcoded care list.
+  - Reusable script: `/Volumes/Wotg Drive Mike/GitHub/Marga-App/scripts/generate-care-portal-accounts.mjs`
+  - Source rule for that script:
+    - Start from `marga.billing_invoices` company groupings already used for billing/collections customer scope.
+    - Compute outstanding balances using the same rule accepted in Billing statements: prefer the latest recorded `balance_amount` from `marga.payments`; fall back to `invoice total - paid total` only when no explicit balance is recorded.
+    - Keep only non-inactive companies that are still operationally relevant (`outstanding > 0` or active branches/machines).
+  - Current first live run on June 29, 2026 created:
+    - `299` company admin accounts
+    - `769` branch / department accounts
+    - `1068` total `marga.portal_accounts`
+  - Credential export is intentionally written **outside the repo** so plaintext temporary passwords are not committed. Default output path is a timestamped folder on `/Users/mike/Desktop/`.
+  - Default branch/department login style in the generated sheet is company-code / branch-code based (for uniqueness and because many records do not have safe branch email data). Company admins use email when a unique customer email exists; otherwise they also fall back to a generated company-code login.
+- 2026-06-30 Marga Care operational scope rule:
+  - Customer-facing machine counts in `care.marga.biz` must use the **Active Contract Customer Graph** (`api.active_customer_graph`), not `marga.machines.current_company_id` alone.
+  - Real incident: China Bank `Branches` showed the correct outstanding balance but `0` machines because the billing company grouping existed while the sparse machine ownership table did not fully mirror that grouping.
+  - Safe rule now:
+    - `Machines in Care` and branch device counts come from active-contract machine scope.
+    - customer isolation for service/toner operational reads should be scoped by the branch ids in that same active-contract graph.
+    - do not trust raw `tbl_machine.client_id` or bare `marga.machines.current_company_id` as the sole care-portal customer ownership key.
 - Planned stack direction:
   - Mac mini on solar/UPS with dual internet provider failover through the router.
   - Self-hosted Supabase/Postgres-style backend, with local media/file storage.
@@ -455,7 +536,7 @@ Collections 2307 / deduction tracking:
 - Use forward commits on `main`; do not rewrite history for rollback work.
 - Do not revert unrelated dirty files in the repo.
 - User expects verified Marga App changes to be pushed to `main` so Netlify can deploy automatically.
-- Default release behavior for future threads: after making and verifying Marga-App code changes, commit them and push to `main` unless the user explicitly says not to push.
+- Default release behavior for future threads: update local `Marga-App`, deploy the change live to `app.marga.biz`, wait for the owner's approval on the real live app, then sync staging, then commit and push the verified change to GitHub `main` unless the owner explicitly asks for a different order.
 
 ## Customer Identity And Serial Rule
 Canonical customer lookup is the Active Contract Customer Graph:
@@ -501,6 +582,7 @@ Important Collections SN rule:
 
 ## Releasing Rules
 - Releasing lives in `releasing/` and is live on Netlify.
+- Heavy operational modules such as Releasing should show a staged progress bar with elapsed seconds during load so staff can tell whether the page is still working or is stuck on a specific step.
 - DR Item List should expand quantity requests into separate unit rows.
   - Example: if reference `345898` has `3 pcs TONER / INK`, the list should show 3 separate rows/units.
   - If the user adds 1 row to Create DR, that 1 row should disappear from DR Item List while it is in Create DR.
@@ -593,7 +675,7 @@ Important Collections SN rule:
 ## Session Log (Top First)
 ### 2026-06-16 - Purchasing Module And Production-First Test Workflow
 - **Purchasing** verified on `app.marga.biz` (`/purchasing/`): Money Request item fields, amount, Set Schedule (Buy Items purpose), field schedule via `tbl_schedule` `purpose_id: 7`.
-- **Owner test order:** production (`main` / `app.marga.biz`) first; staging (`codex/staging`) only after production is confirmed working.
+- **Owner test order:** local edit first, then live deploy to `app.marga.biz`, then owner test, then staging sync, then GitHub `main` push unless the owner explicitly requests another sequence.
 
 ### 2026-05-05 - Field Customer Location Pin Permission Hotfix
 - Urgent production issue: Field App could not pin customer location and therefore could not close a ticket. Mobile alert showed `Failed to pin customer location: Missing or insufficient permissions.`

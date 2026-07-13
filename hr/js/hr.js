@@ -4,6 +4,8 @@ if (!MargaAuth.requireAccess('hr')) {
 
 const WORK_LOCATIONS_COLLECTION = 'marga_hr_work_locations';
 const EMPLOYEE_DEDUCTIONS_COLLECTION = 'marga_hr_employee_deductions';
+const PAYROLL_DISBURSEMENTS_COLLECTION = 'marga_hr_payroll_disbursements';
+const PAYROLL_ADJUSTMENTS_COLLECTION = 'marga_hr_attendance_adjustments';
 const ACTIVE_EMPLOYEE_SUMMARY_DOC = 'hr_active_employee_summary_v1';
 const OFFICE_MAX_METERS = 200;
 const PRODUCTION_MAX_METERS = 200;
@@ -110,6 +112,8 @@ const HR_STATE = {
     branches: new Map(),
     companies: new Map(),
     employeeDeductions: [],
+    payrollAdjustments: [],
+    payrollDisbursements: [],
     usingEmployeeSummary: false,
     employeeSummaryBuiltAt: '',
     fullEmployeeRosterLoaded: false,
@@ -128,6 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('userAvatar').textContent = String(user.name || user.username || 'U').charAt(0).toUpperCase();
     }
     initPayrollDateDefaults();
+    initPayrollCutoffControls();
     const performanceDate = document.getElementById('performanceDateInput');
     if (performanceDate) performanceDate.value = todayDateKey();
 
@@ -144,6 +149,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.getElementById('payrollDateFromInput')?.addEventListener('change', refreshPayrollModel);
     document.getElementById('payrollDateToInput')?.addEventListener('change', refreshPayrollModel);
+    document.getElementById('payrollCurrentCutoffBtn')?.addEventListener('click', () => {
+        const current = recommendedPayrollPeriod(todayDateKey());
+        setPayrollPeriodInputs(current);
+        refreshPayrollModel();
+    });
     performanceDate?.addEventListener('change', () => refreshPerformanceDate());
     document.querySelectorAll('[data-performance-tab]').forEach((button) => {
         button.addEventListener('click', () => setPerformanceTab(button.dataset.performanceTab));
@@ -198,6 +208,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('useEmployeeGpsBtn').addEventListener('click', () => fillCurrentGps('employeeLatitude', 'employeeLongitude', 'eligibilityResult'));
     document.getElementById('checkEligibilityBtn').addEventListener('click', previewEligibility);
 
+    const initialTab = getRequestedHrTab();
+    if (initialTab) setActiveTab(initialTab);
+
     loadHrModule();
 });
 
@@ -207,16 +220,47 @@ function toggleSidebar() {
 
 window.toggleSidebar = toggleSidebar;
 
+function getRequestedHrTab() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const tab = String(params.get('tab') || '').trim().toLowerCase();
+        return ['employees', 'time-records', 'payroll', 'performance', 'locations'].includes(tab) ? tab : '';
+    } catch (error) {
+        return '';
+    }
+}
+
+function getRequestedHrTimeSubtab() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const subtab = String(params.get('subtab') || '').trim().toLowerCase();
+        return ['records', 'adjustments'].includes(subtab) ? subtab : 'records';
+    } catch (error) {
+        return 'records';
+    }
+}
+
+function getRequestedHrAdjustmentId() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        return String(params.get('request_id') || '').trim();
+    } catch (error) {
+        return '';
+    }
+}
+
 async function loadHrModule() {
     const status = document.getElementById('hrDirectoryStatus');
     status.textContent = 'Loading HR records...';
     try {
-        const [summaryDoc, positions, locations, fieldEvents, employeeDeductions] = await Promise.all([
+        const [summaryDoc, positions, locations, fieldEvents, employeeDeductions, payrollDisbursements, payrollAdjustments] = await Promise.all([
             MargaUtils.fetchDoc('tbl_app_settings', ACTIVE_EMPLOYEE_SUMMARY_DOC).catch(() => null),
             MargaUtils.fetchCollection('tbl_position', 200).catch(() => []),
             loadWorkLocations(),
             MargaUtils.fetchCollection('tbl_field_visit_events', 500).catch(() => []),
-            MargaUtils.fetchCollection(EMPLOYEE_DEDUCTIONS_COLLECTION, 1000).catch(() => [])
+            MargaUtils.fetchCollection(EMPLOYEE_DEDUCTIONS_COLLECTION, 1000).catch(() => []),
+            MargaUtils.fetchCollection(PAYROLL_DISBURSEMENTS_COLLECTION, 2000).catch(() => []),
+            MargaUtils.fetchCollection(PAYROLL_ADJUSTMENTS_COLLECTION, 2000).catch(() => [])
         ]);
         const summaryEmployees = Array.isArray(summaryDoc?.employees) && summaryDoc.employees.every((row) => row && typeof row === 'object' && !Array.isArray(row))
             ? summaryDoc.employees.map((row) => ({ ...row }))
@@ -254,12 +298,15 @@ async function loadHrModule() {
         HR_STATE.locations = locations;
         HR_STATE.fieldEvents = fieldEvents;
         HR_STATE.employeeDeductions = employeeDeductions.map(normalizeEmployeeDeduction);
+        HR_STATE.payrollAdjustments = Array.isArray(payrollAdjustments) ? payrollAdjustments : [];
+        HR_STATE.payrollDisbursements = payrollDisbursements.map(normalizePayrollDisbursement);
         await loadPerformanceDateData(getPerformanceDate());
         await hydratePerformanceLookups(fieldEvents);
         status.textContent = HR_STATE.usingEmployeeSummary && HR_STATE.employeeSummaryBuiltAt
             ? `${HR_STATE.employees.length.toLocaleString()} active employee summary rows loaded.`
             : `${HR_STATE.employees.length.toLocaleString()} employee record(s) loaded.`;
         renderEmployees();
+        mountHrTimeRecordsPane();
         renderPerformance();
         await refreshPayrollModel();
         renderLocations();
@@ -273,7 +320,7 @@ async function loadHrModule() {
 }
 
 function setActiveTab(tab) {
-    const next = ['employees', 'payroll', 'performance', 'locations'].includes(tab) ? tab : 'employees';
+    const next = ['employees', 'time-records', 'payroll', 'performance', 'locations'].includes(tab) ? tab : 'employees';
     HR_STATE.activeTab = next;
     document.querySelectorAll('.hr-tab').forEach((button) => {
         const active = button.dataset.tab === next;
@@ -281,10 +328,27 @@ function setActiveTab(tab) {
         button.setAttribute('aria-selected', active ? 'true' : 'false');
     });
     document.getElementById('employeesPane').classList.toggle('open', next === 'employees');
+    document.getElementById('timeRecordsPane').classList.toggle('open', next === 'time-records');
     document.getElementById('payrollPane').classList.toggle('open', next === 'payroll');
     document.getElementById('performancePane').classList.toggle('open', next === 'performance');
     document.getElementById('locationsPane').classList.toggle('open', next === 'locations');
     document.getElementById('locationValidatorPane').classList.toggle('open', next === 'locations');
+}
+
+function mountHrTimeRecordsPane() {
+    const root = document.getElementById('hrTimeRecordsMount');
+    const mount = window.MargaAttendanceTimeRecords?.mountHrPane;
+    if (!root) return;
+    if (typeof mount !== 'function' || !window.MargaPayrollCutoff) {
+        root.innerHTML = '<p class="ops-subtext">Time records tools are not ready yet. Reload the page and try again.</p>';
+        return;
+    }
+    mount(root, {
+        employees: HR_STATE.employees,
+        period: window.MargaPayrollCutoff.timeRecordsPayrollPeriod(window.MargaPayrollCutoff.todayDateKey()),
+        initialSubtab: getRequestedHrTimeSubtab(),
+        selectedRequestId: getRequestedHrAdjustmentId()
+    });
 }
 
 function setPerformanceTab(tab) {
@@ -393,11 +457,17 @@ async function loadWorkLocations() {
 
 async function refreshPayrollModel() {
     const period = getPayrollPeriod();
+    syncPayrollCutoffControlFromInputs();
     const live = getLivePayrollWindow(period);
     if (live.rangeStart && live.rangeEnd) {
         HR_STATE.payrollAttendance = await queryHrDateRange('tbl_field_attendance', 'attendance_date', live.rangeStart, live.rangeEnd, 2000).catch(() => []);
     } else {
         HR_STATE.payrollAttendance = [];
+    }
+    if (window.MargaAttendanceTimeRecords?.fetchAdjustments) {
+        HR_STATE.payrollAdjustments = await window.MargaAttendanceTimeRecords.fetchAdjustments('').catch(() => HR_STATE.payrollAdjustments || []);
+    } else {
+        HR_STATE.payrollAdjustments = await MargaUtils.fetchCollection(PAYROLL_ADJUSTMENTS_COLLECTION, 2000).catch(() => HR_STATE.payrollAdjustments || []);
     }
     renderPayrollModel();
 }
@@ -419,6 +489,7 @@ async function ensureFullEmployeeRoster() {
     HR_STATE.fullEmployeeRosterLoaded = true;
     HR_STATE.usingEmployeeSummary = false;
     await persistActiveEmployeeSummary(employees);
+    mountHrTimeRecordsPane();
 }
 
 function employeeSummaryRow(employee) {
@@ -960,11 +1031,15 @@ function renderPayrollModel() {
     const cutoff = getPayrollCutoffProfile(period);
     const live = getLivePayrollWindow(period);
     const deductionRows = getPayrollDeductionRegister(period);
+    const paymentSummaryMap = getPayrollDisbursementSummaryMap(period);
+    const disbursements = getPayrollDisbursements(period);
     const totals = sampleRows.reduce((sum, row) => ({
         monthly: sum.monthly + row.monthlyRate,
         semiMonthly: sum.semiMonthly + row.semiMonthlyRate,
         netSalary: sum.netSalary + row.netSalary
     }), { monthly: 0, semiMonthly: 0, netSalary: 0 });
+    const totalPaid = roundMoney(disbursements.reduce((sum, item) => sum + item.amount, 0));
+    const totalBalance = roundMoney(Math.max(0, totals.netSalary - totalPaid));
     const liveNotice = live.isFuture
         ? 'Selected cutoff has not started yet, so payroll shows zero live attendance days.'
         : (live.isLive
@@ -996,14 +1071,37 @@ function renderPayrollModel() {
                 <thead>
                     <tr>
                         ${PAYROLL_PRINT_COLUMNS.map(([, label]) => `<th>${sanitize(label)}</th>`).join('')}
+                        <th>paid</th>
+                        <th>balance</th>
+                        <th>action</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${sampleRows.map((row) => `
-                        <tr>
-                            ${PAYROLL_PRINT_COLUMNS.map(([key, label]) => `<td data-label="${sanitize(label)}">${formatPayrollCell(row, key)}</td>`).join('')}
-                        </tr>
-                    `).join('')}
+                    ${sampleRows.map((row) => {
+                        const paymentState = getPayrollRowPaymentState(row, paymentSummaryMap);
+                        return `
+                            <tr>
+                                ${PAYROLL_PRINT_COLUMNS.map(([key, label]) => `<td data-label="${sanitize(label)}">${formatPayrollCell(row, key)}</td>`).join('')}
+                                <td data-label="paid" class="hr-payroll-payment-cell">
+                                    <div class="hr-payroll-payment-stack">
+                                        <strong>${sanitize(formatPayrollNumber(paymentState.paidAmount))}</strong>
+                                        <small>${paymentState.entries.length ? `${paymentState.entries.length} disbursement${paymentState.entries.length === 1 ? '' : 's'}` : 'No disbursement yet'}</small>
+                                    </div>
+                                </td>
+                                <td data-label="balance" class="hr-payroll-payment-cell">
+                                    <div class="hr-payroll-payment-stack">
+                                        <strong>${sanitize(formatPayrollNumber(paymentState.balanceAmount))}</strong>
+                                        <small>Live net salary less paid releases</small>
+                                    </div>
+                                </td>
+                                <td data-label="action">
+                                    <div class="hr-payroll-row-actions">
+                                        <button type="button" class="btn btn-secondary btn-sm" data-payroll-disburse="${sanitize(String(row.id || ''))}">Disburse</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('')}
                 </tbody>
             </table>
         </div>
@@ -1031,6 +1129,40 @@ function renderPayrollModel() {
                 </div>
             </section>
         </div>
+        <section class="hr-payroll-ledger">
+            <div class="hr-payroll-ledger-header">
+                <div class="hr-payroll-ledger-summary">
+                    <h4>Payroll Disbursement Register</h4>
+                    <p>Partial payroll release is allowed here. Paid and balance stay linked to the current live payroll row instead of locking the payroll line.</p>
+                </div>
+                <div class="hr-payroll-ledger-metrics">
+                    <article><span>Total Net Salary</span><strong>${formatMoneyOrDash(totals.netSalary)}</strong></article>
+                    <article><span>Total Paid</span><strong>${formatMoneyOrDash(totalPaid)}</strong></article>
+                    <article><span>Total Balance</span><strong>${formatMoneyOrDash(totalBalance)}</strong></article>
+                </div>
+            </div>
+            <div class="table-container">
+                <table class="table hr-payroll-table">
+                    <thead>
+                        <tr><th>Employee</th><th>Paid Date</th><th>Amount</th><th>Net Salary Snapshot</th><th>Remarks</th><th>Encoded By</th></tr>
+                    </thead>
+                    <tbody>
+                        ${disbursements.length
+                            ? disbursements.map((item) => `
+                                <tr>
+                                    <td>${sanitize(item.staffName || item.payrollName || `#${item.staffId}`)}</td>
+                                    <td>${sanitize(item.paidOn || '--')}</td>
+                                    <td>${sanitize(formatPayrollNumber(item.amount))}</td>
+                                    <td>${sanitize(formatPayrollNumber(item.netSalarySnapshot || 0))}</td>
+                                    <td>${sanitize(item.remarks || '--')}</td>
+                                    <td>${sanitize(item.createdBy || '--')}</td>
+                                </tr>
+                            `).join('')
+                            : '<tr><td colspan="6">No payroll disbursement entries yet for this cutoff.</td></tr>'}
+                    </tbody>
+                </table>
+            </div>
+        </section>
     `;
     document.getElementById('payrollAnalysis').innerHTML = `
         <h4>Workbook Formula Map</h4>
@@ -1050,15 +1182,27 @@ function renderPayrollModel() {
             <li><strong>daily_rate:</strong> <code>((semimrate * 2) / 313) * 12</code>.</li>
             <li><strong>live total_basic:</strong> while the cutoff is still open, <code>min(semimrate, daily_rate * attendance_days)</code> so payroll grows only from attendance already recorded through today.</li>
             <li><strong>final total_basic:</strong> after the cutoff closes, <code>semimrate - (daily_rate * absences)</code>.</li>
-            <li><strong>approved OT pay:</strong> <code>(((daily_rate / 8) * 0.25) + (daily_rate / 8)) * approved_ot_hours</code>. The hours are manual only and require a signed authorization form.</li>
+            <li><strong>OT pay:</strong> <code>(((daily_rate / 8) * 0.25) + (daily_rate / 8)) * ot_hours</code>. HR now reads attendance OT adjustments from the shared time-record request source; approved rows are preferred, and pending rows are previewed when no approved hours are available yet.</li>
             <li><strong>total_pay:</strong> <code>total_basic + approved_ot_pay + allowance + rdot + regular_ot + holiday_pay + adjustment</code>.</li>
             <li><strong>attendance inputs:</strong> <code>attendance_days</code> comes from unique <code>tbl_field_attendance.attendance_date</code> rows for the employee inside the selected cutoff; <code>minutes_late</code> sums saved late minutes or derives them from <code>time_in</code>.</li>
             <li><strong>ut_deduction:</strong> <code>(daily_rate / 8) * ut_hours</code>; <strong>late_deduction:</strong> <code>((daily_rate / 8) / 60) * minutes_late</code>.</li>
             <li><strong>gross_income:</strong> <code>total_pay - ut_deduction - sss - mandatory_sss_provident - phic - hdmf - late_deduction</code>.</li>
             <li><strong>net_salary:</strong> <code>gross_income + nontax_allowance - withholding_tax + tax_refund - sss_loan - coop_loan - philhealth_adjustment - bank_loan - cash_adv - pagibig_loan - t_shirt - others - house_rental - adjustment - tax_adjustment</code>.</li>
             <li><strong>Deduction source rule:</strong> if the payroll workbook or employee payroll source has a saved government deduction value, payroll shows it in the current run; active loan and advance balances still come from the deduction-plan register.</li>
+            <li><strong>Payroll disbursement rule:</strong> saved disbursement entries track paid releases per employee and cutoff, while balance always recomputes from the current live <code>net_salary</code> minus total paid.</li>
         </ol>
     `;
+    document.querySelectorAll('[data-payroll-disburse]').forEach((button) => {
+        button.addEventListener('click', async () => {
+            const row = sampleRows.find((entry) => String(entry.id || '') === button.dataset.payrollDisburse);
+            if (!row) return;
+            try {
+                await promptPayrollDisbursement(row, getPayrollRowPaymentState(row, paymentSummaryMap), period);
+            } catch (error) {
+                alert(error?.message || 'Unable to save payroll disbursement.');
+            }
+        });
+    });
 }
 
 function initPayrollDateDefaults() {
@@ -1070,6 +1214,45 @@ function initPayrollDateDefaults() {
     toInput.value = defaults.to;
 }
 
+function initPayrollCutoffControls() {
+    const select = document.getElementById('payrollCutoffSelect');
+    if (!select || !window.MargaPayrollCutoff?.listPayrollPeriodOptions) return;
+    renderPayrollCutoffSelect();
+    if (select.dataset.bound === '1') return;
+    select.dataset.bound = '1';
+    select.addEventListener('change', () => {
+        const match = window.MargaPayrollCutoff.listPayrollPeriodOptions(24)
+            .find((period) => period.key === select.value);
+        if (!match) return;
+        setPayrollPeriodInputs(match);
+        refreshPayrollModel();
+    });
+}
+
+function renderPayrollCutoffSelect() {
+    const select = document.getElementById('payrollCutoffSelect');
+    if (!select || !window.MargaPayrollCutoff?.listPayrollPeriodOptions) return;
+    const currentKey = payrollPeriodKey(getPayrollPeriod());
+    const options = window.MargaPayrollCutoff.listPayrollPeriodOptions(16).map((period) => {
+        const selected = period.key === currentKey ? ' selected' : '';
+        return `<option value="${sanitize(period.key)}"${selected}>${sanitize(period.label)}</option>`;
+    });
+    select.innerHTML = options.join('');
+}
+
+function syncPayrollCutoffControlFromInputs() {
+    renderPayrollCutoffSelect();
+}
+
+function setPayrollPeriodInputs(period = {}) {
+    const fromInput = document.getElementById('payrollDateFromInput');
+    const toInput = document.getElementById('payrollDateToInput');
+    if (!fromInput || !toInput) return;
+    fromInput.value = period.from || '';
+    toInput.value = period.to || '';
+    syncPayrollCutoffControlFromInputs();
+}
+
 function getPayrollPeriod() {
     const from = valueOf('payrollDateFromInput') || '2026-05-10';
     const to = valueOf('payrollDateToInput') || '2026-05-25';
@@ -1079,6 +1262,10 @@ function getPayrollPeriod() {
         label: `${formatPayrollPeriodDate(from)} - ${formatPayrollPeriodDate(to)}`,
         compactLabel: `${from} to ${to}`
     };
+}
+
+function payrollPeriodKey(period = getPayrollPeriod()) {
+    return `${period.from || ''}_${period.to || ''}`;
 }
 
 function getLivePayrollWindow(period = getPayrollPeriod()) {
@@ -1176,6 +1363,22 @@ function formatPayrollPeriodDate(value) {
 function formatPayrollCell(row, key) {
     if (key === 'number') return sanitize(row.number);
     if (key === 'name') return `<strong>${sanitize(row.name)}</strong>`;
+    if (key === 'otHours') {
+        const value = row[key];
+        const hoursText = typeof value === 'number' ? sanitize(formatPayrollNumber(value)) : sanitize(value || '');
+        const status = String(row.otStatusLabel || '').trim();
+        return `${hoursText}${status ? `<small>${sanitize(status)}</small>` : ''}`;
+    }
+    if (key === 'otPay') {
+        const value = row[key];
+        const payText = typeof value === 'number' ? sanitize(formatPayrollNumber(value)) : sanitize(value || '');
+        const pending = roundMoney(toNumber(row.pendingOtHours));
+        const approved = roundMoney(toNumber(row.approvedOtHours));
+        const note = approved > 0
+            ? `${formatPayrollNumber(approved)} hr approved`
+            : (pending > 0 ? `${formatPayrollNumber(pending)} hr pending preview` : '');
+        return `${payText}${note ? `<small>${sanitize(note)}</small>` : ''}`;
+    }
     const value = row[key];
     if (value === '' || value === null || value === undefined) return '';
     if (typeof value === 'number') return sanitize(formatPayrollNumber(value));
@@ -1259,6 +1462,7 @@ function buildSamplePayrollRows() {
             const deductionTotals = getEmployeeDeductionTotals(employee, period);
             const recurring = getRecurringPayrollValues(employee, cutoff);
             const attendance = getPayrollAttendanceSummary(employee, live);
+            const overtime = getPayrollOtSummary(employee, period);
             const payrollSource = firstPresent(employee, ['payroll_rate_source']);
             const sequence = toNumber(firstPresent(employee, ['payroll_sequence']));
             const name = firstPresent(employee, ['payroll_sheet_employee_name'])
@@ -1267,8 +1471,8 @@ function buildSamplePayrollRows() {
             const dailyRate = roundMoney(rates.dailyRate);
             const allowance = roundMoney(toNumber(firstPresent(employee, ['allowance', 'payroll_allowance'])));
             const absences = attendance.absences;
-            const otHours = 0;
-            const otPay = 0;
+            const otHours = roundMoney(overtime.previewHours);
+            const otPay = roundMoney((((dailyRate / 8) * 0.25) + (dailyRate / 8)) * otHours);
             const rdot = 0;
             const regularOt = 0;
             const holidayPay = 0;
@@ -1345,7 +1549,10 @@ function buildSamplePayrollRows() {
                 deductionAdjustment,
                 netSalary: roundMoney(grossIncome + nontaxAllowance - withholdingTax + taxRefund - sssLoan - coopLoan - philhealthAdjustment - bankLoan - cashAdvance - pagibigLoan - tshirt - otherDeduction - houseRental - deductionAdjustment - taxAdjustment),
                 sourceLabel: payrollSource || 'tbl_employee',
-                attendanceDaysScope: attendance.elapsedDays
+                attendanceDaysScope: attendance.elapsedDays,
+                otStatusLabel: overtime.sourceLabel,
+                approvedOtHours: overtime.approvedHours,
+                pendingOtHours: overtime.pendingHours
             };
         })
         .filter(Boolean)
@@ -1408,6 +1615,61 @@ function getPayrollAttendanceSummary(employee, live = getLivePayrollWindow()) {
         absences: Math.max(0, elapsedDays - daysWorked),
         minutesLate: roundMoney(minutesLate),
         utHours: roundMoney(utHours)
+    };
+}
+
+function getPayrollOtSummary(employee, period = getPayrollPeriod()) {
+    const employeeId = Number(firstPresent(employee, ['id', '_docId', 'staff_id', 'employee_id']) || 0) || 0;
+    const overtimeHoursFromAdjustment = window.MargaAttendanceTimeRecords?.overtimeHoursFromAdjustment;
+    const adjustmentMatchesPeriod = window.MargaAttendanceTimeRecords?.adjustmentMatchesPeriod;
+    if (!employeeId || typeof overtimeHoursFromAdjustment !== 'function' || typeof adjustmentMatchesPeriod !== 'function') {
+        return {
+            previewHours: 0,
+            approvedHours: 0,
+            pendingHours: 0,
+            missingApprovedHours: 0,
+            sourceLabel: ''
+        };
+    }
+    const rows = (Array.isArray(HR_STATE.payrollAdjustments) ? HR_STATE.payrollAdjustments : [])
+        .filter((row) => Number(row.staff_id || 0) === employeeId)
+        .filter((row) => String(row.request_type || '').trim() === 'request_ot')
+        .filter((row) => ['pending', 'approved'].includes(String(row.status || '').trim()))
+        .filter((row) => adjustmentMatchesPeriod(row, period));
+    const approvedHours = roundMoney(rows
+        .filter((row) => String(row.status || '').trim() === 'approved')
+        .reduce((sum, row) => sum + overtimeHoursFromAdjustment(row), 0));
+    const pendingHours = roundMoney(rows
+        .filter((row) => String(row.status || '').trim() === 'pending')
+        .reduce((sum, row) => sum + overtimeHoursFromAdjustment(row), 0));
+    const missingApprovedHours = rows
+        .filter((row) => String(row.status || '').trim() === 'approved')
+        .filter((row) => overtimeHoursFromAdjustment(row) <= 0).length;
+
+    const byDate = new Map();
+    rows.forEach((row) => {
+        const dateKey = String(row.attendance_date || '').trim();
+        if (!dateKey) return;
+        const hours = roundMoney(overtimeHoursFromAdjustment(row));
+        const status = String(row.status || '').trim();
+        const score = status === 'approved'
+            ? (hours > 0 ? 4 : 2)
+            : (hours > 0 ? 3 : 1);
+        const existing = byDate.get(dateKey);
+        if (!existing || score > existing.score) {
+            byDate.set(dateKey, { row, hours, status, score });
+        }
+    });
+    const previewHours = roundMoney(Array.from(byDate.values()).reduce((sum, entry) => sum + entry.hours, 0));
+    const sourceLabel = approvedHours > 0
+        ? 'Approved OT'
+        : (previewHours > 0 ? 'Pending OT preview' : (missingApprovedHours ? 'Approved OT missing hours' : ''));
+    return {
+        previewHours,
+        approvedHours,
+        pendingHours,
+        missingApprovedHours,
+        sourceLabel
     };
 }
 
@@ -1857,6 +2119,7 @@ async function saveEmployeeDetails() {
         }
         await persistActiveEmployeeSummary(HR_STATE.employees);
         renderEmployees();
+        mountHrTimeRecordsPane();
         renderPayrollModel();
         document.getElementById('employeeModalBrief').innerHTML = renderEmployeeBrief(findEmployeeById(docId) || { ...fields, _docId: docId });
         renderEmployeeDeductions(docId);
@@ -2069,6 +2332,108 @@ function normalizeEmployeeDeduction(record = {}) {
             postedBy: String(firstPresent(entry, ['postedBy']) || '').trim()
         }))
     };
+}
+
+function normalizePayrollDisbursement(record = {}) {
+    return {
+        _docId: String(record._docId || record.id || '').trim(),
+        periodFrom: String(firstPresent(record, ['period_from', 'periodFrom']) || '').trim(),
+        periodTo: String(firstPresent(record, ['period_to', 'periodTo']) || '').trim(),
+        periodKey: String(firstPresent(record, ['period_key', 'periodKey']) || '').trim(),
+        staffId: String(firstPresent(record, ['staff_id', 'staffId', 'employee_id']) || '').trim(),
+        staffName: String(firstPresent(record, ['staff_name', 'staffName', 'employee_name']) || '').trim(),
+        payrollName: String(firstPresent(record, ['payroll_name', 'payrollName']) || '').trim(),
+        amount: roundMoney(toNumber(firstPresent(record, ['amount', 'paid_amount']))),
+        paidOn: String(firstPresent(record, ['paid_on', 'paidOn', 'date_paid']) || '').trim(),
+        remarks: String(firstPresent(record, ['remarks', 'note']) || '').trim(),
+        netSalarySnapshot: roundMoney(toNumber(firstPresent(record, ['net_salary_snapshot', 'netSalarySnapshot']))),
+        createdAt: String(firstPresent(record, ['created_at', 'createdAt']) || '').trim(),
+        createdBy: String(firstPresent(record, ['created_by', 'createdBy']) || '').trim()
+    };
+}
+
+function getPayrollDisbursements(period = getPayrollPeriod()) {
+    const key = payrollPeriodKey(period);
+    return HR_STATE.payrollDisbursements
+        .filter((item) => item.periodKey === key || (item.periodFrom === period.from && item.periodTo === period.to))
+        .sort((left, right) => String(right.paidOn || right.createdAt || '').localeCompare(String(left.paidOn || left.createdAt || '')));
+}
+
+function getPayrollDisbursementSummaryMap(period = getPayrollPeriod()) {
+    const map = new Map();
+    getPayrollDisbursements(period).forEach((item) => {
+        const staffKey = String(item.staffId || '').trim();
+        if (!staffKey) return;
+        const current = map.get(staffKey) || { totalPaid: 0, entries: [] };
+        current.totalPaid = roundMoney(current.totalPaid + item.amount);
+        current.entries.push(item);
+        map.set(staffKey, current);
+    });
+    return map;
+}
+
+function getPayrollRowPaymentState(row, summaryMap = new Map()) {
+    const summary = summaryMap.get(String(row.id || '').trim()) || { totalPaid: 0, entries: [] };
+    const paidAmount = roundMoney(summary.totalPaid || 0);
+    const balanceAmount = roundMoney(Math.max(0, roundMoney(row.netSalary) - paidAmount));
+    return {
+        paidAmount,
+        balanceAmount,
+        entries: summary.entries
+    };
+}
+
+async function promptPayrollDisbursement(row, paymentState, period = getPayrollPeriod()) {
+    const maxAmount = roundMoney(Math.max(0, paymentState.balanceAmount));
+    if (!(maxAmount > 0)) {
+        alert('This payroll line is already fully disbursed.');
+        return;
+    }
+    const amountInput = window.prompt(`Disburse amount for ${row.name}\nAvailable balance: ${formatMoneyOrDash(maxAmount)}`, String(maxAmount));
+    if (amountInput === null) return;
+    const amount = roundMoney(toNumber(amountInput));
+    if (!(amount > 0)) {
+        alert('Enter a valid disbursement amount.');
+        return;
+    }
+    if (amount > maxAmount) {
+        alert(`Amount exceeds the remaining balance of ${formatMoneyOrDash(maxAmount)}.`);
+        return;
+    }
+    const paidOn = String(window.prompt('Paid date (YYYY-MM-DD)', todayDateKey()) || '').trim() || todayDateKey();
+    const remarks = String(window.prompt('Remarks / reference (optional)', '') || '').trim();
+    const docId = `payroll-disbursement-${period.from}-${period.to}-${row.id}-${Date.now()}`;
+    const createdBy = MargaAuth.getUser()?.email || MargaAuth.getUser()?.name || 'hr';
+    await setDocument(PAYROLL_DISBURSEMENTS_COLLECTION, docId, {
+        period_from: period.from,
+        period_to: period.to,
+        period_key: payrollPeriodKey(period),
+        staff_id: String(row.id || '').trim(),
+        staff_name: row.name,
+        payroll_name: row.name,
+        amount,
+        paid_on: paidOn,
+        remarks,
+        net_salary_snapshot: roundMoney(row.netSalary),
+        created_at: new Date().toISOString(),
+        created_by: createdBy
+    });
+    HR_STATE.payrollDisbursements.unshift(normalizePayrollDisbursement({
+        _docId: docId,
+        period_from: period.from,
+        period_to: period.to,
+        period_key: payrollPeriodKey(period),
+        staff_id: String(row.id || '').trim(),
+        staff_name: row.name,
+        payroll_name: row.name,
+        amount,
+        paid_on: paidOn,
+        remarks,
+        net_salary_snapshot: roundMoney(row.netSalary),
+        created_at: new Date().toISOString(),
+        created_by: createdBy
+    }));
+    renderPayrollModel();
 }
 
 function getEmployeeDeductions(employeeId) {

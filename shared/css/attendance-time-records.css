@@ -235,13 +235,13 @@
     display: none !important;
 }
 
-#attendanceTimeRecordsFixTimeInWrap,
+#attendanceTimeRecordsFixTimeWrap,
 #attendanceTimeRecordsLocationWrap {
     display: grid;
     gap: 0.75rem;
 }
 
-#attendanceTimeRecordsFixTimeInWrap[hidden],
+#attendanceTimeRecordsFixTimeWrap[hidden],
 #attendanceTimeRecordsLocationWrap[hidden] {
     display: none !important;
 }

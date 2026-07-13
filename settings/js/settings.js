@@ -29,7 +29,6 @@ const BASE_MODULE_OPTIONS = [
     { id: 'customers', label: 'Customers Module', dashboardLabel: 'Customers', route: 'customers.html', note: 'Profiles, branches, machines' },
     { id: 'ai-product-consultant', label: 'AI Product Consultant Module', dashboardLabel: 'AI Product Consultant', route: 'ai-product-consultant/', note: 'Website inquiries, browser voice transcripts, AI cost, and sales handoff queue' },
     { id: 'billing', label: 'Billing Module', dashboardLabel: 'Billing', route: 'billing/', note: 'Invoices, billing runs, due schedules' },
-    { id: 'schedule', label: 'Schedule Planner Module', dashboardLabel: 'Schedule Planner', route: 'schedule/', note: 'Messenger routes, billing delivery, collection, and errands' },
     { id: 'master-schedule', label: 'Master Schedule Module', dashboardLabel: 'Master Schedule', route: 'master-schedule.html', note: 'Billing, collection, toner, ink, service, and PM calendar' },
     { id: 'apd', label: 'Accounts Payable and Disbursement Module', dashboardLabel: 'APD', route: 'apd/', note: 'Supplier invoices, due planning, check printing, and disbursement control' },
     { id: 'collections', label: 'Collections Module', dashboardLabel: 'Collections', route: 'collections.html', note: 'Collections, ORs, check follow-up' },
@@ -65,14 +64,14 @@ const BASE_ROLE_OPTIONS = [
 let ROLE_OPTIONS = BASE_ROLE_OPTIONS.map((role) => ({ ...role }));
 
 const BASE_ROLE_DEFAULTS = {
-    admin: ['customers', 'ai-product-consultant', 'billing', 'schedule', 'master-schedule', 'apd', 'accounting', 'collections', 'service', 'general-production', 'releasing', 'receiving', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
+    admin: ['customers', 'ai-product-consultant', 'billing', 'master-schedule', 'apd', 'accounting', 'collections', 'service', 'general-production', 'releasing', 'receiving', 'inventory', 'hr', 'reports', 'settings', 'sync', 'field', 'purchasing', 'pettycash', 'sales'],
     'ai-consultant-admin': ['ai-product-consultant'],
-    billing: ['customers', 'billing', 'schedule', 'apd', 'accounting', 'pettycash', 'reports'],
-    collection: ['customers', 'collections', 'schedule', 'master-schedule', 'reports'],
-    service: ['customers', 'ai-product-consultant', 'master-schedule', 'service', 'schedule', 'general-production', 'releasing', 'receiving', 'inventory', 'field'],
+    billing: ['customers', 'billing', 'master-schedule', 'apd', 'accounting', 'pettycash', 'reports'],
+    collection: ['customers', 'collections', 'master-schedule', 'reports'],
+    service: ['customers', 'ai-product-consultant', 'master-schedule', 'service', 'general-production', 'releasing', 'receiving', 'inventory', 'purchasing', 'field'],
     hr: ['hr', 'settings'],
     technician: ['field'],
-    messenger: ['field', 'schedule'],
+    messenger: ['field'],
     viewer: ['customers', 'reports']
 };
 

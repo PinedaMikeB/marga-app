@@ -461,3 +461,344 @@
     display: flex;
   }
 }
+
+/* ── AI Chat Widget ──────────────────────────────────── */
+.ai-chat-box {
+  min-height: 220px;
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 0.75rem;
+  background: rgba(248,250,252,0.7);
+  border-radius: 10px;
+  margin-bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.ai-chat-empty { color: #94a3b8; font-size: 0.88rem; margin: auto; text-align: center; padding: 2rem 0; }
+.ai-chat-msg { display: flex; flex-direction: column; gap: 0.2rem; max-width: 88%; }
+.ai-chat-msg--user { align-self: flex-end; text-align: right; }
+.ai-chat-msg--assistant { align-self: flex-start; }
+.ai-chat-sender { font-size: 0.72rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+.ai-chat-msg--user .ai-chat-sender { color: #4f46e5; }
+.ai-chat-msg p {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ai-chat-msg--user p { background: #4f46e5; color: #fff; border-bottom-right-radius: 3px; }
+.ai-chat-msg--assistant p { background: #fff; border: 1px solid #e2e8f0; color: #1e293b; border-bottom-left-radius: 3px; }
+.ai-chat-typing { color: #94a3b8; font-style: italic; }
+.ai-chat-input-row { display: flex; gap: 0.5rem; }
+.ai-chat-input-row .input { flex: 1; }
+
+/* ── Group Switcher ─────────────────────────────────────── */
+.group-switcher {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.6rem 0.75rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background: rgba(79,70,229,0.07);
+  border-radius: 10px;
+  border: 1px solid rgba(79,70,229,0.15);
+}
+.group-switcher-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6366f1;
+}
+.group-switcher-select {
+  width: 100%;
+  font-size: 0.82rem;
+  padding: 0.35rem 1.8rem 0.35rem 0.5rem;
+  border-radius: 7px;
+  border: 1px solid #c7d2fe;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 10 7'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236366f1' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 0.45rem center;
+  -webkit-appearance: none;
+  appearance: none;
+  color: #1e293b;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.group-switcher-select:focus { outline: 2px solid #6366f1; }
+
+/* ── Grouped Invoice Table ──────────────────────────────── */
+.invoice-grouped { background: rgba(248,250,252,0.8); }
+.invoice-branch-row td { font-size: 0.82rem; color: #475569; padding-left: 2rem !important; }
+.invoice-branch-name { font-style: italic; }
+.invoice-expand-btn { font-size: 0.78rem; white-space: nowrap; }
+
+/* ── Admin Tabs ─────────────────────────────────────────── */
+.admin-tabs {
+  display: flex;
+  gap: .5rem;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid #e2e8f0;
+  padding-bottom: .5rem;
+}
+.admin-tab-btn {
+  background: none;
+  border: none;
+  padding: .5rem 1.1rem;
+  font-size: .9rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 8px 8px 0 0;
+  transition: color .15s, background .15s;
+}
+.admin-tab-btn:hover { color: #4f46e5; background: #f1f5f9; }
+.admin-tab-btn.active { color: #4f46e5; background: #eef2ff; border-bottom: 3px solid #4f46e5; }
+
+/* ── Credentials Tab ────────────────────────────────────── */
+.cred-filters {
+  display: flex;
+  gap: .5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.cred-filters .input { flex: 1; min-width: 160px; max-width: 280px; font-size: .85rem; }
+.cred-table td { vertical-align: top; padding: .6rem .75rem; }
+.cred-name { font-weight: 600; font-size: .9rem; }
+.cred-login { font-size: .78rem; font-family: monospace; }
+.cred-co-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  background: #eef2ff;
+  color: #4338ca;
+  border-radius: 6px;
+  padding: .15rem .45rem;
+  font-size: .72rem;
+  font-weight: 600;
+  margin: .1rem .1rem 0 0;
+}
+.cred-unlink-btn {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: .8rem;
+  padding: 0 .1rem;
+  line-height: 1;
+}
+.cred-status { font-size: .8rem; font-weight: 600; white-space: nowrap; }
+.cred-status--ok  { color: #16a34a; }
+.cred-status--new { color: #d97706; }
+.cred-status--off { color: #9ca3af; }
+.cred-actions { display: flex; gap: .3rem; flex-wrap: wrap; }
+.cred-row--inactive td { opacity: .55; }
+.cred-loading { padding: 2rem; text-align: center; color: #94a3b8; }
+.cred-pagination {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .75rem 1rem;
+  font-size: .85rem;
+  color: #64748b;
+  border-top: 1px solid #f1f5f9;
+}
+
+/* ── Edit Row ───────────────────────────────────────────── */
+.cred-edit-row td { background: #f8fafc; border-top: 2px solid #c7d2fe; }
+.cred-edit-panel { padding: .75rem .5rem; }
+.cred-edit-panel h4 { margin: 0 0 .75rem; font-size: .95rem; color: #1e293b; }
+.cred-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px,1fr));
+  gap: .6rem;
+  margin-bottom: .75rem;
+}
+.cred-edit-grid label { display: flex; flex-direction: column; gap: .25rem; font-size: .82rem; font-weight: 600; color: #475569; }
+.cred-edit-grid .input { font-size: .85rem; }
+.cred-edit-actions { display: flex; gap: .5rem; margin-bottom: 1rem; }
+.cred-access-section { border-top: 1px solid #e2e8f0; padding-top: .85rem; margin-top: .25rem; }
+.cred-access-section h4 { font-size: .88rem; margin: 0 0 .5rem; }
+.cred-linked-cos { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .6rem; }
+.cred-link-form { position: relative; max-width: 340px; }
+.cred-link-results {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 4px);
+  left: 0; right: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.1);
+  overflow: hidden;
+}
+.cred-link-results.hidden { display: none; }
+.cred-link-result {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #f1f5f9;
+  padding: .45rem .75rem;
+  font-size: .85rem;
+  cursor: pointer;
+  color: #1e293b;
+}
+.cred-link-result:hover { background: #f1f5f9; }
+.cred-link-hint { padding: .5rem .75rem; color: #94a3b8; font-size: .82rem; }
+
+/* ── PIN Modal ──────────────────────────────────────────── */
+.cred-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+.cred-modal.hidden { display: none; }
+.cred-modal-box {
+  background: #fff;
+  border-radius: 16px;
+  padding: 2rem 2.5rem;
+  max-width: 360px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,.18);
+}
+.cred-modal-box h3 { margin: 0 0 .3rem; }
+.cred-pin-display {
+  font-size: 2.8rem;
+  font-weight: 800;
+  letter-spacing: .3em;
+  color: #4f46e5;
+  background: #eef2ff;
+  border-radius: 12px;
+  padding: .75rem 1rem;
+  margin: 1rem 0 .75rem;
+  font-family: monospace;
+}
+.cred-pin-warning { font-size: .78rem; color: #b45309; margin-bottom: 1rem; }
+
+/* ── Credentials Loading Spinner ─────────────────────────── */
+.cred-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .75rem;
+  padding: 3rem;
+  color: #64748b;
+  font-size: .9rem;
+}
+.cred-loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #4f46e5;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Clickable KPI Cards ─────────────────────────────────── */
+.kpi-card--link {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  transition: background .15s, box-shadow .15s, transform .1s;
+  user-select: none;
+}
+.kpi-card--link:hover {
+  background: #f1f5ff;
+  box-shadow: 0 4px 16px rgba(79,70,229,.12);
+  transform: translateY(-1px);
+}
+.kpi-card--link:active { transform: translateY(0); }
+.kpi-card-inner { flex: 1; }
+.kpi-arrow {
+  font-size: 1.1rem;
+  color: #a5b4fc;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition: color .15s, transform .15s;
+}
+.kpi-card--link:hover .kpi-arrow {
+  color: #4f46e5;
+  transform: translateX(3px);
+}
+
+/* ── Device Detail Note ─────────────────────────────────── */
+.care-device-note {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: .6rem .85rem;
+  font-size: .82rem;
+  color: #475569;
+  margin-bottom: .75rem;
+  line-height: 1.5;
+}
+.care-device-note-icon {
+  font-style: normal;
+  color: #6366f1;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: .05rem;
+}
+
+/* ── Device Status Tags ─────────────────────────────────── */
+.tag.status-active     { background: #dcfce7; color: #15803d; border: 1px solid #86efac; font-weight: 700; }
+.tag.status-incoming   { background: #dbeafe; color: #1d4ed8; border: 1px solid #93c5fd; font-weight: 700; }
+.tag.status-repair     { background: #fef3c7; color: #b45309; border: 1px solid #fcd34d; font-weight: 700; }
+.tag.status-attention  { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; font-weight: 700; }
+.tag.status-inactive   { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; font-weight: 600; }
+
+/* ── Device Status Filter Chips ─────────────────────────── */
+.device-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  padding: .5rem .1rem .75rem;
+}
+.device-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .3rem .75rem;
+  border-radius: 20px;
+  border: 1.5px solid #e2e8f0;
+  background: #fff;
+  font-size: .78rem;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.device-filter-chip:hover { border-color: #a5b4fc; color: #4f46e5; }
+.device-filter-chip.active { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+.device-filter-chip.chip-active.active { background: #16a34a; border-color: #16a34a; }
+.device-filter-chip.chip-needs-attention.active { background: #dc2626; border-color: #dc2626; }
+.device-filter-chip.chip-for-replacement.active { background: #d97706; border-color: #d97706; }
+.device-filter-chip.chip-inactive.active { background: #64748b; border-color: #64748b; }
+.chip-count {
+  background: rgba(255,255,255,.25);
+  border-radius: 10px;
+  padding: .05rem .4rem;
+  font-size: .72rem;
+}
+.device-filter-chip:not(.active) .chip-count {
+  background: #f1f5f9;
+  color: #64748b;
+}

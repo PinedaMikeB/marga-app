@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css?v=20260518-company-meeting-1">
-    <link rel="stylesheet" href="css/pettycash.css?v=20260617-pettycash-field-queue-fix-1">
+    <link rel="stylesheet" href="css/pettycash.css?v=20260623-pettycash-mobile-table-scroll-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -185,7 +185,20 @@
                         <span>Working Date</span>
                         <input type="date" id="reportDateInput">
                     </label>
-                    <div class="toolbar-note" id="workingDateNote">Preparing today's petty cash report.</div>
+                    <div class="pettycash-load-status" id="pettyCashLoadStatus" data-loading-state="loading" aria-live="polite">
+                        <div class="toolbar-note" id="workingDateNote">Preparing today's petty cash report.</div>
+                        <div
+                            class="pettycash-load-progress"
+                            id="pettyCashLoadProgress"
+                            role="progressbar"
+                            aria-valuemin="0"
+                            aria-valuemax="100"
+                            aria-valuenow="8"
+                        >
+                            <span class="pettycash-load-progress-bar" id="pettyCashLoadProgressBar"></span>
+                        </div>
+                        <div class="pettycash-load-meta" id="pettyCashLoadMeta">Opening petty cash data.</div>
+                    </div>
                 </div>
             </section>
 
@@ -458,7 +471,7 @@
                     </div>
                 </div>
                 <div class="daily-summary-grid" id="dailySummaryGrid"></div>
-                <div class="table-scroll">
+                <div class="table-scroll field-request-table-scroll">
                     <table class="ledger-table">
                         <thead>
                             <tr>
@@ -511,7 +524,7 @@
                     </div>
                     <div class="history-note">Received requests add back to cash-on-hand.</div>
                 </div>
-                <div class="table-scroll">
+                <div class="table-scroll field-request-table-scroll">
                     <table class="ledger-table">
                         <thead>
                             <tr>
@@ -543,7 +556,7 @@
                         <button type="button" class="btn btn-secondary btn-sm" id="fieldRequestExportBtn">Export CSV</button>
                     </div>
                 </div>
-                <div class="table-scroll">
+                <div class="table-scroll field-request-table-scroll">
                     <table class="ledger-table">
                         <thead>
                             <tr>
@@ -586,12 +599,12 @@
     </main>
 
     <script src="../shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
-    <script src="../shared/js/auth.js?v=20260518-login-permissions-2"></script>
+    <script src="../shared/js/auth.js?v=20260706-login-alias-fix-1"></script>
     <script src="../shared/js/utils.js"></script>
-    <script src="../shared/js/finance-accounts.js"></script>
-    <script src="../shared/js/offline-sync.js?v=20260601-local-postgres-live-1"></script>
+    <script src="../shared/js/finance-accounts.js?v=20260622-medical-assistance-account-1"></script>
+    <script src="../shared/js/offline-sync.js?v=20260703-offline-queue-self-heal-1"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/pettycash.js?v=20260617-pettycash-field-sync-guard-1"></script>
+    <script src="js/pettycash.js?v=20260626-pettycash-image-preview-fix-1"></script>
 </body>
 </html>

@@ -1,0 +1,2 @@
+invoice_no,found,customer,branch,billing_month,amount,paid_amount,balance_hint,date_received,received_by,receipt_source,schedule_count,history_count,payment_count
+130496,false,,,,0,0,0,,,,0,0,0

@@ -242,6 +242,10 @@ function normalizeUsername(value) {
   return String(value || "").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "").replace(/^[._-]+|[._-]+$/g, "").slice(0, 48);
 }
 
+function normalizeNameKey(value) {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
 async function queryEmployee(fieldPath, value) {
   const lookupValue = String(value || "").trim();
   if (!lookupValue) return null;
@@ -277,9 +281,44 @@ async function queryEmployee(fieldPath, value) {
   return users.find(isEmployeeActive) || users[0] || null;
 }
 
+async function queryEmployees(fieldPath, value, limit = 25) {
+  const lookupValue = String(value || "").trim();
+  if (!lookupValue) return [];
+  const token = usesGoogleFirestore() ? await getGoogleAccessToken() : "";
+  const body = {
+    structuredQuery: {
+      from: [{ collectionId: "tbl_employee" }],
+      where: {
+        fieldFilter: {
+          field: { fieldPath },
+          op: "EQUAL",
+          value: { stringValue: lookupValue },
+        },
+      },
+      limit,
+    },
+  };
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const key = env("FIREBASE_API_KEY") || env("FIRESTORE_API_KEY") || "margabase-local";
+  const response = await fetch(`${firestoreBaseUrl()}:runQuery?key=${encodeURIComponent(key)}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.error) {
+    throw new Error(payload?.error?.message || `Firestore employee lookup failed (${response.status}).`);
+  }
+  return Array.isArray(payload)
+    ? payload.map((row) => row.document).filter(Boolean).map(parseFirestoreDoc).filter(Boolean)
+    : [];
+}
+
 async function findEmployee(ident) {
   const rawIdent = String(ident || "").trim();
   const normalizedIdent = rawIdent.toLowerCase();
+  const normalizedNameIdent = normalizeNameKey(rawIdent);
   const looksLikeEmail = normalizedIdent.includes("@");
   const username = normalizeUsername(rawIdent);
   const emailLocalPart = looksLikeEmail ? normalizeUsername(normalizedIdent.split("@")[0]) : "";
@@ -294,6 +333,47 @@ async function findEmployee(ident) {
     const employee = await queryEmployee(fieldPath, value);
     if (employee) return employee;
   }
+
+  const nicknameMatches = await queryEmployees("nickname", rawIdent, 20).catch(() => []);
+  const exactNickname = nicknameMatches.find((employee) => normalizeNameKey(employee?.nickname) === normalizedNameIdent && isEmployeeActive(employee));
+  if (exactNickname) return exactNickname;
+
+  const fullNameCandidates = [];
+  const pushCandidates = (rows) => {
+    rows.forEach((row) => {
+      const key = String(row?._docId || row?.id || "").trim();
+      if (!key) return;
+      if (!fullNameCandidates.some((item) => String(item?._docId || item?.id || "").trim() === key)) {
+        fullNameCandidates.push(row);
+      }
+    });
+  };
+  if (rawIdent.includes(" ")) {
+    const parts = rawIdent.split(/\s+/).filter(Boolean);
+    if (parts[0]) pushCandidates(await queryEmployees("firstname", parts[0], 20).catch(() => []));
+    if (parts.length > 1) pushCandidates(await queryEmployees("lastname", parts[parts.length - 1], 20).catch(() => []));
+  } else if (normalizedNameIdent) {
+    const firstNameMatches = await queryEmployees("firstname", rawIdent, 20).catch(() => []);
+    pushCandidates(firstNameMatches);
+    const lastNameMatches = await queryEmployees("lastname", rawIdent, 20).catch(() => []);
+    pushCandidates(lastNameMatches);
+    if (!fullNameCandidates.length && normalizedNameIdent.length >= 8) {
+      const firstBlock = rawIdent.slice(0, Math.min(7, rawIdent.length));
+      pushCandidates(await queryEmployees("firstname", firstBlock.charAt(0).toUpperCase() + firstBlock.slice(1).toLowerCase(), 20).catch(() => []));
+    }
+  }
+
+  const exactFullName = fullNameCandidates.find((employee) => {
+    const candidateKeys = [
+      employee?.marga_fullname,
+      employee?.name,
+      `${String(employee?.firstname || "").trim()} ${String(employee?.lastname || "").trim()}`.trim(),
+      `${String(employee?.firstname || "").trim()}${String(employee?.lastname || "").trim()}`.trim()
+    ].map(normalizeNameKey).filter(Boolean);
+    return candidateKeys.includes(normalizedNameIdent) && isEmployeeActive(employee);
+  });
+  if (exactFullName) return exactFullName;
+
   return null;
 }
 

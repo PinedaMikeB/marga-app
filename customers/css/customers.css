@@ -47,6 +47,24 @@ body {
     max-width: 1180px;
 }
 
+.customer-toolbar {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) auto;
+    gap: 8px 10px;
+    align-items: end;
+    margin: 0 0 8px;
+    padding: 8px;
+    border: 1px solid #c8d2dc;
+    background: #f9fbfc;
+}
+
+.toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+
 .legacy-window {
     width: min(100%, 1080px);
     border: 1px solid var(--cust-line-dark);
@@ -554,6 +572,7 @@ body {
     .branch-grid,
     .contract-grid,
     .company-grid,
+    .customer-toolbar,
     .serial-finder,
     .serial-finder-controls,
     .selector-row,

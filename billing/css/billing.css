@@ -446,8 +446,34 @@
     background: #94a3b8;
 }
 
+.main-content,
+.main-header,
+.header-title {
+    min-width: 0;
+}
+
 .sheet-wrap {
     overflow: auto;
+}
+
+.billing-dashboard,
+.billing-dashboard .sheet-card,
+.billing-dashboard .sheet-header,
+.billing-dashboard .matrix-header,
+.billing-dashboard .matrix-filter-row,
+.billing-dashboard .matrix-search-block,
+.billing-dashboard .matrix-search-meta,
+.billing-dashboard .matrix-card,
+.billing-dashboard .matrix-total-strip,
+.billing-dashboard .customer-statement-bar,
+.billing-dashboard .sheet-wrap,
+.billing-dashboard .matrix-scroll {
+    min-width: 0;
+}
+
+.billing-dashboard {
+    width: 100%;
+    max-width: 100%;
 }
 
 .billing-scorecard-wrap {
@@ -532,18 +558,25 @@
 }
 
 .matrix-scroll {
+    display: block;
+}
+
+.matrix-scroll {
     width: 100%;
     max-width: 100%;
     min-height: 0;
     max-height: max(420px, calc(100vh - 180px));
-    overflow: auto;
+    overflow-x: scroll;
+    overflow-y: auto;
     overscroll-behavior: contain;
+    touch-action: pan-x pan-y;
     scrollbar-gutter: stable both-edges;
     -webkit-overflow-scrolling: touch;
+    position: relative;
 }
 
 .billing-sheet {
-    width: 100%;
+    width: max-content;
     min-width: 840px;
     border-collapse: collapse;
     background: var(--bill-paper);
@@ -1226,6 +1259,17 @@ button.matrix-total-card:focus-visible {
 
 .prepared-table {
     min-width: 640px;
+}
+
+.table-action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+    align-items: center;
+}
+
+.table-action-row .btn {
+    min-width: 108px;
 }
 
 .muted-cell {
@@ -3046,7 +3090,51 @@ button.matrix-total-card:focus-visible {
     }
 
     .billing-sheet {
+        width: max-content;
         min-width: 760px;
+    }
+
+    .billing-dashboard {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .matrix-card {
+        overflow: visible;
+    }
+
+    .matrix-card .matrix-scroll {
+        width: 100%;
+        max-width: calc(100vw - 2rem);
+        max-height: none;
+        overflow-x: scroll;
+        overflow-y: auto;
+        touch-action: pan-x pan-y;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .matrix-sheet .rd-col,
+    .matrix-sheet .sn-col,
+    .matrix-sheet .customer-col,
+    .matrix-sheet .branch-col {
+        position: static;
+        left: auto;
+        z-index: auto;
+        box-shadow: none;
+    }
+
+    .matrix-sheet thead .rd-col,
+    .matrix-sheet thead .sn-col,
+    .matrix-sheet thead .customer-col,
+    .matrix-sheet thead .branch-col {
+        z-index: 34;
+    }
+
+    .matrix-sheet tfoot .rd-col,
+    .matrix-sheet tfoot .sn-col,
+    .matrix-sheet tfoot .customer-col,
+    .matrix-sheet tfoot .branch-col {
+        z-index: 12;
     }
 
     .billing-modal-overlay {

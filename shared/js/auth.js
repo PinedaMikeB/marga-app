@@ -754,6 +754,10 @@ MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(i
     const rawIdent = String(ident || '').trim();
     const normalizedIdent = rawIdent.toLowerCase();
     const looksLikeEmail = normalizedIdent.includes('@');
+    const normalizeNameKey = (value) => String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '');
     const normalizeUsername = (value) => String(value || '')
         .trim()
         .toLowerCase()
@@ -761,6 +765,7 @@ MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(i
         .replace(/^[._-]+|[._-]+$/g, '')
         .slice(0, 48);
     const username = normalizeUsername(rawIdent);
+    const normalizedNameIdent = normalizeNameKey(rawIdent);
     const emailLocalPart = looksLikeEmail ? normalizeUsername(normalizedIdent.split('@')[0]) : '';
     const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const makeBusyError = () => {
@@ -811,6 +816,32 @@ MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(i
                 limit: 10
             }
         });
+    };
+    const runMany = async (fieldPath, value) => {
+        const lookupValue = String(value ?? '').trim();
+        if (!lookupValue) return [];
+        const response = await fetch(
+            `${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`,
+            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+                structuredQuery: {
+                    from: [{ collectionId: 'tbl_employee' }],
+                    where: {
+                        fieldFilter: {
+                            field: { fieldPath },
+                            op: 'EQUAL',
+                            value: { stringValue: lookupValue }
+                        }
+                    },
+                    limit: 25
+                }
+            }) }
+        );
+        const payload = await response.json();
+        const errorCode = readErrorCode(payload);
+        if (response.status === 429 || errorCode === 429) throw makeBusyError();
+        if (!response.ok || errorCode) return [];
+        const docs = Array.isArray(payload) ? payload.map((row) => row.document).filter(Boolean) : [];
+        return docs.map((doc) => this.parseFirestoreDoc(doc)).filter(Boolean);
     };
     const runEmailLocalPart = async (fieldPath, localPart) => {
         const lookupValue = normalizeUsername(localPart);
@@ -873,6 +904,43 @@ MargaAuth.findUserByEmailOrUsername = async function findUserByEmailOrUsername(i
         const employeeByLoginEmailLocal = await runEmailLocalPart('marga_login_email', username);
         if (employeeByLoginEmailLocal) return employeeByLoginEmailLocal;
     }
+
+    const nicknameMatches = await runMany('nickname', rawIdent).catch(() => []);
+    const exactNickname = nicknameMatches.find((user) => normalizeNameKey(user?.nickname) === normalizedNameIdent && this.isEmployeeActive(user));
+    if (exactNickname) return exactNickname;
+
+    const candidateMap = new Map();
+    const addCandidates = (rows = []) => {
+        rows.forEach((user) => {
+            const key = String(user?._docId || user?.id || '').trim();
+            if (key && !candidateMap.has(key)) candidateMap.set(key, user);
+        });
+    };
+
+    if (rawIdent.includes(' ')) {
+        const parts = rawIdent.split(/\s+/).filter(Boolean);
+        if (parts[0]) addCandidates(await runMany('firstname', parts[0]).catch(() => []));
+        if (parts.length > 1) addCandidates(await runMany('lastname', parts[parts.length - 1]).catch(() => []));
+    } else if (normalizedNameIdent) {
+        addCandidates(await runMany('firstname', rawIdent).catch(() => []));
+        addCandidates(await runMany('lastname', rawIdent).catch(() => []));
+        if (!candidateMap.size && normalizedNameIdent.length >= 8) {
+            const firstBlock = rawIdent.slice(0, Math.min(7, rawIdent.length));
+            const capitalized = firstBlock.charAt(0).toUpperCase() + firstBlock.slice(1).toLowerCase();
+            addCandidates(await runMany('firstname', capitalized).catch(() => []));
+        }
+    }
+
+    const exactFullName = [...candidateMap.values()].find((user) => {
+        const keys = [
+            user?.marga_fullname,
+            user?.name,
+            `${String(user?.firstname || '').trim()} ${String(user?.lastname || '').trim()}`.trim(),
+            `${String(user?.firstname || '').trim()}${String(user?.lastname || '').trim()}`.trim()
+        ].map(normalizeNameKey).filter(Boolean);
+        return keys.includes(normalizedNameIdent) && this.isEmployeeActive(user);
+    });
+    if (exactFullName) return exactFullName;
 
     return null;
 };

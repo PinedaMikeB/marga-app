@@ -197,8 +197,8 @@ async function loadAssignableStaff() {
     const employees = await MargaUtils.fetchCollection('tbl_employee', 2500).catch(() => []);
     const positions = await MargaUtils.fetchCollection('tbl_empos', 500).catch(() => []);
     const positionMap = new Map(positions.map((row) => [String(row.id || ''), row]));
-    const filtered = window.MargaUtils?.filterEmployeeAssignmentOptions
-        ? MargaUtils.filterEmployeeAssignmentOptions(employees, { positions: positionMap })
+    const filtered = window.MargaUtils?.getActiveAssignmentEmployees
+        ? MargaUtils.getActiveAssignmentEmployees(employees, { positions: positionMap })
         : employees.filter((row) => Number(row.estatus || 0) === 1);
 
     purchasingState.staffOptions = filtered
@@ -217,7 +217,7 @@ async function loadAssignableStaff() {
     if (!select) return;
     const current = select.value;
     select.innerHTML = [
-        '<option value="">Select field staff...</option>',
+        '<option value="">Select employee...</option>',
         ...purchasingState.staffOptions.map((staff) => `
             <option value="${escapeHtml(String(staff.id))}">${escapeHtml(`${staff.name} - ${staff.role}`)}</option>
         `)
@@ -695,7 +695,7 @@ async function savePurchaseSchedule() {
         return;
     }
     if (!assigneeId) {
-        alert('Please assign a field staff member.');
+        alert('Please assign an employee.');
         return;
     }
 

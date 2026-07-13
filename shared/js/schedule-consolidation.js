@@ -256,6 +256,26 @@
             || 'This customer';
     }
 
+    function askConsolidationChoice({ customer, date, details, message, combineLabel, separateLabel }) {
+        const promptText = [
+            `${customer} already has schedule(s) on ${date} for the same location:`,
+            '',
+            details,
+            '',
+            message,
+            '',
+            'Type your choice:',
+            `1 = ${combineLabel}`,
+            `2 = ${separateLabel}`,
+            '3 = Cancel and go back'
+        ].join('\n');
+        const response = window.prompt(promptText, '1');
+        const choice = clean(response);
+        if (!choice || choice === '3') return 'cancel';
+        if (choice === '2') return 'separate';
+        return 'combine';
+    }
+
     function chooseOwner(conflicts, context, getStaffName) {
         const serviceOwner = conflicts.find((row) => isServiceTask(row) && numeric(row.tech_id) > 0);
         if (serviceOwner) return serviceOwner;
@@ -329,10 +349,22 @@
         });
 
         if (newIsService) {
-            const ok = window.confirm(
-                `${customer} already has schedule(s) on ${date} for the same location:\n\n${details}\n\nThis Service schedule will combine the customer visit. ${newStaffName} will own the field stop, and the existing billing/collection/delivery/reading records will stay as child records.\n\nSave as one combined visit?`
-            );
-            if (!ok) return { ok: false, staffId };
+            const choice = askConsolidationChoice({
+                customer,
+                date,
+                details,
+                message: `This Service schedule can combine the customer visit. ${newStaffName} will own the field stop, and the existing billing/collection/delivery/reading records will stay as child records.`,
+                combineLabel: `Combine visit under ${newStaffName}`,
+                separateLabel: `Keep ${newStaffName} as a separate visit`
+            });
+            if (choice === 'cancel') return { ok: false, staffId };
+            if (choice === 'separate') {
+                return {
+                    ok: true,
+                    staffId,
+                    keepSeparateVisit: true
+                };
+            }
 
             await Promise.all(conflicts
                 .map((row) => patchDoc('tbl_schedule', row._docId || row.id, {
@@ -360,10 +392,22 @@
             return { ok: true, staffId, reassignmentOverride: true };
         }
 
-        const ok = window.confirm(
-            `${customer} already has schedule(s) on ${date} for the same location:\n\n${details}\n\nThis schedule will be recorded as part of one combined customer visit owned by ${ownerName}. The original ${taskLabel(candidate)} record will still be kept as a child schedule.\n\nSave as one combined visit?`
-        );
-        if (!ok) return { ok: false, staffId };
+        const choice = askConsolidationChoice({
+            customer,
+            date,
+            details,
+            message: `This ${taskLabel(candidate)} schedule can be recorded as part of one combined customer visit owned by ${ownerName}. The original ${taskLabel(candidate)} record will still be kept as a child schedule.`,
+            combineLabel: `Assign this schedule to ${ownerName} and combine the visit`,
+            separateLabel: `Keep ${newStaffName} as a separate visit`
+        });
+        if (choice === 'cancel') return { ok: false, staffId };
+        if (choice === 'separate') {
+            return {
+                ok: true,
+                staffId,
+                keepSeparateVisit: true
+            };
+        }
         await Promise.all(conflicts.map((row) => patchDoc('tbl_schedule', row._docId || row.id, {
             ...ownerFields,
             combined_visit_role: numeric(row.id || row.schedule_id) === primaryScheduleId ? 'primary' : 'item',

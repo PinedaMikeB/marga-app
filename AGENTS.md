@@ -24,14 +24,16 @@ Before doing a task, choose the cheapest safe path that preserves business truth
 ## Product Design Guardrails
 - Anticipate user and staff mistakes before they happen.
 - Use searchable dropdowns for real entities such as customers, invoices, branches, machines, employees, OR numbers, and accounts.
+- Keep labels minimalist: if a field is already clearly labeled `Customer`, `Branch`, `Invoice`, or similar, do not add a second explanatory line that only repeats the same meaning. Default to clean headings and plain controls before adding helper copy.
 - Use tables/grids for multi-line financial or operational data instead of free-text remarks when accuracy matters.
 - Add validation and audit trails for billing, collections, payments, schedules, petty cash, DR/releasing, and status changes.
 - Prefer reusable helpers and database-side rules over copy-paste browser logic that can drift between modules.
 
 ## Deploy And Release (Canonical)
 - Work in `/Volumes/Wotg Drive Mike/GitHub/Marga-App` on `main` for production staff testing at `app.marga.biz`.
-- After verified Marga-App fixes: **commit and push to `main`** so Netlify deploys automatically, unless the user explicitly says not to push in that message.
-- Verify on `app.marga.biz` (hard refresh for service worker), then sync to `Marga-App-staging` / `codex/staging` only after production is confirmed.
+- After updating local `Marga-App`, automatically deploy that updated code to the live app served at `app.marga.biz` so the owner can test immediately. Do not stop to ask whether to deploy; deploy automatically unless the owner explicitly says not to.
+- Wait for the owner's live `app.marga.biz` result first, then sync to `Marga-App-staging` / `codex/staging`, then commit and push the verified change to GitHub `main` unless the owner explicitly requests a different order.
+- Verify on `app.marga.biz` with a hard refresh for service worker changes.
 - Bump `service-worker.js` cache name and critical script `?v=` query strings on every deploy.
 
 ## Migration Guardrail

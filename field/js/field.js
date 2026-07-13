@@ -85,6 +85,7 @@ const FIELD_MODAL_DRAFT_INPUT_IDS = [
     'fieldWorkMachineStatus',
     'fieldClosePin',
     'fieldSerialInput',
+    'fieldActualSerialInput',
     'fieldSerialMissingCheck',
     'fieldMissingSerialInput',
     'fieldPartInput',
@@ -129,6 +130,56 @@ const FIELD_MODAL_DRAFT_FILE_IDS = [
     'fieldLocationPhoto'
 ];
 
+function bindHorizontalTouchScroll(container) {
+    if (!container || container.dataset.horizontalScrollBound === '1') return;
+    container.dataset.horizontalScrollBound = '1';
+
+    let startX = 0;
+    let startY = 0;
+    let startScrollLeft = 0;
+    let draggingHorizontally = null;
+
+    container.addEventListener('touchstart', (event) => {
+        if (!event.touches || event.touches.length !== 1) return;
+        if (container.scrollWidth <= container.clientWidth + 4) return;
+        const touch = event.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        startScrollLeft = container.scrollLeft;
+        draggingHorizontally = null;
+    }, { passive: true });
+
+    container.addEventListener('touchmove', (event) => {
+        if (!event.touches || event.touches.length !== 1) return;
+        if (container.scrollWidth <= container.clientWidth + 4) return;
+        const touch = event.touches[0];
+        const deltaX = touch.clientX - startX;
+        const deltaY = touch.clientY - startY;
+
+        if (draggingHorizontally === null) {
+            if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) return;
+            draggingHorizontally = Math.abs(deltaX) > Math.abs(deltaY);
+        }
+
+        if (!draggingHorizontally) return;
+
+        container.scrollLeft = startScrollLeft - deltaX;
+        event.preventDefault();
+    }, { passive: false });
+
+    container.addEventListener('touchend', () => {
+        draggingHorizontally = null;
+    }, { passive: true });
+
+    container.addEventListener('touchcancel', () => {
+        draggingHorizontally = null;
+    }, { passive: true });
+}
+
+function setupHorizontalTouchScroll() {
+    document.querySelectorAll('[data-horizontal-scroll]').forEach(bindHorizontalTouchScroll);
+}
+
 const FIELD_REIMBURSEMENT_REQUEST_TYPES = [
     'Reimbursement',
     'Cash Advance',
@@ -156,6 +207,8 @@ const FIELD_REIMBURSEMENT_CATEGORIES = [
     'Toll',
     'Parking',
     'Transportation / fare',
+    'Motorcycle maintenance',
+    'Medical assistance',
     'Parts / supplies',
     'Delivery / courier',
     'Emergency purchase',
@@ -168,6 +221,8 @@ const FIELD_REIMBURSEMENT_ITEM_GROUPS = [
     { id: 'toll', label: 'Toll', accountId: 'commute_fare_expense', category: 'Toll' },
     { id: 'parking', label: 'Parking', accountId: 'parking_expense', category: 'Parking' },
     { id: 'fare', label: 'Transportation / Fare', accountId: 'commute_fare_expense', category: 'Transportation / fare' },
+    { id: 'motorcycle_maintenance', label: 'Motorcycle Maintenance', accountId: 'repairs_maintenance_motorcycles', category: 'Motorcycle maintenance' },
+    { id: 'medical_assistance', label: 'Medical Assistance', accountId: 'medical_assistance_expense', category: 'Medical assistance' },
     { id: 'parts', label: 'Emergency Parts / Supplies', accountId: 'printer_repair_parts_field_expense', category: 'Parts / supplies' },
     { id: 'delivery', label: 'Delivery / Courier', accountId: 'commute_fare_expense', category: 'Delivery / courier' },
     { id: 'emergency', label: 'Emergency Purchase', accountId: 'other_materials_expense', category: 'Emergency purchase' },
@@ -180,6 +235,8 @@ const FIELD_REIMBURSEMENT_ACCOUNT_OPTIONS = [
     { id: 'meal_allowance_expense_field_operations', label: 'Meal Allowance Expense - Field Operations' },
     { id: 'parking_expense', label: 'Parking Expense' },
     { id: 'commute_fare_expense', label: 'Transportation / Fare / Toll' },
+    { id: 'repairs_maintenance_motorcycles', label: 'Repairs and Maintenance - Motorcycles' },
+    { id: 'medical_assistance_expense', label: 'Medical Assistance Expense' },
     { id: 'printer_repair_parts_field_expense', label: 'Printer Repair Parts Expense - Field Service' },
     { id: 'other_materials_expense', label: 'Other Materials / Emergency Purchase' }
 ];
@@ -196,6 +253,13 @@ const FIELD_REIMBURSEMENT_TABS = [
 ];
 
 const FIELD_REIMBURSEMENT_EDITABLE_STATUSES = new Set(['Draft', 'Incomplete / Needs Correction', 'For Liquidation', 'Partially Liquidated']);
+const FIELD_SERIAL_VERIFY_REQUIRED_STATUSES = new Set([
+    'verified_correct',
+    'change_requested',
+    'approved_for_general_production',
+    'applied_in_general_production'
+]);
+const FIELD_SERIAL_EMAIL_APPROVAL_ENDPOINT = '/.netlify/functions/serial-change-approval';
 
 const FALLBACK_MACHINE_STATUSES = [
     { id: 1, label: 'Running / Print OK' },
@@ -488,9 +552,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('fieldModalReopenTask').addEventListener('click', reopenTask);
     document.getElementById('fieldModalCloseTask').addEventListener('click', closeTask);
     document.getElementById('fieldSaveSerialBtn').addEventListener('click', saveSerialMapping);
+    document.getElementById('fieldVerifySerialBtn')?.addEventListener('click', verifyTaskSerialNumber);
 
     document.getElementById('fieldSerialInput').addEventListener('input', handleSerialInputChange);
     document.getElementById('fieldSerialMissingCheck').addEventListener('change', toggleMissingSerialMode);
+    document.getElementById('fieldActualSerialInput')?.addEventListener('input', () => {
+        clearSerialVerificationIfEdited();
+        queueFieldModalDraftSave();
+    });
 
     document.getElementById('fieldAddPartBtn').addEventListener('click', addPartEntry);
     document.getElementById('fieldPartInput').addEventListener('keydown', (event) => {
@@ -540,6 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!button) return;
         removeFieldCollectionInvoice(Number(button.dataset.removeCollectionInvoice || -1));
     });
+    setupHorizontalTouchScroll();
     document.getElementById('fieldModal').addEventListener('click', toggleModalSection);
     document.getElementById('fieldModal').addEventListener('input', () => {
         updateActionButtons();
@@ -602,6 +672,172 @@ function currentFieldDisplayName() {
         document.getElementById('fieldHeaderTitle')?.textContent?.split(' - ')[0] ||
         'Field Staff'
     ).trim();
+}
+
+function normalizeSerialNumber(value) {
+    return String(value || '')
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, '')
+        .replace(/[^A-Z0-9_-]/g, '');
+}
+
+function getRecordedSerialForRow(row = getCurrentRow()) {
+    const selectedMachine = getSelectedMachine();
+    const machineSerial = String(selectedMachine?.serial || '').trim();
+    if (machineSerial) return machineSerial;
+    return String(row?.field_serial_selected || row?.serial_correction_current_serial || row?.serial_label || '').trim();
+}
+
+function serialVerificationFieldNames() {
+    return [
+        'field_serial_recorded_value',
+        'field_serial_actual_value',
+        'field_serial_verification_status',
+        'field_serial_verified_at',
+        'field_serial_verified_by',
+        'field_serial_verified_by_name',
+        'field_serial_change_requested',
+        'field_serial_change_request_id',
+        'field_serial_change_request_status',
+        'field_serial_change_requested_value',
+        'field_serial_change_requested_at',
+        'field_serial_change_requested_by',
+        'field_serial_change_requested_by_name',
+        'field_serial_change_email_sent_at',
+        'field_serial_change_email_status',
+        'field_serial_change_email_error'
+    ];
+}
+
+function buildEmptySerialVerificationPatch() {
+    return {
+        field_serial_recorded_value: '',
+        field_serial_actual_value: '',
+        field_serial_verification_status: '',
+        field_serial_verified_at: '',
+        field_serial_verified_by: 0,
+        field_serial_verified_by_name: '',
+        field_serial_change_requested: 0,
+        field_serial_change_request_id: '',
+        field_serial_change_request_status: '',
+        field_serial_change_requested_value: '',
+        field_serial_change_requested_at: '',
+        field_serial_change_requested_by: 0,
+        field_serial_change_requested_by_name: '',
+        field_serial_change_email_sent_at: '',
+        field_serial_change_email_status: '',
+        field_serial_change_email_error: ''
+    };
+}
+
+function getSerialVerificationStateFromDom() {
+    const card = document.getElementById('fieldSerialVerificationCard');
+    return {
+        status: String(card?.dataset.serialStatus || '').trim(),
+        requestId: String(card?.dataset.requestId || '').trim(),
+        verifiedValue: String(card?.dataset.verifiedValue || '').trim(),
+        recordedValue: String(card?.dataset.recordedValue || '').trim()
+    };
+}
+
+function setSerialVerificationStateDom(next = {}) {
+    const card = document.getElementById('fieldSerialVerificationCard');
+    if (!card) return;
+    card.dataset.serialStatus = String(next.status || '').trim();
+    card.dataset.requestId = String(next.requestId || '').trim();
+    card.dataset.verifiedValue = String(next.verifiedValue || '').trim();
+    card.dataset.recordedValue = String(next.recordedValue || '').trim();
+}
+
+function syncSerialVerificationUi(options = {}) {
+    const card = document.getElementById('fieldSerialVerificationCard');
+    const badge = document.getElementById('fieldSerialVerificationBadge');
+    const status = document.getElementById('fieldSerialVerificationStatus');
+    const meta = document.getElementById('fieldSerialVerificationMeta');
+    const button = document.getElementById('fieldVerifySerialBtn');
+    if (!card || !badge || !status || !meta || !button) return;
+
+    const verification = getSerialVerificationStateFromDom();
+    card.classList.remove('is-verified', 'is-change-requested', 'is-error');
+
+    if (verification.status === 'verified_correct') {
+        card.classList.add('is-verified');
+        badge.textContent = 'Verified';
+        status.textContent = 'Recorded serial matched the actual customer unit.';
+        meta.textContent = options.metaText || meta.textContent || '';
+        button.textContent = 'Verified Correct';
+        button.disabled = state.modalReadOnly;
+        return;
+    }
+
+    if (FIELD_SERIAL_VERIFY_REQUIRED_STATUSES.has(verification.status) && verification.status !== 'verified_correct') {
+        card.classList.add('is-change-requested');
+        badge.textContent = 'Requested';
+        status.textContent = 'Serial change request recorded. Finish is allowed while approval is reviewed.';
+        meta.textContent = options.metaText || meta.textContent || '';
+        button.textContent = 'Resend / Update Request';
+        button.disabled = state.modalReadOnly;
+        return;
+    }
+
+    if (options.error) {
+        card.classList.add('is-error');
+        badge.textContent = 'Required';
+        status.textContent = options.error;
+        meta.textContent = '';
+        button.textContent = 'Verify Correct';
+        button.disabled = state.modalReadOnly;
+        return;
+    }
+
+    badge.textContent = 'Required';
+    status.textContent = 'Verify the actual customer unit serial before finishing this task.';
+    meta.textContent = options.metaText || '';
+    button.textContent = 'Verify Correct';
+    button.disabled = state.modalReadOnly;
+}
+
+function populateSerialVerificationSection(row = getCurrentRow()) {
+    const recordedInput = document.getElementById('fieldRecordedSerialDisplay');
+    const actualInput = document.getElementById('fieldActualSerialInput');
+    if (!recordedInput || !actualInput) return;
+    const recordedSerial = getRecordedSerialForRow(row);
+    const actualSerial = String(
+        row?.field_serial_actual_value
+        || row?.field_serial_change_requested_value
+        || row?.field_serial_recorded_value
+        || recordedSerial
+        || ''
+    ).trim();
+    recordedInput.value = recordedSerial;
+    actualInput.value = actualSerial;
+    setSerialVerificationStateDom({
+        status: row?.field_serial_verification_status || row?.field_serial_change_request_status || '',
+        requestId: row?.field_serial_change_request_id || '',
+        verifiedValue: actualSerial,
+        recordedValue: recordedSerial
+    });
+    const actor = String(row?.field_serial_verified_by_name || row?.field_serial_change_requested_by_name || '').trim();
+    const stamp = String(row?.field_serial_verified_at || row?.field_serial_change_requested_at || '').trim();
+    const metaText = [actor, formatTaskDateTime(stamp)].filter((value) => value && value !== '-').join(' · ');
+    syncSerialVerificationUi({ metaText });
+}
+
+function clearSerialVerificationIfEdited() {
+    const actualInput = document.getElementById('fieldActualSerialInput');
+    const verification = getSerialVerificationStateFromDom();
+    const currentValue = normalizeSerialNumber(actualInput?.value || '');
+    const lastVerified = normalizeSerialNumber(verification.verifiedValue || '');
+    if (!verification.status || !lastVerified || currentValue === lastVerified) return;
+    setSerialVerificationStateDom({
+        status: '',
+        requestId: '',
+        verifiedValue: '',
+        recordedValue: verification.recordedValue
+    });
+    syncSerialVerificationUi({ metaText: 'Serial was edited. Verify again before finishing.' });
+    queueFieldModalDraftSave();
 }
 
 function currentFieldEmail() {
@@ -1912,6 +2148,11 @@ function getStatusMeta(row) {
     return { key, label: 'Pending', className: 'status-pending' };
 }
 
+function isOpenFieldWorkloadRow(row) {
+    const status = getStatusKey(row);
+    return status !== 'closed' && status !== 'cancelled';
+}
+
 function isDispatchableFieldRow(row) {
     return Number(row?.purpose_id || 0) !== 9;
 }
@@ -2107,7 +2348,7 @@ function uniqueRouteRows(rows = []) {
 }
 
 function routeUniverseRows() {
-    return uniqueRouteRows([...state.todayRows, ...state.carryoverRows])
+    return uniqueRouteRows(state.rows || [])
         .filter((row) => getStatusKey(row) !== 'cancelled');
 }
 
@@ -2520,6 +2761,7 @@ function createReimbursementItem(item = {}) {
         accountId: String(item.accountId || group.accountId || '').trim(),
         itemNote: String(item.itemNote || item.description || '').trim(),
         supplierStoreName: String(item.supplierStoreName || item.supplier || '').trim(),
+        supplierTinNumber: String(item.supplierTinNumber || item.supplierTin || item.tinNumber || '').trim(),
         amount: Number(item.amount || 0),
         receiptNumber: String(item.receiptNumber || '').trim(),
         receiptImageUrl: String(item.receiptImageUrl || item.receiptUrl || '').trim(),
@@ -2575,6 +2817,7 @@ function renderReimbursementItemEntry() {
             <label><span>Chart Of Account</span><select data-reimbursement-draft-field="accountId">${FIELD_REIMBURSEMENT_ACCOUNT_OPTIONS.map((account) => `<option value="${escapeHtml(account.id)}"${account.id === item.accountId ? ' selected' : ''}>${escapeHtml(account.label)}</option>`).join('')}</select></label>
             <label><span>Item / Part Note</span><input type="text" data-reimbursement-draft-field="itemNote" placeholder="Select item or choose manual" value="${escapeHtml(item.itemNote)}"></label>
             <label><span>Supplier / Store</span><input type="text" data-reimbursement-draft-field="supplierStoreName" placeholder="Type or select supplier/store" value="${escapeHtml(item.supplierStoreName)}"></label>
+            <label><span>TIN Number</span><input type="text" data-reimbursement-draft-field="supplierTinNumber" placeholder="Supplier/store TIN" value="${escapeHtml(item.supplierTinNumber)}"></label>
             <label><span>Amount</span><input type="number" data-reimbursement-draft-field="amount" min="0" step="0.01" placeholder="0.00" value="${item.amount ? escapeHtml(item.amount.toFixed(2)) : ''}"></label>
             <label><span>Receipt No.</span><input type="text" data-reimbursement-draft-field="receiptNumber" placeholder="OR/SI/receipt no." value="${escapeHtml(item.receiptNumber)}"></label>
             <div class="field-reimbursement-entry-action"><span>Action</span><button type="button" class="btn btn-secondary btn-sm" data-reimbursement-draft-clear>Remove</button></div>
@@ -2605,6 +2848,7 @@ function renderReimbursementItemRows() {
                         <th>Chart Of Account</th>
                         <th>Item / Part Note</th>
                         <th>Supplier / Store</th>
+                        <th>TIN Number</th>
                         <th>Amount</th>
                         <th>Receipt</th>
                         <th>Action</th>
@@ -2626,6 +2870,7 @@ function renderReimbursementItemRow(item, index) {
             <td data-label="Chart Of Account">${escapeHtml(account?.label || item.accountId || '-')}</td>
             <td data-label="Item / Part Note">${escapeHtml(item.itemNote || '-')}</td>
             <td data-label="Supplier / Store">${escapeHtml(item.supplierStoreName || '-')}</td>
+            <td data-label="TIN Number">${escapeHtml(item.supplierTinNumber || '-')}</td>
             <td data-label="Amount">${escapeHtml(formatPeso(item.amount || 0))}</td>
             <td data-label="Receipt">
                 <div class="field-reimbursement-table-receipt">
@@ -2761,6 +3006,7 @@ function serializeReimbursementItem(item = {}) {
         accountId: String(item.accountId || '').trim(),
         itemNote: String(item.itemNote || '').trim(),
         supplierStoreName: String(item.supplierStoreName || '').trim(),
+        supplierTinNumber: String(item.supplierTinNumber || '').trim(),
         amount: Number(item.amount || 0),
         receiptNumber: String(item.receiptNumber || '').trim(),
         receiptImageUrl: String(item.receiptImageUrl || '').trim(),
@@ -3011,6 +3257,7 @@ async function readReimbursementForm(targetStatus, existing = null) {
         receiptNumber: primaryItem.receiptNumber || '',
         orSiNumber: document.getElementById('fieldReimbursementOrSi')?.value || '',
         supplierStoreName: primaryItem.supplierStoreName || '',
+        supplierTinNumber: primaryItem.supplierTinNumber || '',
         receiptDate: document.getElementById('fieldReimbursementReceiptDate')?.value || '',
         receiptAmount: primaryItem.amount || 0,
         receiptException: false,
@@ -3331,6 +3578,28 @@ async function fetchFieldScheduleSnapshot(date) {
     }
 }
 
+async function rebuildFieldScheduleSnapshotCache(date) {
+    const response = await fetch(getMargabaseAdminUrl('/admin/master-schedule-snapshot'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ date })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.error) {
+        throw new Error(payload?.error?.message || `Field schedule snapshot rebuild HTTP ${response.status}`);
+    }
+    return payload;
+}
+
+async function refreshFieldSnapshotForDate(date, { reload = false, keepTab = true } = {}) {
+    const targetDate = String(date || state.selectedDate || document.getElementById('fieldDate')?.value || formatDateYmd(new Date())).trim();
+    if (!targetDate) return;
+    await rebuildFieldScheduleSnapshotCache(targetDate);
+    if (reload) {
+        await loadMySchedule({ keepTab });
+    }
+}
+
 function getAssignedStaffId(row) {
     return Number(row?.route_tech_id || row?.tech_id || 0);
 }
@@ -3411,14 +3680,15 @@ async function loadSnapshotBoundScheduleRows(date) {
         .filter(isDispatchableFieldRow)
         .map(asDirectTodayScheduleRow);
 
-    const allCurrentRows = sortFieldRouteRows(rawRows);
-    const carryoverRows = allCurrentRows.filter(isPastPendingByOriginalDate);
-    const todayRows = allCurrentRows.filter((row) => !isPastPendingByOriginalDate(row));
+    const allRows = sortFieldRouteRows(rawRows);
+    const activeRows = allRows.filter(isOpenFieldWorkloadRow);
+    const carryoverRows = activeRows.filter(isPastPendingByOriginalDate);
+    const todayRows = activeRows.filter((row) => !isPastPendingByOriginalDate(row));
     return {
         routeSourceLabel: String(snapshotPayload.payload.routeSourceLabel || 'Schedule').trim() || 'Schedule',
         todayRows,
         carryoverRows,
-        rows: [...todayRows, ...carryoverRows]
+        rows: allRows
     };
 }
 
@@ -3428,18 +3698,19 @@ function buildLiveDayRouteState(scheduleDocs = []) {
         .filter((row) => Number(row.tech_id || 0) === Number(state.staffId || 0))
         .filter(isDispatchableFieldRow)
         .map(asDirectTodayScheduleRow);
-    const allCurrentRows = sortFieldRouteRows(directTodayRows);
-    const carryoverRows = allCurrentRows.filter((row) => isPastPendingByOriginalDate(row))
+    const allRows = sortFieldRouteRows(directTodayRows);
+    const activeRows = allRows.filter(isOpenFieldWorkloadRow);
+    const carryoverRows = activeRows.filter((row) => isPastPendingByOriginalDate(row))
         .map((row) => ({
             ...row,
             route_source: row.route_source || 'Forwarded Past Pending'
         }));
-    const todayRows = allCurrentRows.filter((row) => !isPastPendingByOriginalDate(row));
+    const todayRows = activeRows.filter((row) => !isPastPendingByOriginalDate(row));
     return {
         routeSourceLabel: 'Schedule',
         todayRows,
         carryoverRows,
-        rows: [...todayRows, ...carryoverRows]
+        rows: allRows
     };
 }
 
@@ -3461,12 +3732,13 @@ function mergeRouteState(primaryState = null, liveState = null) {
     });
 
     const combinedRows = sortFieldRouteRows(Array.from(merged.values()));
-    const carryoverRows = combinedRows.filter((row) => isPastPendingByOriginalDate(row))
+    const activeRows = combinedRows.filter(isOpenFieldWorkloadRow);
+    const carryoverRows = activeRows.filter((row) => isPastPendingByOriginalDate(row))
         .map((row) => ({
             ...row,
             route_source: row.route_source || 'Forwarded Past Pending'
         }));
-    const todayRows = combinedRows.filter((row) => !isPastPendingByOriginalDate(row));
+    const todayRows = activeRows.filter((row) => !isPastPendingByOriginalDate(row));
 
     if (combinedRows.length !== (primaryState.rows || []).length) {
         console.warn('Field snapshot/live day mismatch detected; merged live rows into snapshot result.', {
@@ -3481,7 +3753,7 @@ function mergeRouteState(primaryState = null, liveState = null) {
         routeSourceLabel: String(primaryState.routeSourceLabel || liveState.routeSourceLabel || 'Schedule').trim() || 'Schedule',
         todayRows,
         carryoverRows,
-        rows: [...todayRows, ...carryoverRows]
+        rows: combinedRows
     };
 }
 
@@ -4580,13 +4852,23 @@ function getWorkloadSummary() {
     const closedRows = totalRows.filter(isClosedOnSelectedDate);
     const unfinishedRows = totalRows.filter((row) => !isClosedOnSelectedDate(row));
     const pendingPartsRows = unfinishedRows.filter(isPartsDiagnosisRisk);
+    const openCounts = {
+        pending: 0,
+        ongoing: 0,
+        carryover: 0,
+        closed: 0,
+        cancelled: 0,
+        ...countRowsByStatus(unfinishedRows)
+    };
     return {
         totalRows,
         newTodayRows,
         pastPendingRows,
+        openRows: unfinishedRows,
         unfinishedRows,
         pendingPartsRows,
         closedRows,
+        openCounts,
         todayOpen: unfinishedRows.filter((row) => !isPastPendingByOriginalDate(row)),
         pastOpen: unfinishedRows.filter((row) => isPastPendingByOriginalDate(row)),
         pendingNeedsAction: unfinishedRows.length,
@@ -6259,37 +6541,38 @@ async function loadMySchedule(options = {}) {
     document.getElementById('fieldList').innerHTML = '<div class="loading-cell">Loading...</div>';
 
     try {
-        setRouteLoadProgress(22, 'Loading today schedule...');
-        const dayStart = `${date} 00:00:00`;
-        const dayEnd = `${date} 23:59:59`;
-        const [snapshotRouteState, scheduleDocs, pettyCashDocs, reviewDocs] = await Promise.all([
+        setRouteLoadProgress(22, 'Loading shared field snapshot...');
+        const [initialSnapshotRouteState, pettyCashDocs, reviewDocs] = await Promise.all([
             loadSnapshotBoundScheduleRows(date).catch((error) => {
-                console.warn('Field snapshot unavailable, falling back to live day query:', error);
+                console.warn('Field snapshot load failed:', error);
                 return null;
             }),
-            queryByDateRange('tbl_schedule', 'task_datetime', dayStart, dayEnd).catch(() => []),
             queryByDateRange(PETTY_CASH_ENTRY_COLLECTION, 'date', date, date).catch(() => []),
             queryCollection(CUSTOMER_REVIEW_COLLECTION, FIELD_QUERY_LIMIT).catch(() => [])
         ]);
 
-        setRouteLoadProgress(45, 'Building staff schedule...');
+        let snapshotRouteState = initialSnapshotRouteState;
+        if (!snapshotRouteState) {
+            setRouteLoadProgress(34, 'Rebuilding shared field snapshot...');
+            await rebuildFieldScheduleSnapshotCache(date).catch((error) => {
+                console.warn('Field snapshot rebuild failed:', error);
+                throw error;
+            });
+            snapshotRouteState = await loadSnapshotBoundScheduleRows(date);
+        }
+
+        if (!snapshotRouteState) {
+            throw new Error('Field schedule snapshot is unavailable. Wait for the backend snapshot rebuild, then tap Refresh.');
+        }
+
+        setRouteLoadProgress(45, 'Building staff schedule from shared snapshot...');
         state.pettyCashEntries = mergePendingOfflineRows(PETTY_CASH_ENTRY_COLLECTION, pettyCashDocs.map(parseFirestoreDoc).filter(Boolean));
         state.customerReviews = mergePendingOfflineRows(CUSTOMER_REVIEW_COLLECTION, reviewDocs.map(parseFirestoreDoc).filter(Boolean));
         loadSkillHistoryForSelectedDate(date);
-        const liveDayRouteState = buildLiveDayRouteState(scheduleDocs);
-        const mergedRouteState = mergeRouteState(snapshotRouteState, liveDayRouteState);
-
-        if (mergedRouteState) {
-            state.routeSourceLabel = mergedRouteState.routeSourceLabel;
-            state.todayRows = mergedRouteState.todayRows;
-            state.carryoverRows = mergedRouteState.carryoverRows;
-            state.rows = mergedRouteState.rows;
-        } else {
-            state.routeSourceLabel = liveDayRouteState.routeSourceLabel;
-            state.todayRows = liveDayRouteState.todayRows;
-            state.carryoverRows = liveDayRouteState.carryoverRows;
-            state.rows = liveDayRouteState.rows;
-        }
+        state.routeSourceLabel = snapshotRouteState.routeSourceLabel;
+        state.todayRows = snapshotRouteState.todayRows;
+        state.carryoverRows = snapshotRouteState.carryoverRows;
+        state.rows = snapshotRouteState.rows;
         loadCloseRequestLookup(state.rows);
         updatePriorityGate(workloadRows());
         setRouteLoadProgress(62, 'Preparing customer and machine details...');
@@ -6299,34 +6582,7 @@ async function loadMySchedule(options = {}) {
         ]);
         renderAttendanceLocationSummary();
         renderActiveView();
-
-        const carryoverCount = document.getElementById('fieldCarryoverCount');
-        if (carryoverCount) carryoverCount.textContent = '...';
-        if (snapshotRouteState && (!liveDayRouteState?.rows?.length || (snapshotRouteState.rows || []).length >= (liveDayRouteState.rows || []).length)) {
-            setRouteLoadProgress(100, 'Route loaded.', 'complete');
-        } else {
-            try {
-                setRouteLoadProgress(78, 'Checking past pending routes...');
-                const todayRows = state.todayRows || [];
-                const forwardedPastPendingRows = state.carryoverRows || [];
-                const allCurrentRows = [...todayRows, ...forwardedPastPendingRows];
-                const carryoverRows = await buildCarryoverRows({ date, currentRows: allCurrentRows });
-                const knownCarryoverIds = new Set(forwardedPastPendingRows.map((row) => Number(row.id || 0)).filter(Boolean));
-                state.carryoverRows = [
-                    ...forwardedPastPendingRows,
-                    ...carryoverRows.filter((row) => !knownCarryoverIds.has(Number(row.id || 0)))
-                ];
-                state.rows = [...todayRows, ...state.carryoverRows];
-                setRouteLoadProgress(92, 'Finalizing past pending details...');
-                await hydrateLookups(state.carryoverRows);
-                renderAttendanceLocationSummary();
-                setRouteLoadProgress(100, 'Route loaded.', 'complete');
-            } catch (carryoverError) {
-                console.warn('Field past pending load failed; keeping today route visible.', carryoverError);
-                renderAttendanceLocationSummary();
-                setRouteLoadProgress(100, 'Route loaded; past pending check needs refresh.', 'error');
-            }
-        }
+        setRouteLoadProgress(100, 'Route loaded from shared snapshot.', 'complete');
         updatePriorityGate(workloadRows());
         renderActiveView();
         await restorePendingFieldModalDraft();
@@ -7166,9 +7422,15 @@ function isPendingReplacementState(row, form = null) {
 function setModalOpen(isOpen) {
     const overlay = document.getElementById('fieldOverlay');
     const modal = document.getElementById('fieldModal');
+    const modalBody = modal?.querySelector('.marga-modal-body');
     modal.classList.toggle('open', isOpen);
     overlay.classList.toggle('visible', isOpen);
     modal.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+    document.body.classList.toggle('field-modal-open', isOpen);
+    document.documentElement.classList.toggle('field-modal-open', isOpen);
+    if (isOpen && modalBody) {
+        modalBody.scrollTop = 0;
+    }
 }
 
 function resetModalFields() {
@@ -7243,6 +7505,11 @@ function resetModalFields() {
     document.getElementById('fieldLocationPhoto').disabled = false;
     document.getElementById('fieldLocationPhotoHint').textContent = 'Required when pinning a new customer location.';
     document.getElementById('fieldLocationCard').classList.remove('is-complete', 'is-required');
+    document.getElementById('fieldRecordedSerialDisplay').value = '';
+    document.getElementById('fieldActualSerialInput').value = '';
+    document.getElementById('fieldSerialVerificationMeta').textContent = '';
+    setSerialVerificationStateDom({});
+    syncSerialVerificationUi();
 
     const before = document.getElementById('fieldBeforePhoto');
     const after = document.getElementById('fieldAfterPhoto');
@@ -7320,6 +7587,8 @@ function setFormDisabled(isReadOnly) {
         'fieldTimeOutNowBtn',
         'fieldPinLocationBtn',
         'fieldLocationPhoto',
+        'fieldActualSerialInput',
+        'fieldVerifySerialBtn',
         'fieldDeliveryDetails',
         'fieldEmptyPickupDetails',
         'fieldDeliveryPreviousMeter',
@@ -7370,6 +7639,9 @@ function setFormDisabled(isReadOnly) {
     updateModalFooterState();
     updateActionButtons();
     setLocationPinUi();
+    syncSerialVerificationUi({
+        metaText: document.getElementById('fieldSerialVerificationMeta')?.textContent || ''
+    });
 }
 
 function updateModalFooterState() {
@@ -7780,6 +8052,7 @@ async function openModal(scheduleId) {
     const row = state.rows.find((r) => Number(r.id || 0) === Number(scheduleId));
     if (!row) return;
 
+    resetModalFields();
     state.modalScheduleId = scheduleId;
     state.modalRelatedScheduleIds = state.combinedTaskGroups.get(String(scheduleId)) || [scheduleId];
     state.modalMachineId = Number(row.serial || 0) || null;
@@ -7803,8 +8076,9 @@ async function openModal(scheduleId) {
     document.getElementById('fieldModalTitle').textContent = `#${row.id} ${purposeLabel} / ${troubleLabel}${combinedSuffix}`;
     document.getElementById('fieldModalSubtitle').textContent = `${company?.companyname || '-'} · ${branch?.branchname || '-'} · ${formatTaskDateTime(row.task_datetime)}${combinedSubtitle}`;
     setLocationPinUi(row);
+    setModalOpen(true);
 
-    await Promise.all([
+    await Promise.allSettled([
         loadMachineStatusOptions(),
         loadPartsCatalog(),
         loadSerialCatalog()
@@ -7813,11 +8087,17 @@ async function openModal(scheduleId) {
 
     const machine = caches.machine.get(String(state.modalMachineId || 0)) || resolveMachineFromSerial(row.field_serial_selected);
     document.getElementById('fieldSerialInput').value = String(machine?.serial || row.field_serial_selected || '');
-    await setModalMachineDetails(machine || null);
+    await setModalMachineDetails(machine || null).catch((error) => {
+        console.warn('Set modal machine details failed:', error);
+    });
 
     document.getElementById('fieldSerialMissingCheck').checked = Number(row.field_serial_missing || row.serial_correction_pending || 0) === 1;
     document.getElementById('fieldMissingSerialInput').value = String(row.field_serial_missing_value || row.serial_correction_value || '').trim();
     toggleMissingSerialMode();
+    populateSerialVerificationSection({
+        ...row,
+        field_serial_recorded_value: row.field_serial_recorded_value || String(machine?.serial || row.field_serial_selected || '').trim()
+    });
 
     setMachineStatusFromRow(row);
     setWorkMachineStatusFromRow(row);
@@ -7825,12 +8105,20 @@ async function openModal(scheduleId) {
     document.getElementById('fieldCloseNotes').value = String(row.field_work_notes || '').trim();
     document.getElementById('fieldSolutionNotes').value = '';
 
-    const [branchContact, deliveryInfo, deliveryReceipt] = await Promise.all([
+    const [branchContactResult, deliveryInfoResult, deliveryReceiptResult] = await Promise.allSettled([
         resolveBranchContact(row.branch_id, row),
         resolveDeliveryInfo(row.branch_id),
         resolveDeliveryReceipt(row.id)
     ]);
-    const deliveryReceiptItems = await resolveDeliveryReceiptItems(row.id, deliveryReceipt);
+    const branchContact = branchContactResult.status === 'fulfilled'
+        ? branchContactResult.value
+        : { contact_name: String(row.caller || '').trim(), contact_phone: String(row.phone_number || '').trim() };
+    const deliveryInfo = deliveryInfoResult.status === 'fulfilled' ? deliveryInfoResult.value : null;
+    const deliveryReceipt = deliveryReceiptResult.status === 'fulfilled' ? deliveryReceiptResult.value : null;
+    const deliveryReceiptItems = await resolveDeliveryReceiptItems(row.id, deliveryReceipt).catch((error) => {
+        console.warn('Delivery receipt item lookup failed:', error);
+        return [];
+    });
 
     const savedDeliveryDetails = String(row.field_delivery_details || '').trim();
     const savedEmptyPickupDetails = String(row.field_empty_pickup_details || '').trim();
@@ -7908,7 +8196,10 @@ async function openModal(scheduleId) {
     updatePhotoHint('fieldCollectionEwalletImage', 'fieldCollectionEwalletHint', 'field_collection_ewallet_name');
     syncCollectionPaymentProofFields();
 
-    const billingPreviousMeter = await resolvePreviousMeter(row, Number(row.id || 0), row.task_datetime, Number(machine?.bmeter || 0), machine || null);
+    const billingPreviousMeter = await resolvePreviousMeter(row, Number(row.id || 0), row.task_datetime, Number(machine?.bmeter || 0), machine || null).catch((error) => {
+        console.warn('Previous meter lookup failed:', error);
+        return null;
+    });
     const previousMeter = parseIntegerInput(row.field_previous_meter);
     const presentMeter = parseIntegerInput(row.field_present_meter) ?? parseIntegerInput(row.meter_reading);
     const previousMeterHint = document.getElementById('fieldPreviousMeterHint');
@@ -7933,7 +8224,10 @@ async function openModal(scheduleId) {
 
     const maintenancePreviousMeter = parseIntegerInput(row.field_maintenance_previous_meter);
     const maintenancePresentMeter = parseIntegerInput(row.field_maintenance_present_meter);
-    const maintenancePreviousLookup = await resolvePreviousMaintenanceMeter(row, machine || null);
+    const maintenancePreviousLookup = await resolvePreviousMaintenanceMeter(row, machine || null).catch((error) => {
+        console.warn('Previous maintenance meter lookup failed:', error);
+        return null;
+    });
     const effectiveMaintenancePrevious = maintenancePreviousMeter !== null && maintenancePreviousMeter > 0
         ? maintenancePreviousMeter
         : parseIntegerInput(maintenancePreviousLookup?.meter);
@@ -7961,7 +8255,10 @@ async function openModal(scheduleId) {
     document.getElementById('fieldDeliveryPresentMeter').value = deliveryPresentMeter !== null ? String(deliveryPresentMeter) : '';
     syncDeliveryMetersFromMaintenance();
 
-    const log = await fetchLatestSchedtimeLog(scheduleId);
+    const log = await fetchLatestSchedtimeLog(scheduleId).catch((error) => {
+        console.warn('Latest schedtime log lookup failed:', error);
+        return null;
+    });
     if (log) {
         state.modalSchedtimeId = Number(log.id || 0) || null;
         state.modalSchedtimeDocId = log._docId || String(log.id || '');
@@ -7977,7 +8274,10 @@ async function openModal(scheduleId) {
 
     const pinHint = document.getElementById('fieldPinHint');
     pinHint.textContent = 'Checking customer PIN setup...';
-    state.modalExpectedPin = await resolveExpectedPin(state.modalBranchId, row);
+    state.modalExpectedPin = await resolveExpectedPin(state.modalBranchId, row).catch((error) => {
+        console.warn('Expected PIN lookup failed:', error);
+        return '';
+    });
     if (state.modalExpectedPin) {
         pinHint.textContent = 'Customer PIN is configured. Enter 4-digit PIN to finish.';
     } else {
@@ -7991,7 +8291,10 @@ async function openModal(scheduleId) {
     setLocationPinUi(row);
     updateActionButtons();
 
-    setModalOpen(true);
+    window.requestAnimationFrame(() => {
+        const modalBody = document.querySelector('#fieldModal .marga-modal-body');
+        modalBody?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    });
     if (restoredDraft) {
         const status = document.getElementById('fieldModalSubtitle');
         if (status && !status.textContent.includes('Draft restored')) status.textContent = `${status.textContent} · Draft restored`;
@@ -8350,6 +8653,8 @@ function collectModalFormData() {
 
     const selectedMachine = getSelectedMachine();
     const serialInput = String(document.getElementById('fieldSerialInput').value || '').trim();
+    const actualSerialInput = String(document.getElementById('fieldActualSerialInput')?.value || '').trim().toUpperCase();
+    const serialVerification = getSerialVerificationStateFromDom();
     const missingSerial = TEMPORARILY_DISABLED_FIELD_GROUPS.missingSerial
         ? ''
         : String(document.getElementById('fieldMissingSerialInput').value || '').trim().toUpperCase();
@@ -8435,6 +8740,11 @@ function collectModalFormData() {
         machineStatusId: statusId,
         machineStatusLabel: statusLabel,
         serialInput,
+        actualSerialInput,
+        serialVerificationStatus: serialVerification.status,
+        serialVerificationRequestId: serialVerification.requestId,
+        serialVerificationRecordedValue: serialVerification.recordedValue || getRecordedSerialForRow(),
+        serialVerificationVerifiedValue: serialVerification.verifiedValue,
         serialMissing,
         missingSerial,
         selectedMachineId: Number(selectedMachine?.id || 0) || null,
@@ -8534,11 +8844,26 @@ function buildSchedulePayload(row, form, tag) {
         field_collection_ewallet_type: form.collectionPaymentType === 'e-wallet' ? (form.collectionEwalletImage?.type || '') : '',
         field_serial_selected: form.selectedMachineSerial || form.serialInput || '',
         field_serial_selected_machine_id: form.selectedMachineId || 0,
+        field_serial_recorded_value: form.serialVerificationRecordedValue || form.selectedMachineSerial || form.serialInput || '',
+        field_serial_actual_value: form.actualSerialInput || '',
+        field_serial_verification_status: form.serialVerificationStatus || '',
+        field_serial_change_request_id: form.serialVerificationRequestId || '',
+        field_serial_change_request_status: form.serialVerificationStatus === 'verified_correct'
+            ? ''
+            : (form.serialVerificationStatus || ''),
         field_updated_by: staffId,
         field_updated_at: nowIso,
         bridge_updated_by: staffId,
         bridge_updated_at: nowIso
     };
+
+    if (FIELD_SERIAL_VERIFY_REQUIRED_STATUSES.has(form.serialVerificationStatus)) {
+        payload.field_serial_verified_by_name = row.field_serial_verified_by_name || currentFieldDisplayName();
+        payload.field_serial_change_requested = form.serialVerificationStatus === 'verified_correct' ? 0 : 1;
+        if (form.serialVerificationStatus !== 'verified_correct') {
+            payload.field_serial_change_requested_value = form.actualSerialInput || '';
+        }
+    }
 
     if (!TEMPORARILY_DISABLED_FIELD_GROUPS.machineStatus) {
         payload.field_machine_status = form.machineStatusLabel;
@@ -8636,6 +8961,12 @@ function getCloseTaskIssues(row, form) {
     if (!normalizeLegacyDateTime(form.timeOutDb)) {
         return [closeIssue('Cannot mark finished: customer check-out is required for this task. Tap Check Out Now before closing every customer visit.', 'fieldTimeSection', 'fieldTimeOutNowBtn', 'missing_customer_check_out')];
     }
+    if (!FIELD_SERIAL_VERIFY_REQUIRED_STATUSES.has(form.serialVerificationStatus)) {
+        return [closeIssue('Cannot mark finished: verify the customer unit serial first.', 'fieldSerialVerificationSection', 'fieldActualSerialInput', 'missing_serial_verification')];
+    }
+    if (normalizeSerialNumber(form.actualSerialInput) !== normalizeSerialNumber(form.serialVerificationVerifiedValue)) {
+        return [closeIssue('Cannot mark finished: the serial entry changed after verification. Verify it again.', 'fieldSerialVerificationSection', 'fieldActualSerialInput', 'stale_serial_verification')];
+    }
 
     if (isReadingTicket(row) && !Number.isFinite(form.presentMeter)) {
         return [closeIssue('Cannot mark finished: complete the bill meter reading first.', 'fieldMeterSection', 'fieldPresentMeter', 'missing_billing_meter')];
@@ -8662,12 +8993,6 @@ function getCloseTaskIssues(row, form) {
     }
 
     if (isDeliveryTicket(row)) {
-        if (!form.deliveryDetails) {
-            return [closeIssue('Cannot mark finished: complete the toner/ink delivery details first.', 'fieldDeliverySection', 'fieldDeliveryDetails', 'missing_delivery_details')];
-        }
-        if (!form.emptyPickupDetails) {
-            return [closeIssue('Cannot mark finished: record the empty toner/ink pickup details first.', 'fieldDeliverySection', 'fieldEmptyPickupDetails', 'missing_empty_pickup')];
-        }
         if (isMachineDeliveryTask(row, form) && !Number.isFinite(form.deliveryPresentMeter) && !Number.isFinite(form.maintenancePresentMeter)) {
             return [closeIssue('Cannot mark finished: enter the present delivery machine meter first.', 'fieldDeliverySection', 'fieldDeliveryPresentMeter', 'missing_delivery_meter')];
         }
@@ -9051,6 +9376,9 @@ async function saveDraftUpdate() {
         await patchDocument('tbl_schedule', scheduleDocIdForRow(row), payload);
         await safeUpsertSchedtimeLog(row, form, 'draft');
         applyRowPatch(row.id, payload);
+        refreshFieldSnapshotForDate(dateOnly(row.task_datetime) || state.selectedDate, { reload: false }).catch((error) => {
+            console.warn('Field snapshot refresh after draft save failed:', error);
+        });
         clearFieldModalDraft(row.id);
         renderList();
         alert('Draft update saved.');
@@ -9170,7 +9498,7 @@ async function markPendingTask() {
         applyRowPatch(row.id, payload);
         closeModal();
         clearFieldModalDraft(row.id);
-        await loadMySchedule();
+        await refreshFieldSnapshotForDate(dateOnly(row.task_datetime) || state.selectedDate, { reload: true, keepTab: true });
         alert('Marked as Pending (Parts Needed).');
     } catch (err) {
         console.error('Mark pending failed:', err);
@@ -9349,7 +9677,7 @@ async function closeTask() {
         }
         closeModal();
         clearFieldModalDraft(row.id);
-        await loadMySchedule();
+        await refreshFieldSnapshotForDate(dateOnly(row.task_datetime) || state.selectedDate, { reload: true, keepTab: true });
         alert(combinedClosed ? `Task marked as Finished. ${combinedClosed} combined schedule${combinedClosed === 1 ? '' : 's'} also closed.` : 'Task marked as Finished.');
     } catch (err) {
         console.error('Close task failed:', err);
@@ -9437,6 +9765,7 @@ function buildReopenPayload(row, form = null) {
         field_collection_ewallet_name: '',
         field_collection_ewallet_size: 0,
         field_collection_ewallet_type: '',
+        ...buildEmptySerialVerificationPatch(),
         field_customer_location_pinned: 0,
         field_customer_location_pinned_at: '',
         field_customer_location_pinned_by: 0,
@@ -9531,118 +9860,172 @@ async function reopenScheduleRow(row, button = null, form = null) {
             route_timestmp: nowIso,
             route_bridge_pushed_at: nowIso
         });
-        await loadMySchedule({ keepTab: true });
+        await refreshFieldSnapshotForDate(dateOnly(row.task_datetime) || state.selectedDate, { reload: true, keepTab: true });
         alert('Task reopened.');
     } finally {
         if (button) button.disabled = false;
     }
 }
 
-async function saveSerialMapping() {
-    if (TEMPORARILY_DISABLED_FIELD_GROUPS.serialMapping || TEMPORARILY_DISABLED_FIELD_GROUPS.missingSerial) {
-        alert('Serial mapping is temporarily disabled.');
-        return;
+async function notifySerialChangeApproval(requestId) {
+    const response = await fetch(FIELD_SERIAL_EMAIL_APPROVAL_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error || `Approval email failed (${response.status})`);
     }
+    return payload;
+}
+
+async function verifyTaskSerialNumber() {
+    if (state.modalReadOnly) return;
     const row = getCurrentRow();
     if (!row) return;
 
-    const missingMode = document.getElementById('fieldSerialMissingCheck').checked;
-    const serialInputValue = String(document.getElementById('fieldSerialInput').value || '').trim();
-    const serialHint = document.getElementById('fieldSerialHint');
+    const button = document.getElementById('fieldVerifySerialBtn');
+    const actualInput = document.getElementById('fieldActualSerialInput');
+    const recordedInput = document.getElementById('fieldRecordedSerialDisplay');
+    const actualSerial = String(actualInput?.value || '').trim().toUpperCase();
+    const recordedSerial = String(recordedInput?.value || getRecordedSerialForRow(row) || '').trim().toUpperCase();
+    const normalizedActual = normalizeSerialNumber(actualSerial);
+    const normalizedRecorded = normalizeSerialNumber(recordedSerial);
     const staffId = Number(state.staffId || 0) || 0;
+    const staffName = currentFieldDisplayName();
     const nowIso = new Date().toISOString();
 
-    serialHint.textContent = 'Saving...';
+    if (!normalizedActual) {
+        syncSerialVerificationUi({ error: 'Enter the actual serial shown on the customer unit.' });
+        actualInput?.focus();
+        return;
+    }
+
+    button.disabled = true;
+    syncSerialVerificationUi({ metaText: 'Saving serial verification...' });
+
     try {
-        if (missingMode) {
-            const missingSerial = String(document.getElementById('fieldMissingSerialInput').value || '').trim().toUpperCase();
-            if (missingSerial.length < 4) {
-                alert('Enter missing serial number (at least 4 characters).');
-                return;
-            }
-
-            const machine = getSelectedMachine();
-            const correctionId = `${row.id}_${Date.now()}`;
-            await setDocument(SERIAL_CORRECTION_COLLECTION, correctionId, {
-                schedule_id: Number(row.id || 0),
-                branch_id: Number(row.branch_id || 0) || 0,
-                company_id: Number(row.company_id || 0) || 0,
-                current_machine_id: Number(machine?.id || row.serial || 0) || 0,
-                current_serial: String(machine?.serial || '').trim(),
-                requested_serial: missingSerial,
-                status: 'pending_admin_approval',
-                requested_by: staffId,
-                requested_at: nowIso,
-                notes: clampText(document.getElementById('fieldCloseNotes').value || '', 255),
-                source: 'field_app'
-            });
-
+        if (normalizedRecorded && normalizedRecorded === normalizedActual) {
             const patch = {
-                serial_correction_pending: 1,
-                serial_correction_value: missingSerial,
-                serial_correction_requested_at: nowIso,
-                serial_correction_requested_by: staffId,
-                field_serial_missing: 1,
-                field_serial_missing_value: missingSerial,
+                field_serial_recorded_value: recordedSerial,
+                field_serial_actual_value: actualSerial,
+                field_serial_verification_status: 'verified_correct',
+                field_serial_verified_at: nowIso,
+                field_serial_verified_by: staffId,
+                field_serial_verified_by_name: staffName,
+                field_serial_change_requested: 0,
+                field_serial_change_request_id: '',
+                field_serial_change_request_status: '',
+                field_serial_change_requested_value: '',
+                field_serial_change_requested_at: '',
+                field_serial_change_requested_by: 0,
+                field_serial_change_requested_by_name: '',
+                field_serial_change_email_sent_at: '',
+                field_serial_change_email_status: '',
+                field_serial_change_email_error: '',
+                field_updated_by: staffId,
+                field_updated_at: nowIso,
                 bridge_updated_by: staffId,
                 bridge_updated_at: nowIso
             };
             await patchDocument('tbl_schedule', scheduleDocIdForRow(row), patch);
             applyRowPatch(row.id, patch);
-            serialHint.textContent = 'Submitted for admin approval.';
-            alert('Missing serial submitted for admin approval.');
+            setSerialVerificationStateDom({
+                status: 'verified_correct',
+                requestId: '',
+                verifiedValue: actualSerial,
+                recordedValue: recordedSerial
+            });
+            document.getElementById('fieldSerialVerificationMeta').textContent = `${staffName} · ${formatTaskDateTime(nowIso)}`;
+            syncSerialVerificationUi({ metaText: document.getElementById('fieldSerialVerificationMeta').textContent });
+            alert('Serial verified.');
             return;
         }
 
-        const selectedMachine = resolveMachineFromSerial(serialInputValue);
-        if (!selectedMachine || Number(selectedMachine.id || 0) <= 0) {
-            alert('Select an official serial from database list.');
-            return;
-        }
+        const requestId = String(row.field_serial_change_request_id || `${Number(row.id || 0)}_${Date.now()}`).trim();
+        const selectedMachine = getSelectedMachine();
+        const requestPayload = {
+            id: requestId,
+            schedule_id: Number(row.id || 0) || 0,
+            schedule_doc_id: scheduleDocIdForRow(row),
+            branch_id: Number(row.branch_id || 0) || 0,
+            company_id: Number(row.company_id || 0) || 0,
+            current_machine_id: Number(selectedMachine?.id || row.serial || row.mach_id || 0) || 0,
+            current_serial: recordedSerial,
+            requested_serial: actualSerial,
+            status: 'pending_approval',
+            requested_by: staffId,
+            requested_by_name: staffName,
+            requested_at: nowIso,
+            customer_name: String(row.companyname || row.customer_name || '').trim(),
+            branch_name: String(row.branchname || row.branch_name || '').trim(),
+            purpose_id: Number(row.purpose_id || 0) || 0,
+            purpose_label: PURPOSE_LABELS[Number(row.purpose_id || 0)] || '',
+            source: 'field_app',
+            request_notes: clampText(document.getElementById('fieldCloseNotes')?.value || '', 255)
+        };
+        await setDocument(SERIAL_CORRECTION_COLLECTION, requestId, requestPayload);
 
-        const patch = {
-            serial: Number(selectedMachine.id || 0),
-            serial_correction_pending: 0,
-            serial_correction_value: '',
-            field_serial_selected: String(selectedMachine.serial || ''),
-            field_serial_selected_machine_id: Number(selectedMachine.id || 0),
-            field_serial_missing: 0,
-            field_serial_missing_value: '',
+        const schedulePatch = {
+            field_serial_recorded_value: recordedSerial,
+            field_serial_actual_value: actualSerial,
+            field_serial_verification_status: 'change_requested',
+            field_serial_verified_at: nowIso,
+            field_serial_verified_by: staffId,
+            field_serial_verified_by_name: staffName,
+            field_serial_change_requested: 1,
+            field_serial_change_request_id: requestId,
+            field_serial_change_request_status: 'pending_approval',
+            field_serial_change_requested_value: actualSerial,
+            field_serial_change_requested_at: nowIso,
+            field_serial_change_requested_by: staffId,
+            field_serial_change_requested_by_name: staffName,
+            field_serial_change_email_status: 'pending',
+            field_serial_change_email_error: '',
             field_updated_by: staffId,
             field_updated_at: nowIso,
             bridge_updated_by: staffId,
             bridge_updated_at: nowIso
         };
 
-        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), patch);
-        applyRowPatch(row.id, patch);
-        await setModalMachineDetails(selectedMachine);
+        let emailMetaText = `${staffName} · ${formatTaskDateTime(nowIso)}`;
+        try {
+            const notifyResult = await notifySerialChangeApproval(requestId);
+            schedulePatch.field_serial_change_email_sent_at = nowIso;
+            schedulePatch.field_serial_change_email_status = notifyResult?.email?.sent === false ? 'skipped' : 'sent';
+            schedulePatch.field_serial_change_email_error = notifyResult?.email?.reason || '';
+            if (schedulePatch.field_serial_change_email_status === 'sent') {
+                emailMetaText = `${emailMetaText} · Approval email sent`;
+            }
+        } catch (emailError) {
+            schedulePatch.field_serial_change_email_status = 'failed';
+            schedulePatch.field_serial_change_email_error = clampText(emailError?.message || emailError, 180);
+            emailMetaText = `${emailMetaText} · Email failed`;
+        }
 
-        const prev = await resolvePreviousMeter(
-            {
-                ...row,
-                serial: Number(selectedMachine.id || 0),
-                mach_id: Number(selectedMachine.id || 0),
-                machine_id: Number(selectedMachine.id || 0)
-            },
-            Number(row.id || 0),
-            row.task_datetime,
-            Number(selectedMachine.bmeter || 0),
-            selectedMachine
-        );
-        document.getElementById('fieldPreviousMeter').value = Number(prev?.meter || 0) > 0 ? String(prev.meter) : '';
-        document.getElementById('fieldPreviousMeterHint').textContent = Number(prev?.meter || 0) > 0
-            ? 'Loaded from billing meter history for selected serial.'
-            : 'No billing meter history found for selected serial yet.';
-        recomputeTotalConsumed();
-        renderList();
-        serialHint.textContent = 'Serial mapping saved.';
-        alert('Serial mapping saved.');
-    } catch (err) {
-        console.error('Save serial mapping failed:', err);
-        serialHint.textContent = `Error: ${err?.message || err}`;
-        alert(`Failed to save serial mapping: ${err?.message || err}`);
+        await patchDocument('tbl_schedule', scheduleDocIdForRow(row), schedulePatch);
+        applyRowPatch(row.id, schedulePatch);
+        setSerialVerificationStateDom({
+            status: 'change_requested',
+            requestId,
+            verifiedValue: actualSerial,
+            recordedValue: recordedSerial
+        });
+        document.getElementById('fieldSerialVerificationMeta').textContent = emailMetaText;
+        syncSerialVerificationUi({ metaText: emailMetaText });
+        alert('Serial change request recorded. You can now finish the task while approval is reviewed.');
+    } catch (error) {
+        console.error('Serial verification failed:', error);
+        syncSerialVerificationUi({ error: error?.message || String(error) });
+        alert(`Failed to verify serial: ${error?.message || error}`);
+    } finally {
+        button.disabled = state.modalReadOnly;
     }
+}
+
+async function saveSerialMapping() {
+    alert('Use the Serial Verification section below Customer Location Pin.');
 }
 
 async function pinCustomerLocation() {

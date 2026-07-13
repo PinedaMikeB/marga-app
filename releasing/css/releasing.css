@@ -45,6 +45,89 @@ body {
     letter-spacing: 0;
 }
 
+.release-progress-shell {
+    display: grid;
+    gap: 0.38rem;
+    width: min(34rem, 100%);
+    margin-top: 0.55rem;
+    padding: 0.72rem 0.85rem;
+    border: 1px solid rgba(85, 120, 20, 0.18);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 241, 0.98));
+    box-shadow: 0 12px 28px rgba(36, 48, 39, 0.08);
+}
+
+.release-progress-head {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.release-progress-stage,
+.release-progress-meta {
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.release-progress-stage {
+    color: var(--rel-green);
+}
+
+.release-progress-meta {
+    color: var(--rel-muted);
+    white-space: nowrap;
+}
+
+.release-progress-track {
+    position: relative;
+    overflow: hidden;
+    height: 0.68rem;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(85, 120, 20, 0.12), rgba(15, 119, 201, 0.18));
+}
+
+.release-progress-track.is-indeterminate .release-progress-bar {
+    width: 38% !important;
+    animation: releaseProgressIndeterminate 1.25s ease-in-out infinite;
+}
+
+.release-progress-bar {
+    height: 100%;
+    width: 0%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #7aa31c 0%, #0f77c9 58%, #8a38a2 100%);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3) inset;
+    transition: width 260ms ease;
+}
+
+.release-progress-note {
+    color: var(--rel-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.35;
+}
+
+.release-progress-shell.is-complete .release-progress-stage {
+    color: #2f865f;
+}
+
+.release-progress-shell.is-error .release-progress-stage,
+.release-progress-shell.is-error .release-progress-meta,
+.release-progress-shell.is-error .release-progress-note {
+    color: var(--rel-danger);
+}
+
+.release-progress-shell.is-error .release-progress-track {
+    background: rgba(169, 55, 48, 0.14);
+}
+
+.release-progress-shell.is-error .release-progress-bar {
+    background: linear-gradient(90deg, #d96c61, #a93730);
+}
+
 .release-actions {
     align-items: center;
     flex-wrap: wrap;
@@ -910,6 +993,10 @@ body {
     .release-create-fields {
         grid-template-columns: 1fr 1fr;
     }
+
+    .release-progress-shell {
+        width: 100%;
+    }
 }
 
 @media (max-width: 720px) {
@@ -973,6 +1060,10 @@ body {
         width: 100%;
     }
 
+    .release-progress-head {
+        flex-wrap: wrap;
+    }
+
     .release-actions .btn {
         flex: 1 1 100%;
     }
@@ -985,5 +1076,14 @@ body {
 @media print {
     body {
         background: #ffffff;
+    }
+}
+
+@keyframes releaseProgressIndeterminate {
+    0% {
+        transform: translateX(-120%);
+    }
+    100% {
+        transform: translateX(260%);
     }
 }

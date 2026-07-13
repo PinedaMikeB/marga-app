@@ -1,9 +1,9 @@
 import { DataService } from './lib/data-service.js';
 import { setupInstallGuide } from './lib/install-guide.js';
 import { setupPwa } from './lib/pwa.js';
-import { clearSession, loadSession, roleLabel, saveSession } from './lib/session.js';
+import { clearAuthToken, clearSession, loadAuthToken, loadPreviewBranchId, loadPreviewCompanyId, loadSession, roleLabel, saveAuthToken, savePreviewBranchId, savePreviewCompanyId, saveSession } from './lib/session.js';
 import { hashSignerPin } from './lib/pin-security.js';
-import { escapeHtml, formatDate, formatMoney, statusClass } from './lib/utils.js';
+import { cleanBranchName, escapeHtml, formatBillingPeriod, formatDate, formatDatePH, formatMoney, statusClass } from './lib/utils.js';
 
 const service = new DataService();
 const config = window.MSP_CONFIG || {};
@@ -11,11 +11,45 @@ const config = window.MSP_CONFIG || {};
 const state = {
   user: null,
   company: null,
+  activeCompanyId: null,   // null = show all; number = specific group selected
+  portalCompanies: [],     // all companies this user can see (for switcher)
+  previewSearchQuery: '',
+  previewSearchResults: [],
+  previewDraftAccount: null,
+  adminTab: 'preview',          // 'preview' | 'credentials'
+  deviceStatusFilter: '',  // '' = all | 'Active' | 'Needs Attention' | 'For Replacement' | 'Inactive'
+  credSearch: '',
+  credRoleFilter: '',
+  credStatusFilter: '',
+  credActiveFilter: 'true',
+  credPage: 1,
+  credTotal: 0,
+  credPages: 1,
+  credAccounts: [],
+  credEditId: null,
+  credLinkSearchResults: [],
+  credLinkQuery: '',
+  previewBranches: [],
+  previewBranchDetail: null,
+  previewCompanyId: '',
+  previewCompanyIds: [],
+  previewCompanyName: '',
+  previewBranchId: '',
+  previewLaunch: null,
+  previewPickerExpanded: true,
   currentView: 'dashboard',
+  deviceSearchQuery: '',
   selectedDeviceId: null,
+  deviceDetailOpen: false,
+  deviceDetailLoading: false,
+  deviceDetail: null,
+  deviceDetailRequestId: 0,
   selectedTicketId: null,
   ticketFilter: 'all'
 };
+
+// Expose state for data-service group switcher integration
+window.__margaCareState = state;
 
 const authView = document.getElementById('authView');
 const portalView = document.getElementById('portalView');
@@ -34,43 +68,65 @@ const sidebar = document.getElementById('portalSidebar');
 
 const roleViews = {
   marga_admin: [
-    { key: 'dashboard', label: 'Dashboard', subtitle: 'All-customer Margabase portal view' },
-    { key: 'devices', label: 'Devices', subtitle: 'Machine inventory and service history' },
-    { key: 'tickets', label: 'Service Tickets', subtitle: 'Service requests and follow-ups' },
+    { key: 'dashboard', label: 'Home', subtitle: 'Customer care command view' },
+    { key: 'devices', label: 'Machines', subtitle: 'Machine inventory and service history' },
+    { key: 'tickets', label: 'Service Requests', subtitle: 'Service requests and follow-ups' },
     { key: 'toner', label: 'Toner / Ink', subtitle: 'Supply requests and status' },
-    { key: 'billing', label: 'Billing', subtitle: 'Invoices, payments, and statements' },
-    { key: 'support', label: 'Support', subtitle: 'Contact Marga support channels' }
+    { key: 'billing', label: 'Billing & Payments', subtitle: 'Invoices, payments, and statements' },
+    { key: 'history', label: 'Proof & History', subtitle: 'Customer-facing activity and proof trail' },
+    { key: 'support', label: 'Contact Marga', subtitle: 'Support channels and escalation' }
   ],
   marga_staff: [
-    { key: 'dashboard', label: 'Dashboard', subtitle: 'Marga staff portal view' },
-    { key: 'devices', label: 'Devices', subtitle: 'Machine inventory and service history' },
-    { key: 'tickets', label: 'Service Tickets', subtitle: 'Service requests and follow-ups' },
+    { key: 'dashboard', label: 'Home', subtitle: 'Marga care overview' },
+    { key: 'devices', label: 'Machines', subtitle: 'Machine inventory and service history' },
+    { key: 'tickets', label: 'Service Requests', subtitle: 'Service requests and follow-ups' },
     { key: 'toner', label: 'Toner / Ink', subtitle: 'Supply requests and status' },
-    { key: 'support', label: 'Support', subtitle: 'Contact Marga support channels' }
+    { key: 'history', label: 'Proof & History', subtitle: 'Recent customer-facing updates and proof' },
+    { key: 'support', label: 'Contact Marga', subtitle: 'Support channels and escalation' }
   ],
   corporate_admin: [
-    { key: 'dashboard', label: 'Dashboard', subtitle: 'Consolidated operational view' },
-    { key: 'devices', label: 'Devices', subtitle: 'Machine inventory and service history' },
-    { key: 'tickets', label: 'Service Tickets', subtitle: 'Service requests and follow-ups' },
+    { key: 'dashboard', label: 'Home', subtitle: 'Your service, billing, and request overview' },
+    { key: 'devices', label: 'Machines', subtitle: 'Machine inventory and service history' },
+    { key: 'tickets', label: 'Service Requests', subtitle: 'Service requests and follow-ups' },
     { key: 'toner', label: 'Toner / Ink', subtitle: 'Supply requests and status' },
-    { key: 'billing', label: 'Billing', subtitle: 'Invoices, payments, and statements' },
-    { key: 'support', label: 'Support', subtitle: 'Contact Marga support channels' },
+    { key: 'billing', label: 'Billing & Payments', subtitle: 'Invoices, payments, and statements' },
+    { key: 'history', label: 'Proof & History', subtitle: 'Timeline of updates, service proof, and posted payments' },
+    { key: 'support', label: 'Contact Marga', subtitle: 'Support channels and escalation' },
     { key: 'admin', label: 'Admin', subtitle: 'Branches, devices, signers, and reports' }
   ],
+  company_admin: [
+    { key: 'dashboard', label: 'Home', subtitle: 'Your service, billing, and request overview' },
+    { key: 'devices', label: 'Machines', subtitle: 'Machine inventory and service history' },
+    { key: 'tickets', label: 'Service Requests', subtitle: 'Service requests and follow-ups' },
+    { key: 'toner', label: 'Toner / Ink', subtitle: 'Supply requests and status' },
+    { key: 'billing', label: 'Billing & Payments', subtitle: 'Invoices, payments, and statements' },
+    { key: 'history', label: 'Proof & History', subtitle: 'Timeline of updates, service proof, and posted payments' },
+    { key: 'support', label: 'Contact Marga', subtitle: 'Support channels and escalation' }
+  ],
   branch_manager: [
-    { key: 'dashboard', label: 'Dashboard', subtitle: 'Branch operational view' },
-    { key: 'devices', label: 'Devices', subtitle: 'Branch machine inventory' },
-    { key: 'tickets', label: 'Service Tickets', subtitle: 'Branch service requests' },
+    { key: 'dashboard', label: 'Home', subtitle: 'Branch service, billing, and support overview' },
+    { key: 'devices', label: 'Machines', subtitle: 'Branch machine inventory' },
+    { key: 'tickets', label: 'Service Requests', subtitle: 'Branch service requests' },
     { key: 'toner', label: 'Toner / Ink', subtitle: 'Branch supply requests' },
-    { key: 'billing', label: 'Billing', subtitle: 'Branch invoices and dues' },
-    { key: 'support', label: 'Support', subtitle: 'Contact Marga support channels' }
+    { key: 'billing', label: 'Billing & Payments', subtitle: 'Branch invoices and dues' },
+    { key: 'history', label: 'Proof & History', subtitle: 'Branch request, payment, and service history' },
+    { key: 'support', label: 'Contact Marga', subtitle: 'Support channels and escalation' }
   ],
   end_user: [
-    { key: 'dashboard', label: 'Dashboard', subtitle: 'Personal ticket and device summary' },
-    { key: 'devices', label: 'Devices', subtitle: 'Branch devices you can request service for' },
-    { key: 'tickets', label: 'Service Tickets', subtitle: 'Create and track your tickets' },
+    { key: 'dashboard', label: 'Home', subtitle: 'Request support and track your updates' },
+    { key: 'devices', label: 'Machines', subtitle: 'Branch devices you can request service for' },
+    { key: 'tickets', label: 'Service Requests', subtitle: 'Create and track your requests' },
     { key: 'toner', label: 'Toner / Ink', subtitle: 'Request consumables' },
-    { key: 'support', label: 'Support', subtitle: 'Contact Marga support channels' }
+    { key: 'history', label: 'Proof & History', subtitle: 'Your request history and completed service proof' },
+    { key: 'support', label: 'Contact Marga', subtitle: 'Support channels and escalation' }
+  ],
+  branch_user: [
+    { key: 'dashboard', label: 'Home', subtitle: 'Request support and track your updates' },
+    { key: 'devices', label: 'Machines', subtitle: 'Branch devices you can request service for' },
+    { key: 'tickets', label: 'Service Requests', subtitle: 'Create and track your requests' },
+    { key: 'toner', label: 'Toner / Ink', subtitle: 'Request consumables' },
+    { key: 'history', label: 'Proof & History', subtitle: 'Your request history and completed service proof' },
+    { key: 'support', label: 'Contact Marga', subtitle: 'Support channels and escalation' }
   ]
 };
 
@@ -78,13 +134,164 @@ function currentViews() {
   return roleViews[state.user?.role] || [];
 }
 
+function isInternalPortalUser(user = state.user) {
+  return user?.role === 'marga_admin' || user?.role === 'marga_staff';
+}
+
 function findView(viewKey) {
   return currentViews().find((entry) => entry.key === viewKey) || currentViews()[0];
+}
+
+function activeCompanyId() {
+  if (isInternalPortalUser()) return state.previewCompanyId;
+  return state.activeCompanyId || state.user?.companyId;
+}
+
+function hasMultipleCompanies() {
+  return state.portalCompanies.length > 1;
+}
+
+// Build the URL query string to scope API calls to the active company
+function companyQs() {
+  const id = state.activeCompanyId;
+  return id ? `activeCompanyId=${encodeURIComponent(id)}` : '';
+}
+
+function canViewBilling() {
+  return ['marga_admin', 'corporate_admin', 'company_admin', 'branch_manager'].includes(state.user?.role);
+}
+
+function shortDate(value) {
+  if (!value) return 'Waiting update';
+  return formatDate(value);
+}
+
+function timestampValue(value) {
+  const time = Date.parse(value || '');
+  return Number.isFinite(time) ? time : 0;
+}
+
+function statusTone(value) {
+  const text = String(value || '').toLowerCase();
+  if (text.includes('complete') || text.includes('paid') || text.includes('fulfilled') || text.includes('posted')) return 'ok';
+  if (text.includes('pending') || text.includes('assigned') || text.includes('open') || text.includes('progress')) return 'watch';
+  return 'calm';
+}
+
+function activityChip(label, tone = 'calm') {
+  return `<span class="activity-chip activity-chip-${tone}">${escapeHtml(label)}</span>`;
+}
+
+function buildActivityFeed({ tickets = [], requests = [], payments = [], invoices = [] }) {
+  const items = [];
+
+  tickets.forEach((ticket) => {
+    items.push({
+      type: 'Service Request',
+      tone: statusTone(ticket.status),
+      title: ticket.ticketNo || ticket.id || 'Service ticket',
+      summary: ticket.description || ticket.category || 'Service issue reported',
+      detail: ticket.status ? `Status: ${ticket.status}` : 'Waiting for update',
+      at: ticket.updatedAt || ticket.createdAt
+    });
+    if (ticket.completion) {
+      items.push({
+        type: 'Service Proof',
+        tone: 'ok',
+        title: ticket.ticketNo || ticket.id || 'Completed service',
+        summary: ticket.completion.acknowledgedByName
+          ? `Confirmed by ${ticket.completion.acknowledgedByName}`
+          : 'Service completed and recorded',
+        detail: ticket.completion.ackMethod ? `Proof: ${ticket.completion.ackMethod}` : 'Completion proof saved',
+        at: ticket.completion.completedAt || ticket.updatedAt || ticket.createdAt
+      });
+    }
+  });
+
+  requests.forEach((request) => {
+    items.push({
+      type: 'Toner / Ink',
+      tone: statusTone(request.status),
+      title: request.id || 'Supply request',
+      summary: request.notes || 'Supply request sent to Marga',
+      detail: request.status ? `Status: ${request.status}` : 'Pending fulfillment',
+      at: request.updatedAt || request.createdAt
+    });
+  });
+
+  payments.forEach((payment) => {
+    items.push({
+      type: 'Payment Proof',
+      tone: 'ok',
+      title: formatMoney(payment.amount || 0),
+      summary: `Payment posted${payment.referenceNo ? ` · Ref ${payment.referenceNo}` : ''}`,
+      detail: payment.method || 'Payment recorded',
+      at: payment.date
+    });
+  });
+
+  invoices.forEach((invoice) => {
+    items.push({
+      type: 'Billing',
+      tone: statusTone(invoice.status),
+      title: formatBillingPeriod(invoice.period, invoice.dueDate) || invoice.invoiceNo || 'Invoice',
+      summary: `${formatMoney(invoice.amount || 0)}${invoice.status ? ` · ${invoice.status}` : ''}`,
+      detail: invoice.dueDate ? `Due: ${formatDatePH(invoice.dueDate)}` : 'Invoice available in portal',
+      at: invoice.dueDate
+    });
+  });
+
+  return items.sort((a, b) => timestampValue(b.at) - timestampValue(a.at));
 }
 
 function setTopMessage(text, type = 'info') {
   authMessage.textContent = text;
   authMessage.style.color = type === 'error' ? '#b91c1c' : '#335d86';
+}
+
+function bindDragScroll(container) {
+  if (!container || container.dataset.dragScrollBound === '1') return;
+  container.dataset.dragScrollBound = '1';
+  let pointerDown = false;
+  let startX = 0;
+  let startScrollLeft = 0;
+
+  const finishDrag = () => {
+    pointerDown = false;
+    container.classList.remove('is-dragging');
+  };
+
+  container.addEventListener('mousedown', (event) => {
+    if (event.button !== 0) return;
+    pointerDown = true;
+    startX = event.pageX;
+    startScrollLeft = container.scrollLeft;
+    container.classList.add('is-dragging');
+  });
+
+  container.addEventListener('mousemove', (event) => {
+    if (!pointerDown) return;
+    event.preventDefault();
+    container.scrollLeft = startScrollLeft - (event.pageX - startX);
+  });
+
+  container.addEventListener('wheel', (event) => {
+    const hasHorizontalOverflow = container.scrollWidth > container.clientWidth;
+    if (!hasHorizontalOverflow) return;
+    if (Math.abs(event.deltaX) > 0) {
+      container.scrollLeft += event.deltaX;
+      event.preventDefault();
+      return;
+    }
+    if (event.shiftKey && Math.abs(event.deltaY) > 0) {
+      container.scrollLeft += event.deltaY;
+      event.preventDefault();
+    }
+  }, { passive: false });
+
+  container.addEventListener('mouseleave', finishDrag);
+  container.addEventListener('mouseup', finishDrag);
+  window.addEventListener('mouseup', finishDrag);
 }
 
 function showNotice(message, type = 'neutral') {
@@ -99,15 +306,20 @@ function showNotice(message, type = 'neutral') {
     note.style.color = '#065f46';
   }
   note.textContent = message;
+  announcements.style.display = 'grid';
   announcements.prepend(note);
   setTimeout(() => {
     note.remove();
+    if (!announcements.children.length) {
+      announcements.style.display = 'none';
+    }
   }, 4800);
 }
 
 function renderAnnouncements() {
   const items = state.company?.announcements || config.announcements || [];
   announcements.innerHTML = items.map((item) => `<div class="announcement-item">${escapeHtml(item)}</div>`).join('');
+  announcements.style.display = items.length ? 'grid' : 'none';
 }
 
 function renderUserCard() {
@@ -116,9 +328,41 @@ function renderUserCard() {
   document.getElementById('userAvatar').textContent = (state.user?.name || 'U').trim().charAt(0).toUpperCase();
 }
 
+async function applyCustomerPreview(companyId, branchId = '') {
+  const account = typeof companyId === 'object' && companyId
+    ? companyId
+    : { id: companyId, companyIds: companyId ? [companyId] : [], name: state.company?.name || 'Customer' };
+  const resolvedCompanyIds = Array.isArray(account.companyIds) && account.companyIds.length
+    ? account.companyIds.map((value) => String(value))
+    : (account.id ? [String(account.id)] : []);
+  state.previewCompanyId = account?.id ? String(account.id) : '';
+  state.previewCompanyIds = resolvedCompanyIds;
+  state.previewCompanyName = account?.name || account?.motherName || '';
+  state.previewBranchId = branchId ? String(branchId) : '';
+  if (state.user) {
+    state.user.previewCompanyId = state.previewCompanyId;
+    state.user.previewCompanyIds = state.previewCompanyIds.slice();
+    state.user.previewCompanyName = state.previewCompanyName;
+    state.user.previewBranchId = state.previewBranchId;
+    saveSession(state.user);
+  }
+  savePreviewCompanyId(state.previewCompanyId);
+  savePreviewBranchId(state.previewBranchId);
+  state.company = state.previewCompanyName
+    ? {
+        id: state.previewCompanyId || state.user?.companyId || 'marga_internal',
+        name: state.previewCompanyName,
+        status: 'active',
+        announcements: ['Internal Marga portal view.']
+      }
+    : await service.getCompanyById(state.previewCompanyId || state.user?.companyId, state.user);
+  await renderView();
+  renderAnnouncements();
+}
+
 function renderNav() {
   const viewList = currentViews();
-  const markup = viewList
+  const navLinks = viewList
     .map(
       (view) =>
         `<a href="#${view.key}" class="nav-link ${state.currentView === view.key ? 'active' : ''}" data-view="${view.key}">${escapeHtml(
@@ -126,8 +370,43 @@ function renderNav() {
         )}</a>`
     )
     .join('');
-  navRoot.innerHTML = markup;
-  bottomNav.innerHTML = markup;
+
+  // Group switcher — shown only when overseer manages multiple companies
+  const switcherHtml = hasMultipleCompanies()
+    ? `<div class="group-switcher">
+        <span class="group-switcher-label">Viewing</span>
+        <select id="companySwitcher" class="group-switcher-select">
+          <option value="">All Groups</option>
+          ${state.portalCompanies.map(c =>
+            `<option value="${c.id}" ${String(state.activeCompanyId) === String(c.id) ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
+          ).join('')}
+        </select>
+      </div>`
+    : '';
+
+  navRoot.innerHTML = switcherHtml + navLinks;
+  bottomNav.innerHTML = navLinks;
+
+  // Wire the switcher
+  document.getElementById('companySwitcher')?.addEventListener('change', async (e) => {
+    const val = e.target.value;
+    state.activeCompanyId = val ? Number(val) : null;
+    // Update company name shown in header
+    const co = state.portalCompanies.find(c => String(c.id) === val);
+    state.company = co ? { ...state.company, name: co.name } : state.company;
+    await reloadCurrentView();
+  });
+}
+
+async function reloadCurrentView() {
+  const view = state.currentView;
+  if (view === 'dashboard') await renderDashboard();
+  else if (view === 'devices') await renderDevices();
+  else if (view === 'tickets') await renderTickets();
+  else if (view === 'toner') await renderToner();
+  else if (view === 'billing') await renderBilling();
+  else if (view === 'history') await renderHistory();
+  else if (view === 'support') renderSupport();
 }
 
 function setView(viewKey, replaceHash = true) {
@@ -150,137 +429,692 @@ function rbacBranchOptions(branches) {
   return branches.map((branch) => `<option value="${branch.id}">${escapeHtml(branch.name)}</option>`).join('');
 }
 
-async function renderDashboard() {
-  const summary = await service.getDashboardSummary(state.user);
-  const groupMachines = summary.activeGroupMachines ?? summary.groupActiveMachines ?? summary.groupMachines ?? summary.activeDevices ?? 0;
-  const individualMachines = summary.activeIndividualMachines ?? summary.individualActiveMachines ?? summary.individualMachines ?? 0;
+async function updatePreviewSearch(query) {
+  state.previewSearchQuery = String(query || '');
+  if (!state.previewPickerExpanded) state.previewPickerExpanded = true;
+  state.previewDraftAccount = null;
+  state.previewBranches = [];
+  state.previewBranchId = '';
+  if (!state.previewSearchQuery.trim()) {
+    state.previewSearchResults = [];
+    await renderView();
+    return;
+  }
+  state.previewSearchResults = await service.searchPreviewAccounts(state.previewSearchQuery);
+  await renderView();
+}
 
-  const billingBlock = ['marga_admin', 'corporate_admin', 'branch_manager'].includes(state.user.role)
-    ? `<div class="kpi-card"><div class="value money-value">${formatMoney(summary.unpaidAmount)}</div><div class="label">Unpaid Amount</div></div>`
-    : '';
+async function selectPreviewAccount(accountId) {
+  const selected = state.previewSearchResults.find((entry) => String(entry.id) === String(accountId)) || null;
+  if (!selected) return;
+  state.previewDraftAccount = selected;
+  state.previewSearchQuery = '';
+  state.previewPickerExpanded = true;
+  state.previewBranchId = '';
+  state.previewBranchDetail = null;
+  state.previewLaunch = null;
+  state.previewBranches = await service.listPreviewBranches(selected.companyIds?.length ? selected.companyIds : selected.id);
+  state.previewSearchResults = [];
+  await renderView();
+}
 
-  viewContainer.innerHTML = `
-    <section class="dashboard-heading">
-      <div>
-        <h2>Dashboard</h2>
-        <p>Latest Analytics</p>
+async function previewCompanyHere() {
+  if (!state.previewDraftAccount) {
+    showNotice('Choose a customer account first.', 'error');
+    return;
+  }
+  await applyCustomerPreview(state.previewDraftAccount, '');
+  state.previewLaunch = null;
+  showNotice(`Previewing ${state.previewDraftAccount.name}.`, 'success');
+}
+
+async function loadBranchDetail(branchId) {
+  if (!state.previewDraftAccount) return;
+  state.previewBranchDetail = await service.getPreviewBranchDetail({
+    companyId: state.previewDraftAccount.id,
+    branchId,
+    companyIds: state.previewDraftAccount.companyIds
+  });
+  state.previewBranchId = String(branchId || '');
+  await renderView();
+}
+
+async function openPreviewLaunch(kind, branchId = '') {
+  if (!state.previewDraftAccount) {
+    showNotice('Choose a customer account first.', 'error');
+    return;
+  }
+  if (kind === 'branch' && !branchId) {
+    showNotice('Choose a branch first.', 'error');
+    return;
+  }
+  let payload = null;
+  if (kind === 'branch') {
+    const branch = state.previewBranches.find((entry) => String(entry.id) === String(branchId));
+    if (!branch) {
+      showNotice('Branch was not found.', 'error');
+      return;
+    }
+    payload = {
+      kind,
+      branchId: String(branch.id),
+      branchName: branch.name,
+      companyId: branch.companyId,
+      prefillEmail: '',
+      loginUrl: ''
+    };
+  } else {
+    payload = {
+      kind,
+      companyId: state.previewDraftAccount.id,
+      companyIds: state.previewDraftAccount.companyIds,
+      customerName: state.previewDraftAccount.name,
+      prefillEmail: '',
+      loginUrl: ''
+    };
+  }
+  state.previewLaunch = payload;
+  await renderView();
+}
+
+async function openPreviewInSeparateTab() {
+  if (!state.previewLaunch) return;
+  const launchPayload = state.previewLaunch.kind === 'branch'
+    ? {
+        companyId: state.previewLaunch.companyId,
+        branchId: state.previewLaunch.branchId
+      }
+    : {
+        companyId: state.previewLaunch.companyId
+      };
+  const launch = await service.createPreviewLaunch(launchPayload);
+  state.previewLaunch = null;
+  window.open(launch.loginUrl, '_blank', 'noopener,noreferrer');
+  await renderView();
+  showNotice(`Opened ${launch.prefillEmail} in a separate preview tab.`, 'success');
+}
+
+function renderPreviewSearchResults() {
+  if (!state.previewSearchQuery.trim()) {
+    return '';
+  }
+  if (!state.previewSearchResults.length) {
+    return `<div class="care-preview-hint">No customer account matched "${escapeHtml(state.previewSearchQuery)}".</div>`;
+  }
+  const groups = [];
+  state.previewSearchResults.forEach((account) => {
+    const motherName = account.motherName || account.name;
+    let bucket = groups.find((entry) => entry.motherName === motherName);
+    if (!bucket) {
+      bucket = { motherName, accounts: [] };
+      groups.push(bucket);
+    }
+    bucket.accounts.push(account);
+  });
+
+  return `
+    <div class="care-preview-results" role="listbox" aria-label="Customer search results">
+      ${groups.map((group) => `
+        <section class="care-preview-group">
+          <header class="care-preview-group-head">
+            <strong>${escapeHtml(group.motherName)}</strong>
+            <span>${group.accounts.length}</span>
+          </header>
+          ${group.accounts.map((account) => `
+            <button type="button" class="care-preview-result ${String(state.previewDraftAccount?.id) === String(account.id) ? 'active' : ''}" data-preview-account="${account.id}" role="option" aria-selected="${String(state.previewDraftAccount?.id) === String(account.id)}">
+              <span class="care-preview-result-name">${escapeHtml(account.groupLabel || account.name)}</span>
+              <span class="care-preview-result-meta">${account.branchCount} branches${account.machineCount ? ` • ${account.machineCount} machines` : ''}</span>
+            </button>
+          `).join('')}
+        </section>
+      `).join('')}
+    </div>
+  `;
+}
+
+function selectedPreviewCompanyIsGrouped() {
+  return Array.isArray(state.previewDraftAccount?.companyIds) && state.previewDraftAccount.companyIds.length > 1;
+}
+
+function branchLocationLabel(branch) {
+  return branch.city || branch.address || '-';
+}
+
+function renderPreviewBranchTable() {
+  if (!state.previewDraftAccount) return '';
+  return `
+    <div class="care-preview-branch-block">
+      <div class="panel-head">
+        <h3>Branches / Departments</h3>
+        <span class="muted">${state.previewBranches.length} record${state.previewBranches.length === 1 ? '' : 's'}</span>
       </div>
-    </section>
+      ${
+        state.previewBranches.length
+          ? `<div class="table-wrap care-preview-table-wrap">
+              <table class="data-table care-preview-table">
+                <thead>
+                  <tr>
+                    <th>Department Name</th>
+                    <th>Contact Person</th>
+                    <th>Contact Number</th>
+                    <th>Email</th>
+                    <th>Location (City)</th>
+                    <th>Serial Number</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${state.previewBranches.map((branch) => `
+                    <tr>
+                      <td>${escapeHtml(cleanBranchName(branch.name))}</td>
+                      <td>${escapeHtml(branch.contactPerson || '-')}</td>
+                      <td>${escapeHtml(branch.contactNumber || '-')}</td>
+                      <td>${escapeHtml(branch.email || '-')}</td>
+                      <td>${escapeHtml(branchLocationLabel(branch))}</td>
+                      <td>${escapeHtml(branch.serialNumbers || '-')}</td>
+                      <td><button type="button" class="btn btn-secondary btn-sm" data-branch-detail="${branch.id}">View Branch Detail</button></td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>`
+          : '<div class="empty-state">No branches or departments were found for this customer.</div>'
+      }
+    </div>
+  `;
+}
 
-    <section class="panel glass dashboard-summary-card">
-      <div class="kpi-grid">
-        <div class="kpi-card"><div class="value">${groupMachines}</div><div class="label">Active Group Machines</div></div>
-        <div class="kpi-card"><div class="value">${individualMachines}</div><div class="label">Active Individual Machines</div></div>
-        <div class="kpi-card"><div class="value">${summary.openTickets}</div><div class="label">Open Tickets</div></div>
-        <div class="kpi-card"><div class="value">${summary.pendingToner}</div><div class="label">Pending Toner/Ink Requests</div></div>
-        ${billingBlock}
+function renderPreviewBranchDetail() {
+  const detail = state.previewBranchDetail;
+  if (!detail) return '';
+  const outstanding = Number(detail.summary?.outstandingAmount || 0);
+  const conditionLines = Array.isArray(detail.summary?.deviceConditions) ? detail.summary.deviceConditions : [];
+  return `
+    <section class="panel glass care-branch-detail">
+      <div class="panel-head stack-on-mobile">
+        <h3>${escapeHtml(detail.branch?.name || 'Branch detail')}</h3>
+        <div class="care-preview-actions">
+          <button type="button" class="btn btn-primary" id="previewBranchLocalBtn">Local View</button>
+          <button type="button" class="btn btn-secondary" id="previewBranchTabBtn" ${detail.previewAccount ? '' : 'disabled'}>Separate Tab</button>
+        </div>
       </div>
-    </section>
-
-    <section class="dashboard-overview-grid">
-      <article class="panel glass overview-card">
-        <div class="panel-head"><h3>Monthly Billing Group Account</h3><span class="select-pill">Billing</span></div>
-        <div class="bar-chart" aria-label="Monthly billing group account">
-          ${[22, 58, 42, 92, 82, 34, 53, 66, 35, 41, 22, 88]
-            .map((height, index) => `<span style="--h:${height}%"><em>${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][index]}</em></span>`)
-            .join('')}
-        </div>
-      </article>
-      <article class="panel glass overview-card">
-        <div class="panel-head"><h3>Monthly Billing Individual Accounts</h3><span class="mini-icon"></span></div>
-        <div class="bar-chart bar-chart-individual" aria-label="Monthly billing individual accounts">
-          ${[18, 34, 39, 54, 48, 29, 44, 51, 33, 36, 24, 57]
-            .map((height, index) => `<span style="--h:${height}%"><em>${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][index]}</em></span>`)
-            .join('')}
-        </div>
-      </article>
-    </section>
-
-    <section class="dashboard-detail-grid">
-      <article class="panel glass donut-card">
-        <div class="panel-head"><h3>Individual Accounts Overview</h3><span class="mini-icon"></span></div>
-        <div class="donut-wrap">
-          <div class="donut-chart"><span>${individualMachines}</span></div>
-          <div class="legend-list">
-            <span><i></i> Current Billing · ${formatMoney(summary.unpaidAmount || 0)}</span>
-            <span><i></i> Open Tickets · ${summary.openTickets}</span>
-            <span><i></i> Toner/Ink · ${summary.pendingToner}</span>
-            <span><i></i> Machines · ${individualMachines}</span>
-          </div>
-        </div>
-      </article>
+      <div class="kpi-grid care-branch-kpis">
+        <div class="kpi-card"><div class="value">${detail.summary?.machineCount || 0}</div><div class="label">Machines</div></div>
+        <div class="kpi-card"><div class="value money-value">${formatMoney(outstanding)}</div><div class="label">${outstanding > 0 ? 'Unpaid Balance' : 'Paid / Updated'}</div></div>
+        <div class="kpi-card"><div class="value">${detail.summary?.deliveredTonerCount || 0}</div><div class="label">Successful Toner Deliveries</div></div>
+        <div class="kpi-card"><div class="value">${detail.summary?.completedServiceCount || 0}</div><div class="label">Successful Repairs</div></div>
+      </div>
+      <div class="grid-2 care-branch-detail-grid">
+        <article class="panel glass care-branch-condition-card">
+          <div class="panel-head"><h3>Condition Of Unit</h3></div>
+          ${
+            conditionLines.length
+              ? `<div class="care-condition-list">
+                  ${conditionLines.map((item) => `<div class="summary-line"><span>${escapeHtml(item.label)}</span><strong>${item.count}</strong></div>`).join('')}
+                </div>`
+              : '<div class="empty-state">No machine condition data yet.</div>'
+          }
+        </article>
+        <article class="panel glass care-branch-machine-card">
+          <div class="panel-head"><h3>Machines</h3></div>
+          ${
+            detail.devices?.length
+              ? `<div class="table-wrap">
+                  <table class="data-table">
+                    <thead><tr><th>Serial</th><th>Model</th><th>Status</th></tr></thead>
+                    <tbody>
+                      ${detail.devices.map((device) => `<tr><td>${escapeHtml(device.serial || '-')}</td><td>${escapeHtml(device.model || '-')}</td><td>${escapeHtml(device.status || '-')}</td></tr>`).join('')}
+                    </tbody>
+                  </table>
+                </div>`
+              : '<div class="empty-state">No machines are assigned to this branch yet.</div>'
+          }
+        </article>
+      </div>
     </section>
   `;
 }
 
-async function renderDevices() {
-  const [devices, tickets, branches] = await Promise.all([
-    service.listDevices(state.user),
+function renderPreviewLaunchModal() {
+  if (!state.previewLaunch) return '';
+  const canOpenTab = state.previewLaunch.kind === 'branch' || !selectedPreviewCompanyIsGrouped();
+  return `
+    <div class="care-modal-backdrop" id="carePreviewModal">
+      <div class="care-modal glass">
+        <div class="panel-head">
+          <h3>${state.previewLaunch.kind === 'branch' ? 'Open Branch Preview' : 'Open Customer Preview'}</h3>
+          <button type="button" class="btn btn-secondary btn-sm" id="closePreviewModal">Close</button>
+        </div>
+        <div class="care-preview-choice-list">
+          <button type="button" class="care-preview-choice" id="previewLocalChoice">
+            <strong>Local View</strong>
+            <span>Stay in this internal screen and preview the scoped portal here.</span>
+          </button>
+          <button type="button" class="care-preview-choice" id="previewTabChoice" ${canOpenTab ? '' : 'disabled'}>
+            <strong>Separate Tab</strong>
+            <span>${canOpenTab ? `Open the real customer login screen with ${escapeHtml(state.previewLaunch.prefillEmail || '')} prefilled.` : 'Grouped customer previews only support local view until one real portal login is assigned to that exact grouped scope.'}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderInternalCustomerPicker() {
+  if (!isInternalPortalUser()) return '';
+
+  return `
+    <section class="panel glass care-preview-bar">
+      <form id="internalCustomerPicker" class="care-preview-form">
+        <div class="care-preview-field">
+          <label for="internalCustomerSearch">Customer</label>
+          <input id="internalCustomerSearch" name="customerSearch" placeholder="" value="${escapeHtml(state.previewSearchQuery)}" autocomplete="off" />
+        </div>
+        ${renderPreviewSearchResults()}
+        ${state.previewDraftAccount ? `
+          <div class="care-preview-selected">
+            <strong>${escapeHtml(state.previewDraftAccount.name)}</strong>
+          </div>
+        ` : ''}
+        ${renderPreviewBranchTable()}
+        <div class="care-preview-actions">
+          <button type="submit" class="btn btn-primary" ${state.previewDraftAccount ? '' : 'disabled'}>Preview Customer</button>
+          ${state.previewCompanyId ? '<button type="button" class="btn btn-secondary" id="clearCustomerPreview">Back To Internal</button>' : ''}
+        </div>
+      </form>
+    </section>
+    ${renderPreviewBranchDetail()}
+    ${renderPreviewLaunchModal()}
+  `;
+}
+
+function bindInternalCustomerPicker() {
+  const form = document.getElementById('internalCustomerPicker');
+  if (!form || !isInternalPortalUser()) return;
+
+  document.getElementById('internalCustomerSearch')?.addEventListener('input', (event) => {
+    window.clearTimeout(bindInternalCustomerPicker.searchTimer);
+    bindInternalCustomerPicker.searchTimer = window.setTimeout(() => {
+      updatePreviewSearch(event.target.value).catch((error) => showNotice(error.message || 'Unable to search customers.', 'error'));
+    }, 250);
+  });
+
+  viewContainer.querySelectorAll('[data-preview-account]').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectPreviewAccount(button.getAttribute('data-preview-account')).catch((error) => showNotice(error.message || 'Unable to load customer branches.', 'error'));
+    });
+  });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!state.previewDraftAccount) {
+      showNotice('Choose a customer account first.', 'error');
+      return;
+    }
+    await openPreviewLaunch('company');
+  });
+
+  document.getElementById('clearCustomerPreview')?.addEventListener('click', async () => {
+    state.previewDraftAccount = null;
+    state.previewSearchQuery = '';
+    state.previewSearchResults = [];
+    state.previewBranches = [];
+    state.previewBranchDetail = null;
+    state.previewCompanyIds = [];
+    state.previewCompanyName = '';
+    state.previewLaunch = null;
+    state.previewPickerExpanded = true;
+    await applyCustomerPreview('', '');
+    showNotice('Returned to internal preview mode.', 'success');
+  });
+
+  viewContainer.querySelectorAll('[data-branch-detail]').forEach((button) => {
+    button.addEventListener('click', () => {
+      loadBranchDetail(button.getAttribute('data-branch-detail')).catch((error) => showNotice(error.message || 'Unable to load branch detail.', 'error'));
+    });
+  });
+
+  document.getElementById('previewBranchLocalBtn')?.addEventListener('click', async () => {
+    if (!state.previewBranchDetail?.branch?.id) return;
+    const targetBranchId = String(state.previewBranchDetail.branch.id);
+    await applyCustomerPreview(state.previewDraftAccount, targetBranchId);
+    state.previewLaunch = null;
+    showNotice(`Previewing ${state.previewBranchDetail.branch.name}.`, 'success');
+  });
+
+  document.getElementById('previewBranchTabBtn')?.addEventListener('click', async () => {
+    if (!state.previewBranchDetail?.branch?.id) return;
+    await openPreviewLaunch('branch', String(state.previewBranchDetail.branch.id));
+  });
+
+  document.getElementById('previewLocalChoice')?.addEventListener('click', async () => {
+    if (state.previewLaunch?.kind === 'branch') {
+      if (!state.previewBranchDetail?.branch?.id) return;
+      state.previewLaunch = null;
+      await applyCustomerPreview(state.previewDraftAccount, String(state.previewBranchDetail.branch.id));
+      showNotice(`Previewing ${state.previewBranchDetail.branch.name}.`, 'success');
+    } else {
+      await previewCompanyHere();
+    }
+  });
+
+  document.getElementById('previewTabChoice')?.addEventListener('click', () => {
+    openPreviewInSeparateTab().catch((error) => showNotice(error.message || 'Unable to open separate preview tab.', 'error'));
+  });
+
+  document.getElementById('closePreviewModal')?.addEventListener('click', async () => {
+    state.previewLaunch = null;
+    await renderView();
+  });
+}
+
+async function renderDashboard() {
+  // ── Marga Admin Home — tabbed: Preview | Credentials & Access ──────────
+  if (isInternalPortalUser() && !state.previewCompanyId) {
+    viewContainer.innerHTML = `
+      <div class="admin-tabs">
+        <button class="admin-tab-btn ${state.adminTab === 'preview' ? 'active' : ''}" data-tab="preview">Customer Preview</button>
+        <button class="admin-tab-btn ${state.adminTab === 'credentials' ? 'active' : ''}" data-tab="credentials">Credentials &amp; Access</button>
+      </div>
+      <div id="adminTabBody"></div>
+    `;
+    viewContainer.querySelectorAll('.admin-tab-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        state.adminTab = btn.getAttribute('data-tab');
+        await renderDashboard();
+      });
+    });
+    if (state.adminTab === 'preview') {
+      document.getElementById('adminTabBody').innerHTML = renderInternalCustomerPicker();
+      bindInternalCustomerPicker();
+    } else {
+      await renderCredentialsTab();
+    }
+    return;
+  }
+
+  const customerPreviewRequired = isInternalPortalUser() && !state.previewCompanyId;
+  if (customerPreviewRequired) {
+    viewContainer.innerHTML = `${renderInternalCustomerPicker()}`;
+    bindInternalCustomerPicker();
+    return;
+  }
+
+  const summary = await service.getDashboardSummary(state.user);
+  const [tickets, requests, invoices, payments] = await Promise.all([
     service.listTickets(state.user),
+    service.listTonerRequests(state.user),
+    canViewBilling() ? service.listInvoices(state.user) : Promise.resolve([]),
+    canViewBilling() ? service.listPayments(state.user) : Promise.resolve([])
+  ]);
+  const groupMachines = summary.activeGroupMachines ?? summary.groupActiveMachines ?? summary.groupMachines ?? summary.activeDevices ?? 0;
+  const individualMachines = summary.activeIndividualMachines ?? summary.individualActiveMachines ?? summary.individualMachines ?? 0;
+  const allMachines = Number(groupMachines || 0) + Number(individualMachines || 0);
+  const openTickets = tickets.filter((ticket) => !String(ticket.status || '').toLowerCase().includes('complete')).length;
+  const recentActivityCount = tickets.length + requests.length;
+  viewContainer.innerHTML = `
+    ${renderInternalCustomerPicker()}
+    <section class="panel glass care-hero">
+      <div class="care-hero-copy">
+        <span class="care-eyebrow">MARGA Care</span>
+        <h2>${escapeHtml(state.company?.name || 'Your account')} support, tracked and visible</h2>
+        <p>Request help, follow updates, and keep service and billing proof in one place without chasing text threads.</p>
+      </div>
+      <div class="care-hero-actions">
+        <button type="button" class="btn btn-primary" id="careActionService">Request Service</button>
+        <button type="button" class="btn btn-secondary" id="careActionToner">Request Toner / Ink</button>
+        ${canViewBilling() ? '<button type="button" class="btn btn-secondary" id="careActionBilling">View Billing & Payments</button>' : ''}
+        <button type="button" class="btn btn-secondary" id="careActionSupport">Contact Marga</button>
+      </div>
+    </section>
+
+    <section class="panel glass dashboard-summary-card care-metric-strip">
+      <div class="kpi-grid">
+        <div class="kpi-card kpi-card--link" data-nav="tickets" role="button" tabindex="0">
+          <div class="kpi-card-inner"><div class="value">${openTickets}</div><div class="label">Open Service Requests</div></div>
+          <div class="kpi-arrow">→</div>
+        </div>
+        <div class="kpi-card kpi-card--link" data-nav="toner" role="button" tabindex="0">
+          <div class="kpi-card-inner"><div class="value">${summary.pendingToner}</div><div class="label">Pending Toner / Ink</div></div>
+          <div class="kpi-arrow">→</div>
+        </div>
+        <div class="kpi-card kpi-card--link" data-nav="devices" role="button" tabindex="0">
+          <div class="kpi-card-inner"><div class="value">${allMachines}</div><div class="label">Machines In Care</div></div>
+          <div class="kpi-arrow">→</div>
+        </div>
+        ${
+          canViewBilling()
+            ? `<div class="kpi-card kpi-card--link" data-nav="billing" role="button" tabindex="0">
+                <div class="kpi-card-inner"><div class="value money-value">${formatMoney(summary.unpaidAmount)}</div><div class="label">Outstanding Balance</div></div>
+                <div class="kpi-arrow">→</div>
+               </div>`
+            : `<div class="kpi-card kpi-card--link" data-nav="history" role="button" tabindex="0">
+                <div class="kpi-card-inner"><div class="value">${recentActivityCount}</div><div class="label">Recent Updates</div></div>
+                <div class="kpi-arrow">→</div>
+               </div>`
+        }
+      </div>
+    </section>
+  `;
+
+  // KPI card click navigation
+  viewContainer.querySelectorAll('.kpi-card--link').forEach(card => {
+    const nav = card.getAttribute('data-nav');
+    if (!nav) return;
+    card.addEventListener('click', () => setView(nav));
+    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') setView(nav); });
+  });
+
+  document.getElementById('careActionService')?.addEventListener('click', () => setView('tickets'));
+  document.getElementById('careActionToner')?.addEventListener('click', () => setView('toner'));
+  document.getElementById('careActionBilling')?.addEventListener('click', () => setView('billing'));
+  document.getElementById('careActionSupport')?.addEventListener('click', () => setView('support'));
+  bindInternalCustomerPicker();
+}
+
+async function renderDevices() {
+  const [devicesRaw, branches] = await Promise.all([
+    service.listDevices(state.user),
     service.listBranches(state.user)
   ]);
+  const branchMap = new Map(branches.map((branch) => [branch.id, cleanBranchName(branch.name)]));
+  const devices = [...devicesRaw].sort((left, right) =>
+    (left.location || left.branchName || '').localeCompare(right.location || right.branchName || '')
+    || (left.serial || '').localeCompare(right.serial || '')
+    || (left.model || '').localeCompare(right.model || '')
+  );
+  const searchNeedle = state.deviceSearchQuery.trim().toLowerCase();
+  const statusNeedle = (state.deviceStatusFilter || '').trim().toLowerCase();
+  const filteredDevices = devices.filter((device) => {
+    const branchName = branchMap.get(device.branchId) || device.location || device.branchName || '';
+    const matchSearch = !searchNeedle || [branchName, device.serial, device.model]
+      .filter(Boolean)
+      .some((v) => String(v).toLowerCase().includes(searchNeedle));
+    const matchStatus = !statusNeedle || String(device.status || '').toLowerCase() === statusNeedle;
+    return matchSearch && matchStatus;
+  });
 
-  if (!state.selectedDeviceId && devices.length) state.selectedDeviceId = devices[0].id;
-  const selectedDevice = devices.find((device) => device.id === state.selectedDeviceId) || devices[0] || null;
-  const deviceHistory = selectedDevice ? tickets.filter((ticket) => ticket.deviceId === selectedDevice.id) : [];
-
-  const branchMap = new Map(branches.map((branch) => [branch.id, branch.name]));
+  if (state.selectedDeviceId && !devices.some((device) => String(device.id) === String(state.selectedDeviceId))) {
+    state.selectedDeviceId = null;
+    state.deviceDetailOpen = false;
+    state.deviceDetail = null;
+    state.deviceDetailLoading = false;
+  }
+  if (!state.selectedDeviceId && filteredDevices.length) state.selectedDeviceId = filteredDevices[0].id;
+  const selectedDevice = devices.find((device) => String(device.id) === String(state.selectedDeviceId)) || filteredDevices[0] || null;
+  const detail = state.deviceDetailOpen && selectedDevice && String(state.deviceDetail?.device?.id) === String(selectedDevice.id)
+    ? state.deviceDetail
+    : null;
 
   viewContainer.innerHTML = `
     <div class="panel glass">
-      <div class="panel-head"><h3>Rented Devices</h3><span class="muted">${devices.length} devices</span></div>
+      <div class="panel-head panel-head-device-search">
+        <div class="care-device-title-block">
+          <h3>Rented Devices</h3>
+          <span class="muted">${filteredDevices.length} of ${devices.length}</span>
+        </div>
+        <div class="care-device-toolbar">
+          <label class="care-device-search">
+            <span class="sr-only">Search devices</span>
+            <input
+              id="deviceSearchInput"
+              type="text"
+              value="${escapeHtml(state.deviceSearchQuery)}"
+              placeholder="Search branch or serial"
+              autocomplete="off"
+            />
+          </label>
+        </div>
+      </div>
+      <div class="device-filter-chips">
+        ${[
+          ['', 'All'],
+          ['Active', 'Active'],
+          ['Needs Attention', 'Needs Attention'],
+          ['For Replacement', 'For Replacement'],
+          ['Inactive', 'Inactive']
+        ].map(([val, label]) => {
+          const count = val ? devices.filter(d => d.status === val).length : devices.length;
+          const active = state.deviceStatusFilter === val;
+          return `<button class="device-filter-chip ${active ? 'active' : ''} ${val ? 'chip-' + val.toLowerCase().replace(/\s+/g,'-') : ''}"
+            data-status="${escapeHtml(val)}">${escapeHtml(label)} <span class="chip-count">${count}</span></button>`;
+        }).join('')}
+      </div>
       ${
-        devices.length
-          ? `<div class="table-wrap"><table class="data-table"><thead><tr>
-            <th>Model</th><th>Serial</th><th>Branch</th><th>Status</th><th>Contract</th><th></th>
-          </tr></thead><tbody>
-          ${devices
-            .map(
-              (device) => `<tr>
-              <td>${escapeHtml(device.model)}</td>
-              <td>${escapeHtml(device.serial)}</td>
-              <td>${escapeHtml(branchMap.get(device.branchId) || device.branchId || '-')}</td>
-              <td><span class="tag ${statusClass(device.status)}">${escapeHtml(device.status || '')}</span></td>
-              <td>${escapeHtml(device.contractStart || '-')} to ${escapeHtml(device.contractEnd || '-')}</td>
-              <td><button class="btn btn-secondary btn-sm" data-device-id="${device.id}">Details</button></td>
-            </tr>`
-            )
-            .join('')}
-          </tbody></table></div>`
-          : '<div class="empty-state">No devices found for your scope.</div>'
+        filteredDevices.length
+          ? `<div class="care-device-table-wrap" data-drag-scroll="devices" tabindex="0" role="region" aria-label="Rented devices table. Swipe or drag horizontally to view more columns.">
+              <div class="care-device-grid">
+                <div class="care-device-grid-head">
+                  <div>Model</div>
+                  <div>Serial</div>
+                  <div>Branch</div>
+                  <div>Status</div>
+                  <div></div>
+                </div>
+                <div class="care-device-grid-body">
+                  ${filteredDevices
+                    .map(
+                      (device) => `<div class="care-device-grid-row${selectedDevice && device.id === selectedDevice.id ? ' is-selected' : ''}">
+                        <div>${escapeHtml(device.model)}</div>
+                        <div>${escapeHtml(device.serial)}</div>
+                        <div>${escapeHtml(branchMap.get(device.branchId) || cleanBranchName(device.branchName) || device.branchId || '-')}</div>
+                        <div><span class="tag ${statusClass(device.status)}">${escapeHtml(device.status || '')}</span></div>
+                        <div><button class="btn btn-secondary btn-sm" data-device-id="${device.id}" ${state.deviceDetailLoading && String(selectedDevice?.id) === String(device.id) ? 'disabled' : ''}>${state.deviceDetailLoading && String(selectedDevice?.id) === String(device.id) ? 'Loading...' : 'Details'}</button></div>
+                      </div>`
+                    )
+                    .join('')}
+                </div>
+              </div>
+            </div>`
+          + `<div class="care-device-scroll-hint">Swipe or drag to see more columns</div>`
+          : '<div class="empty-state">No device matched that branch or serial.</div>'
       }
     </div>
 
-    <div class="panel glass">
-      <div class="panel-head"><h3>Device Detail</h3></div>
-      ${
-        selectedDevice
-          ? `<div class="summary-line"><span>Model</span><strong>${escapeHtml(selectedDevice.model)}</strong></div>
-             <div class="summary-line"><span>Serial</span><strong>${escapeHtml(selectedDevice.serial)}</strong></div>
-             <div class="summary-line"><span>Location</span><strong>${escapeHtml(selectedDevice.location || '-')}</strong></div>
-             <div class="summary-line"><span>Status</span><strong>${escapeHtml(selectedDevice.status || '-')}</strong></div>
-             <div class="summary-line"><span>Service History</span><strong>${deviceHistory.length} tickets</strong></div>
-             <div class="timeline">
-               ${
-                 deviceHistory.length
-                   ? deviceHistory
-                       .slice(0, 6)
-                       .map(
-                         (ticket) => `<article class="timeline-item">
-                          <strong>${escapeHtml(ticket.ticketNo || ticket.id)}</strong>
-                          <div class="tag ${statusClass(ticket.status)}">${escapeHtml(ticket.status || '')}</div>
-                          <p>${escapeHtml(ticket.description || '')}</p>
-                          <p>${formatDate(ticket.updatedAt || ticket.createdAt)}</p>
-                        </article>`
-                       )
-                       .join('')
-                   : '<div class="empty-state">No service history yet.</div>'
-               }
-             </div>`
-          : '<div class="empty-state">Choose a device to inspect details.</div>'
-      }
-    </div>
+    ${state.deviceDetailOpen && selectedDevice ? `
+      <div class="care-modal-backdrop" id="deviceDetailModal">
+        <div class="care-modal glass care-device-modal">
+          <div class="panel-head">
+            <h3>Device Detail</h3>
+            <button type="button" class="btn btn-secondary btn-sm" id="closeDeviceDetail">Close</button>
+          </div>
+          ${
+            state.deviceDetailLoading
+              ? `<div class="care-device-loading">
+                   <div class="care-loading-spinner" aria-hidden="true"></div>
+                   <p>Loading device history...</p>
+                 </div>`
+              : detail
+              ? `<div class="care-device-detail-head">
+                   <div>
+                     <strong>${escapeHtml(detail.device?.serial && detail.device.serial !== 'N/A' ? detail.device.serial : (selectedDevice.serial !== 'N/A' ? selectedDevice.serial : 'Serial pending'))}</strong>
+                     <p>${escapeHtml(detail.device?.model || selectedDevice.model || '-')} · ${escapeHtml(cleanBranchName(detail.device?.branchName || selectedDevice.location || ''))}</p>
+                   </div>
+                   <span class="tag ${statusClass(detail.device?.status || selectedDevice.status)}">${escapeHtml(detail.device?.status || selectedDevice.status || '')}</span>
+                 </div>
+                 ${detail.device?.notes ? `<div class="care-device-note"><span class="care-device-note-icon">ℹ</span> ${escapeHtml(detail.device.notes)}</div>` : ''}
+                 <div class="timeline care-device-timeline">
+                   ${
+                     Array.isArray(detail.timeline) && detail.timeline.length
+                       ? detail.timeline
+                           .map(
+                             (item) => `<article class="timeline-item">
+                              <strong>${escapeHtml(item.label || '')}</strong>
+                              <div class="tag ${statusClass(item.status)}">${escapeHtml(item.status || '')}</div>
+                              <p>${escapeHtml(item.details || '')}</p>
+                              <p>${formatDate(item.at)}</p>
+                            </article>`
+                           )
+                           .join('')
+                       : `<div class="empty-state">
+                            <p>No service history recorded yet for this machine.</p>
+                            <p style="margin-top:.5rem;font-size:.8rem;color:#94a3b8">History will appear here after the first service or delivery visit.</p>
+                          </div>`
+                   }
+                 </div>`
+              : '<div class="empty-state">No machine history found yet.</div>'
+          }
+        </div>
+      </div>
+    ` : ''}
   `;
+
+  document.getElementById('deviceSearchInput')?.addEventListener('input', async (event) => {
+    state.deviceSearchQuery = event.target.value || '';
+    await renderDevices();
+  });
+
+  viewContainer.querySelectorAll('.device-filter-chip').forEach(chip => {
+    chip.addEventListener('click', async () => {
+      state.deviceStatusFilter = chip.getAttribute('data-status') || '';
+      state.deviceSearchQuery = '';
+      await renderDevices();
+    });
+  });
+
+  viewContainer.querySelectorAll('[data-device-id]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await openDeviceDetail(button.getAttribute('data-device-id'));
+    });
+  });
+
+  bindDragScroll(document.querySelector('[data-drag-scroll="devices"]'));
+
+  document.getElementById('closeDeviceDetail')?.addEventListener('click', async () => {
+    state.deviceDetailOpen = false;
+    state.deviceDetailLoading = false;
+    await renderDevices();
+  });
+
+  document.getElementById('deviceDetailModal')?.addEventListener('click', async (event) => {
+    if (event.target?.id !== 'deviceDetailModal') return;
+    state.deviceDetailOpen = false;
+    state.deviceDetailLoading = false;
+    await renderDevices();
+  });
+}
+
+async function openDeviceDetail(deviceId) {
+  state.selectedDeviceId = deviceId;
+  state.deviceDetailOpen = true;
+  state.deviceDetailLoading = true;
+  state.deviceDetail = null;
+  state.deviceDetailRequestId += 1;
+  const requestId = state.deviceDetailRequestId;
+  await renderDevices();
+  try {
+    const detail = await service.getDeviceDetail(state.user, deviceId);
+    if (requestId !== state.deviceDetailRequestId) return;
+    state.deviceDetail = detail;
+  } catch (error) {
+    if (requestId !== state.deviceDetailRequestId) return;
+    showNotice(error.message || 'Failed to load device detail.', 'error');
+    state.deviceDetail = null;
+  } finally {
+    if (requestId !== state.deviceDetailRequestId) return;
+    state.deviceDetailLoading = false;
+    await renderDevices();
+  }
 }
 
 function renderTicketTimeline(ticket) {
@@ -341,7 +1175,7 @@ async function renderTickets() {
   const deviceOptions = devices
     .map((device) => `<option value="${device.id}">${escapeHtml(device.model)} - ${escapeHtml(device.serial)}</option>`)
     .join('');
-  const branchOptions = branches.map((branch) => `<option value="${branch.id}">${escapeHtml(branch.name)}</option>`).join('');
+  const branchOptions = branches.map((branch) => `<option value="${branch.id}">${escapeHtml(cleanBranchName(branch.name))}</option>`).join('');
 
   viewContainer.innerHTML = `
     <div class="grid-2">
@@ -349,7 +1183,7 @@ async function renderTickets() {
         <div class="panel-head"><h3>Create Service Ticket</h3></div>
         <form id="createTicketForm" class="form-grid">
           ${
-            ['marga_admin', 'marga_staff', 'corporate_admin'].includes(state.user.role)
+            ['marga_admin', 'marga_staff', 'corporate_admin', 'company_admin'].includes(state.user.role)
               ? `<label>Branch<select name="branchId" required>${branchOptions}</select></label>`
               : `<input type="hidden" name="branchId" value="${escapeHtml(state.user.branchId || '')}" />`
           }
@@ -428,9 +1262,10 @@ async function renderTickets() {
     const form = event.currentTarget;
     const formData = new FormData(form);
 
-    const branchId = ['marga_admin', 'marga_staff', 'corporate_admin'].includes(state.user.role) ? formData.get('branchId') : state.user.branchId;
+    const branchId = ['marga_admin', 'marga_staff', 'corporate_admin', 'company_admin'].includes(state.user.role) ? formData.get('branchId') : state.user.branchId;
+    const selectedBranch = branches.find((branch) => String(branch.id) === String(branchId));
     const payload = {
-      companyId: state.user.companyId,
+      companyId: selectedBranch?.companyId || activeCompanyId(),
       branchId,
       deviceId: formData.get('deviceId'),
       category: formData.get('category'),
@@ -467,7 +1302,8 @@ async function renderToner() {
   const deviceOptions = devices
     .map((device) => `<option value="${device.id}">${escapeHtml(device.model)} - ${escapeHtml(device.serial)}</option>`)
     .join('');
-  const branchOptions = branches.map((branch) => `<option value="${branch.id}">${escapeHtml(branch.name)}</option>`).join('');
+  const branchOptions = branches.map((branch) => `<option value="${branch.id}">${escapeHtml(cleanBranchName(branch.name))}</option>`).join('');
+  const tonerPhotoLabel = `<label class="full">Attach Photo <small>(optional — ink level or empty cartridge)</small><input type="file" name="attachment" accept="image/*" /></label>`;
 
   viewContainer.innerHTML = `
     <div class="grid-2">
@@ -475,12 +1311,13 @@ async function renderToner() {
         <div class="panel-head"><h3>Request Toner / Ink</h3></div>
         <form id="createTonerForm" class="form-grid">
           ${
-            ['marga_admin', 'marga_staff', 'corporate_admin'].includes(state.user.role)
+            ['marga_admin', 'marga_staff', 'corporate_admin', 'company_admin'].includes(state.user.role)
               ? `<label>Branch<select name="branchId" required>${branchOptions}</select></label>`
               : `<input type="hidden" name="branchId" value="${escapeHtml(state.user.branchId || '')}" />`
           }
           <label>Device<select name="deviceId" required>${deviceOptions}</select></label>
           <label class="full">Notes<textarea name="notes" rows="3" placeholder="Add toner color or urgency details"></textarea></label>
+          ${tonerPhotoLabel}
           <button type="submit" class="btn btn-primary full">Submit Toner Request</button>
         </form>
       </div>
@@ -509,16 +1346,20 @@ async function renderToner() {
   document.getElementById('createTonerForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
+    const branchId = ['marga_admin', 'marga_staff', 'corporate_admin', 'company_admin'].includes(state.user.role) ? formData.get('branchId') : state.user.branchId;
+    const selectedBranch = branches.find((branch) => String(branch.id) === String(branchId));
 
     const payload = {
-      companyId: state.user.companyId,
-      branchId: ['marga_admin', 'marga_staff', 'corporate_admin'].includes(state.user.role) ? formData.get('branchId') : state.user.branchId,
+      companyId: selectedBranch?.companyId || activeCompanyId(),
+      branchId,
       deviceId: formData.get('deviceId'),
       notes: formData.get('notes')
     };
 
+    const tonerPhoto = formData.get('attachment');
+    const hasTonerPhoto = tonerPhoto && tonerPhoto.size > 0;
     try {
-      await service.createTonerRequest(state.user, payload);
+      await service.createTonerRequest(state.user, payload, hasTonerPhoto ? tonerPhoto : null);
       showNotice('Toner request submitted.', 'success');
       event.currentTarget.reset();
       await renderToner();
@@ -529,91 +1370,267 @@ async function renderToner() {
 }
 
 async function renderBilling() {
-  if (!['marga_admin', 'corporate_admin', 'branch_manager'].includes(state.user.role)) {
+  if (!canViewBilling()) {
     viewContainer.innerHTML = '<div class="panel glass"><div class="empty-state">Billing access is not available for this role.</div></div>';
     return;
   }
 
-  const [invoices, payments] = await Promise.all([service.listInvoices(state.user), service.listPayments(state.user)]);
+  const invoices = await service.listInvoices(state.user);
   const unpaid = invoices.filter((invoice) => String(invoice.status || '').toLowerCase() !== 'paid');
   const totalUnpaid = unpaid.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0);
 
+  // ── Group invoices by invoice_no ────────────────────────────────────────
+  // When multiple rows share the same invoice_no, they're branches of one grouped invoice.
+  // When each row has a unique invoice_no (or no invoice_no), treat as individual.
+  const groupMap = new Map();
+  invoices.forEach((inv) => {
+    const key = inv.invoiceNo || inv.id;
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        invoiceNo: inv.invoiceNo,
+        period: inv.period,
+        dueDate: inv.dueDate,
+        status: inv.status,
+        total: 0,
+        branches: [],
+        isGrouped: false
+      });
+    }
+    const g = groupMap.get(key);
+    g.total += Number(inv.amount || 0);
+    if (inv.branchName || inv.branchId) {
+      g.branches.push({ name: cleanBranchName(inv.branchName || String(inv.branchId)), amount: Number(inv.amount || 0), status: inv.status });
+      if (g.branches.length > 1) g.isGrouped = true;
+    }
+    // Normalize status: if any branch is Unpaid, whole group is Unpaid
+    if (!g.status || g.status === '0' || g.status === 'Unpaid') g.status = 'Unpaid';
+  });
+
+  const invoiceGroups = [...groupMap.values()].sort((a, b) =>
+    (new Date(b.dueDate || 0).getTime()) - (new Date(a.dueDate || 0).getTime())
+  );
+
+  const state_expanded = state.expandedInvoiceGroups || new Set();
+  state.expandedInvoiceGroups = state_expanded;
+
+  function renderInvoiceRows() {
+    return invoiceGroups.map((group, idx) => {
+      const displayStatus = group.status && group.status !== '0' ? group.status : 'Unpaid';
+      const isExpanded = state_expanded.has(idx);
+      const branchRows = group.isGrouped && isExpanded
+        ? group.branches.map(b => `
+            <tr class="invoice-branch-row">
+              <td class="invoice-branch-name">${escapeHtml(b.name)}</td>
+              <td>${formatMoney(b.amount)}</td>
+              <td></td>
+              <td><span class="tag ${statusClass(displayStatus)}">${escapeHtml(displayStatus)}</span></td>
+              <td>-</td>
+            </tr>`).join('')
+        : '';
+      return `
+        <tr class="invoice-group-row${group.isGrouped ? ' invoice-grouped' : ''}" data-invoice-idx="${idx}">
+          <td>${escapeHtml(formatBillingPeriod(group.period, group.dueDate))}</td>
+          <td>${formatMoney(group.total)}</td>
+          <td>${escapeHtml(formatDatePH(group.dueDate))}</td>
+          <td><span class="tag ${statusClass(displayStatus)}">${escapeHtml(displayStatus)}</span></td>
+          <td>${group.isGrouped
+            ? `<button class="btn btn-secondary btn-sm invoice-expand-btn" data-invoice-idx="${idx}">
+                ${isExpanded ? '▲ Hide' : `▼ ${group.branches.length} branches`}
+               </button>`
+            : '-'
+          }</td>
+        </tr>
+        ${branchRows}`;
+    }).join('');
+  }
+
   viewContainer.innerHTML = `
     <div class="panel glass">
-      <div class="panel-head"><h3>Billing Summary</h3></div>
+      <div class="panel-head"><h3>Billing Summary</h3>${activityChip('Visible proof', 'ok')}</div>
       <div class="kpi-grid">
-        <div class="kpi-card"><div class="value">${invoices.length}</div><div class="label">Total Invoices</div></div>
-        <div class="kpi-card"><div class="value">${unpaid.length}</div><div class="label">Unpaid Invoices</div></div>
+        <div class="kpi-card"><div class="value">${invoiceGroups.length}</div><div class="label">Invoice Groups</div></div>
+        <div class="kpi-card"><div class="value">${unpaid.length}</div><div class="label">Unpaid Line Items</div></div>
         <div class="kpi-card"><div class="value">${formatMoney(totalUnpaid)}</div><div class="label">Unpaid Amount</div></div>
+      </div>
+    </div>
+
+    <div class="panel glass">
+      <div class="panel-head"><h3>Invoices</h3><span class="muted">Statements and due dates</span></div>
+      ${
+        invoiceGroups.length
+          ? `<div class="table-wrap"><table class="data-table" id="billingTable"><thead><tr>
+              <th>Period</th><th>Amount</th><th>Due Date</th><th>Status</th><th>Breakdown</th>
+            </tr></thead><tbody id="billingTableBody">
+            ${renderInvoiceRows()}
+            </tbody></table></div>`
+          : '<div class="empty-state">No invoices found.</div>'
+      }
+    </div>
+  `;
+
+  // Wire expand/collapse
+  document.getElementById('billingTableBody')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.invoice-expand-btn');
+    if (!btn) return;
+    const idx = Number(btn.getAttribute('data-invoice-idx'));
+    if (state_expanded.has(idx)) state_expanded.delete(idx);
+    else state_expanded.add(idx);
+    document.getElementById('billingTableBody').innerHTML = renderInvoiceRows();
+    // Re-wire after innerHTML replace
+    document.getElementById('billingTableBody')?.addEventListener('click', arguments.callee);
+  });
+}
+
+async function renderHistory() {
+  const [tickets, requests, invoices, payments] = await Promise.all([
+    service.listTickets(state.user),
+    service.listTonerRequests(state.user),
+    canViewBilling() ? service.listInvoices(state.user) : Promise.resolve([]),
+    canViewBilling() ? service.listPayments(state.user) : Promise.resolve([])
+  ]);
+
+  const items = buildActivityFeed({ tickets, requests, invoices, payments });
+  const proofCount = items.filter((item) => ['Payment Proof', 'Service Proof'].includes(item.type)).length;
+
+  viewContainer.innerHTML = `
+    <div class="panel glass">
+      <div class="panel-head">
+        <h3>Proof & History</h3>
+        <span class="muted">${items.length} visible update${items.length === 1 ? '' : 's'}</span>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="value">${tickets.length}</div><div class="label">Service Records</div></div>
+        <div class="kpi-card"><div class="value">${requests.length}</div><div class="label">Supply Requests</div></div>
+        <div class="kpi-card"><div class="value">${proofCount}</div><div class="label">Proof Events</div></div>
+        <div class="kpi-card"><div class="value">${payments.length}</div><div class="label">Posted Payments</div></div>
       </div>
     </div>
 
     <div class="grid-2">
       <div class="panel glass">
-        <div class="panel-head"><h3>Invoices</h3></div>
+        <div class="panel-head"><h3>Activity Timeline</h3>${activityChip('Customer-facing history')}</div>
         ${
-          invoices.length
-            ? `<div class="table-wrap"><table class="data-table"><thead><tr>
-              <th>Period</th><th>Amount</th><th>Due Date</th><th>Status</th><th>PDF</th>
-            </tr></thead><tbody>
-            ${invoices
-              .map(
-                (invoice) => `<tr>
-                <td>${escapeHtml(invoice.period || '-')}</td>
-                <td>${formatMoney(invoice.amount)}</td>
-                <td>${escapeHtml(invoice.dueDate || '-')}</td>
-                <td><span class="tag ${statusClass(invoice.status)}">${escapeHtml(invoice.status || '-')}</span></td>
-                <td>${invoice.pdfUrl ? `<a class="btn btn-secondary btn-sm" href="${escapeHtml(invoice.pdfUrl)}" target="_blank" rel="noopener">Download</a>` : '-'}</td>
-              </tr>`
-              )
-              .join('')}
-            </tbody></table></div>`
-            : '<div class="empty-state">No invoices found.</div>'
-        }
-      </div>
-      <div class="panel glass">
-        <div class="panel-head"><h3>Payments</h3></div>
-        ${
-          payments.length
-            ? `<div class="timeline">${payments
-                .slice(0, 10)
+          items.length
+            ? `<div class="timeline care-activity-feed">${items
                 .map(
-                  (payment) => `<article class="timeline-item">
-                    <strong>${formatMoney(payment.amount)}</strong>
-                    <p>${escapeHtml(payment.method || '-')}, Ref: ${escapeHtml(payment.referenceNo || '-')}</p>
-                    <p>${escapeHtml(payment.date || '-')}</p>
+                  (item) => `<article class="timeline-item care-activity-item">
+                    <strong>${escapeHtml(item.title)}</strong>
+                    ${activityChip(item.type, item.tone)}
+                    <p>${escapeHtml(item.summary)}</p>
+                    <p>${escapeHtml(item.detail)}${item.at ? ` · ${shortDate(item.at)}` : ''}</p>
                   </article>`
                 )
                 .join('')}</div>`
-            : '<div class="empty-state">No payments recorded.</div>'
+            : '<div class="empty-state">No history is visible yet.</div>'
         }
+      </div>
+
+      <div class="panel glass">
+        <div class="panel-head"><h3>What This Proves</h3>${activityChip('Trust layer', 'ok')}</div>
+        <div class="care-promise-list">
+          <div class="summary-line"><span>Request trail</span><strong>${tickets.length + requests.length} visible records</strong></div>
+          <div class="summary-line"><span>Service proof</span><strong>${items.filter((item) => item.type === 'Service Proof').length} completion event${items.filter((item) => item.type === 'Service Proof').length === 1 ? '' : 's'}</strong></div>
+          <div class="summary-line"><span>Payment proof</span><strong>${payments.length} posted payment${payments.length === 1 ? '' : 's'}</strong></div>
+          <div class="summary-line"><span>Billing visibility</span><strong>${invoices.length} invoice${invoices.length === 1 ? '' : 's'} available</strong></div>
+        </div>
+        <div class="care-history-note">
+          Use this page whenever you need to verify what was requested, what was completed, and what Marga has already recorded.
+        </div>
       </div>
     </div>
   `;
 }
 
+const aiChatState = { messages: [], loading: false };
+
+async function sendAiChatMessage(userText) {
+  if (!userText.trim() || aiChatState.loading) return;
+  aiChatState.loading = true;
+  aiChatState.messages.push({ role: 'user', content: userText.trim() });
+  renderAiChat();
+
+  const companyName = state.company?.name || 'your company';
+  const systemPrompt = `You are Marga Care Assistant, the 24/7 AI support agent for Marga Enterprises, the leading copier and printer rental company in the Philippines.
+You are speaking with a customer from ${companyName}.
+Your job is to help customers with: checking service request status, requesting toner or ink delivery, understanding their billing and balance, reporting machine problems, and escalating to a human agent when needed.
+Be friendly, helpful, and concise. Answer in plain English. If the customer writes in Filipino or Taglish, respond in the same language.
+If you cannot answer a specific question (e.g. exact ticket status, payment records), tell them to use the portal sections or say you will escalate to the team.
+Never make up specific numbers, dates, or invoice details you do not know.
+To escalate to a human agent, say: "I'll connect you with our team now — please call +63-2-8123-4567 or email solutions@marga.biz."`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages: aiChatState.messages.map((m) => ({ role: m.role, content: m.content }))
+      })
+    });
+    const data = await resp.json();
+    const reply = data?.content?.[0]?.text || 'Sorry, I could not get a response. Please try again or call our service desk.';
+    aiChatState.messages.push({ role: 'assistant', content: reply });
+  } catch {
+    aiChatState.messages.push({ role: 'assistant', content: 'Connection issue. Please try again or call +63-2-8123-4567.' });
+  }
+  aiChatState.loading = false;
+  renderAiChat();
+}
+
+function renderAiChat() {
+  const chatBox = document.getElementById('aiChatMessages');
+  const input = document.getElementById('aiChatInput');
+  const btn = document.getElementById('aiChatSend');
+  if (!chatBox) return;
+  chatBox.innerHTML = aiChatState.messages.length
+    ? aiChatState.messages.map((m) => `
+        <div class="ai-chat-msg ai-chat-msg--${m.role}">
+          <span class="ai-chat-sender">${m.role === 'user' ? 'You' : 'Marga AI'}</span>
+          <p>${escapeHtml(m.content)}</p>
+        </div>`).join('')
+    + (aiChatState.loading ? '<div class="ai-chat-msg ai-chat-msg--assistant"><p class="ai-chat-typing">Typing…</p></div>' : '')
+    : '<div class="ai-chat-empty">Ask anything about your machines, service, toner, or billing.</div>';
+  chatBox.scrollTop = chatBox.scrollHeight;
+  if (btn) btn.disabled = aiChatState.loading;
+  if (input) input.disabled = aiChatState.loading;
+}
+
 function renderSupport() {
   const support = state.company?.support || config.support || {};
   const escalation = state.company?.escalationContacts || [
-    { title: 'Service Desk', value: support.callNumber || '-' },
+    { title: 'Service Desk', value: support.callNumber || '+63-2-8123-4567' },
     { title: 'Billing Team', value: 'billing@marga.biz' },
     { title: 'Account Manager', value: 'accounts@marga.biz' }
   ];
 
   viewContainer.innerHTML = `
+    <div class="panel glass">
+      <div class="panel-head">
+        <h3>Marga AI Assistant</h3>
+        <span class="tag done">Online 24/7</span>
+      </div>
+      <div id="aiChatMessages" class="ai-chat-box"></div>
+      <div class="ai-chat-input-row">
+        <input id="aiChatInput" type="text" class="input" placeholder="Ask about your machines, service, or billing…" autocomplete="off" />
+        <button id="aiChatSend" class="btn btn-primary">Send</button>
+      </div>
+    </div>
+
     <div class="grid-2">
       <div class="panel glass">
-        <div class="panel-head"><h3>Contact Marga Support</h3></div>
+        <div class="panel-head"><h3>Contact Marga</h3>${activityChip('Fast handoff')}</div>
         <div class="inline-actions">
-          <a class="btn btn-primary" href="tel:${escapeHtml(support.callNumber || '')}">Call Support</a>
-          <a class="btn btn-secondary" href="mailto:${escapeHtml(support.email || '')}">Email</a>
+          <a class="btn btn-primary" href="tel:${escapeHtml(support.callNumber || '+6328123456')}">Call Support</a>
+          <a class="btn btn-secondary" href="mailto:${escapeHtml(support.email || 'solutions@marga.biz')}">Email</a>
           <a class="btn btn-secondary" href="${escapeHtml(support.whatsappUrl || '#')}" target="_blank" rel="noopener">WhatsApp</a>
           <a class="btn btn-secondary" href="${escapeHtml(support.viberUrl || '#')}" target="_blank" rel="noopener">Viber</a>
         </div>
       </div>
 
       <div class="panel glass">
-        <div class="panel-head"><h3>Escalation Contacts</h3></div>
+        <div class="panel-head"><h3>Escalation Contacts</h3><span class="muted">When you need a clearer follow-up path</span></div>
         <div class="timeline">
           ${escalation
             .map(
@@ -627,7 +1644,449 @@ function renderSupport() {
       </div>
     </div>
   `;
+
+  renderAiChat();
+
+  document.getElementById('aiChatSend')?.addEventListener('click', () => {
+    const input = document.getElementById('aiChatInput');
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    sendAiChatMessage(text);
+  });
+
+  document.getElementById('aiChatInput')?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const text = event.target.value.trim();
+    if (!text) return;
+    event.target.value = '';
+    sendAiChatMessage(text);
+  });
 }
+
+// ── Credentials & Access Tab ─────────────────────────────────────────────
+
+async function fetchCredentials() {
+  const qs = new URLSearchParams({
+    q: state.credSearch || '',
+    role: state.credRoleFilter || '',
+    status: state.credStatusFilter || '',
+    active: state.credActiveFilter ?? 'true',
+    page: String(state.credPage || 1)
+  });
+  const token = loadAuthToken();
+  const r = await fetch(`/portal-api/admin/credentials?${qs}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: 'same-origin'
+  });
+  if (!r.ok) {
+    const errText = await r.text().catch(() => r.statusText);
+    throw new Error(`Server returned ${r.status}: ${errText.slice(0, 120)}`);
+  }
+  const d = await r.json();
+  state.credAccounts = d.accounts || [];
+  state.credTotal = d.total || 0;
+  state.credPages = d.pages || 1;
+}
+
+async function renderCredentialsTab() {
+  const tabBody = document.getElementById('adminTabBody');
+  if (!tabBody) return;
+
+  // Show loading with timeout guard — never hang silently
+  tabBody.innerHTML = `
+    <div class="cred-loading">
+      <div class="cred-loading-spinner"></div>
+      <p>Loading credentials…</p>
+    </div>`;
+
+  const timeout = setTimeout(() => {
+    const loadEl = tabBody.querySelector('.cred-loading');
+    if (loadEl) loadEl.innerHTML = '<p style="color:#ef4444">⚠️ Taking too long. Check server connection or try again.</p><button class="btn btn-secondary" onclick="location.reload()">Reload</button>';
+  }, 8000);
+
+  try {
+    await fetchCredentials();
+    clearTimeout(timeout);
+    tabBody.innerHTML = buildCredentialsHTML();
+    bindCredentialsTab();
+  } catch (err) {
+    clearTimeout(timeout);
+    tabBody.innerHTML = `<div class="panel glass"><div class="empty-state" style="color:#ef4444">⚠️ Failed to load credentials: ${escapeHtml(err.message || 'Unknown error')}.<br><br><button class="btn btn-secondary" id="credRetry">Retry</button></div></div>`;
+    tabBody.querySelector('#credRetry')?.addEventListener('click', renderCredentialsTab);
+  }
+}
+
+function buildCredentialsHTML() {
+  const statusIcon = (acct) => {
+    if (!acct.active) return '<span class="cred-status cred-status--off">● Inactive</span>';
+    if (acct.role === 'branch_user') {
+      // Branch users: "Registered" = self-registered with own email/password; "Pending" = not yet claimed
+      if (acct.contactEmail) return '<span class="cred-status cred-status--ok">● Registered</span>';
+      return '<span class="cred-status cred-status--new">● Pending</span>';
+    }
+    if (acct.mustChangePassword) return '<span class="cred-status cred-status--new">● New PIN</span>';
+    return '<span class="cred-status cred-status--ok">● Active</span>';
+  };
+
+  const linkedTags = (acct) => {
+    const names = acct.linkedCompanyNames || [];
+    if (names.length <= 1) return '';
+    return names.map(n => `<span class="cred-co-tag">${escapeHtml(n)}</span>`).join('');
+  };
+
+  const rows = state.credAccounts.map(acct => `
+    <tr class="cred-row ${acct.active ? '' : 'cred-row--inactive'}" data-id="${acct.id}">
+      <td>
+        <div class="cred-name">${escapeHtml(acct.displayName || acct.login)}</div>
+        <div class="cred-login muted">${escapeHtml(acct.login)}</div>
+        ${linkedTags(acct)}
+      </td>
+      <td>
+        <div>${escapeHtml(acct.companyName || '-')}</div>
+        <div class="muted" style="font-size:.78rem">${acct.role === 'company_admin' ? 'Overseer' : 'Branch User'}</div>
+      </td>
+      <td>${escapeHtml(acct.deliveryEmail || '—')}</td>
+      <td>${statusIcon(acct)}</td>
+      <td>
+        <div class="cred-actions">
+          <button class="btn btn-secondary btn-sm cred-edit-btn" data-id="${acct.id}">Edit</button>
+          <button class="btn btn-secondary btn-sm cred-pin-btn" data-id="${acct.id}">New PIN</button>
+          <button class="btn btn-secondary btn-sm cred-toggle-btn" data-id="${acct.id}" data-active="${acct.active}">${acct.active ? 'Deactivate' : 'Activate'}</button>
+        </div>
+      </td>
+    </tr>
+    ${state.credEditId === acct.id ? buildEditRow(acct) : ''}
+  `).join('');
+
+  const pagination = state.credPages > 1 ? `
+    <div class="cred-pagination">
+      <button class="btn btn-secondary btn-sm" id="credPrev" ${state.credPage <= 1 ? 'disabled' : ''}>← Prev</button>
+      <span>Page ${state.credPage} of ${state.credPages} &nbsp;(${state.credTotal} total)</span>
+      <button class="btn btn-secondary btn-sm" id="credNext" ${state.credPage >= state.credPages ? 'disabled' : ''}>Next →</button>
+    </div>` : `<div class="cred-pagination muted">${state.credTotal} account${state.credTotal !== 1 ? 's' : ''}</div>`;
+
+  return `
+    <div class="panel glass" style="margin-bottom:.75rem">
+      <div class="cred-filters">
+        <input id="credSearchInput" class="input" placeholder="Search name, login, email, company…" value="${escapeHtml(state.credSearch)}" />
+        <select id="credRoleSelect" class="input">
+          <option value="">All Roles</option>
+          <option value="company_admin" ${state.credRoleFilter === 'company_admin' ? 'selected' : ''}>Overseer (company_admin)</option>
+          <option value="branch_user" ${state.credRoleFilter === 'branch_user' ? 'selected' : ''}>Branch User</option>
+        </select>
+        <select id="credStatusSelect" class="input">
+          <option value="">All Statuses</option>
+          <option value="new" ${state.credStatusFilter === 'new' ? 'selected' : ''}>New (never logged in)</option>
+          <option value="changed" ${state.credStatusFilter === 'changed' ? 'selected' : ''}>Changed password</option>
+        </select>
+        <select id="credActiveSelect" class="input">
+          <option value="true" ${state.credActiveFilter === 'true' ? 'selected' : ''}>Active only</option>
+          <option value="false" ${state.credActiveFilter === 'false' ? 'selected' : ''}>Inactive only</option>
+          <option value="" ${state.credActiveFilter === '' ? 'selected' : ''}>All</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="panel glass">
+      <div class="table-wrap">
+        <table class="data-table cred-table">
+          <thead><tr>
+            <th>Name / Login</th>
+            <th>Company / Role</th>
+            <th>Contact Email</th>
+            <th>Delivery Email</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr></thead>
+          <tbody id="credTableBody">${rows || '<tr><td colspan="5" class="empty-state">No accounts found.</td></tr>'}</tbody>
+        </table>
+      </div>
+      ${pagination}
+    </div>
+
+    <!-- PIN Modal -->
+    <div id="credPinModal" class="cred-modal hidden">
+      <div class="cred-modal-box">
+        <h3>New Temporary PIN</h3>
+        <p id="credPinName" class="muted"></p>
+        <div class="cred-pin-display" id="credPinDisplay">——</div>
+        <p class="cred-pin-warning">Show this PIN to the customer once. It cannot be recovered after closing.</p>
+        <button class="btn btn-primary full" id="credPinCopy">Copy PIN</button>
+        <button class="btn btn-secondary full" style="margin-top:.4rem" id="credPinClose">Done</button>
+      </div>
+    </div>
+  `;
+}
+
+function buildEditRow(acct) {
+  const linkedIds = acct.linkedCompanyIds || [];
+  const linkedNames = acct.linkedCompanyNames || [];
+  const linkedHtml = linkedIds.map((id, i) => `
+    <span class="cred-co-tag">
+      ${escapeHtml(linkedNames[i] || String(id))}
+      ${Number(acct.companyId) !== Number(id)
+        ? `<button class="cred-unlink-btn" data-account="${acct.id}" data-company="${id}" title="Remove access">✕</button>`
+        : '<small>(primary)</small>'}
+    </span>`).join('');
+
+  return `
+    <tr class="cred-edit-row" id="credEditRow_${acct.id}">
+      <td colspan="5">
+        <div class="cred-edit-panel">
+          <h4>Edit: ${escapeHtml(acct.displayName || acct.login)}</h4>
+          <div class="cred-edit-grid">
+            <label>Display Name
+              <input class="input" id="editName_${acct.id}" value="${escapeHtml(acct.displayName || '')}" />
+            </label>
+            <label>Delivery Email
+              <input class="input" id="editEmail_${acct.id}" type="email" value="${escapeHtml(acct.deliveryEmail || '')}" />
+            </label>
+            <label>Login (username)
+              <input class="input" id="editLogin_${acct.id}" value="${escapeHtml(acct.login || '')}" />
+              <small class="muted">Changing login changes how the customer signs in</small>
+            </label>
+          </div>
+          <div class="cred-edit-actions">
+            <button class="btn btn-primary cred-save-btn" data-id="${acct.id}">Save Changes</button>
+            <button class="btn btn-secondary cred-cancel-btn" data-id="${acct.id}">Cancel</button>
+          </div>
+
+          <div class="cred-access-section">
+            <h4>Company Access <span class="muted">(what this account can see)</span></h4>
+            <div class="cred-linked-cos" id="linkedCos_${acct.id}">${linkedHtml || '<span class="muted">None linked</span>'}</div>
+            <div class="cred-link-form">
+              <input class="input" id="linkSearch_${acct.id}" placeholder="Search company to link…" autocomplete="off" />
+              <div id="linkResults_${acct.id}" class="cred-link-results hidden"></div>
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>`;
+}
+
+function bindCredentialsTab() {
+  const tabBody = document.getElementById('adminTabBody');
+  if (!tabBody) return;
+
+  // Search + filter debounce
+  let searchTimer;
+  tabBody.querySelector('#credSearchInput')?.addEventListener('input', e => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(async () => {
+      state.credSearch = e.target.value;
+      state.credPage = 1;
+      await renderCredentialsTab();
+    }, 350);
+  });
+  ['#credRoleSelect','#credStatusSelect','#credActiveSelect'].forEach(sel => {
+    tabBody.querySelector(sel)?.addEventListener('change', async e => {
+      if (sel === '#credRoleSelect') state.credRoleFilter = e.target.value;
+      if (sel === '#credStatusSelect') state.credStatusFilter = e.target.value;
+      if (sel === '#credActiveSelect') state.credActiveFilter = e.target.value;
+      state.credPage = 1;
+      await renderCredentialsTab();
+    });
+  });
+
+  // Pagination
+  tabBody.querySelector('#credPrev')?.addEventListener('click', async () => { state.credPage--; await renderCredentialsTab(); });
+  tabBody.querySelector('#credNext')?.addEventListener('click', async () => { state.credPage++; await renderCredentialsTab(); });
+
+  // PIN modal close
+  tabBody.querySelector('#credPinClose')?.addEventListener('click', () => {
+    tabBody.querySelector('#credPinModal')?.classList.add('hidden');
+  });
+  tabBody.querySelector('#credPinCopy')?.addEventListener('click', () => {
+    const pin = tabBody.querySelector('#credPinDisplay')?.textContent || '';
+    navigator.clipboard.writeText(pin).then(() => showNotice('PIN copied.', 'success'));
+  });
+
+  // Table body event delegation
+  const tbody = tabBody.querySelector('#credTableBody');
+  if (!tbody) return;
+
+  tbody.addEventListener('click', async e => {
+    // Edit
+    const editBtn = e.target.closest('.cred-edit-btn');
+    if (editBtn) {
+      const id = Number(editBtn.getAttribute('data-id'));
+      state.credEditId = state.credEditId === id ? null : id;
+      tbody.innerHTML = state.credAccounts.map(a => `
+        <tr class="cred-row ${a.active ? '' : 'cred-row--inactive'}" data-id="${a.id}">
+          <td>
+            <div class="cred-name">${escapeHtml(a.displayName || a.login)}</div>
+            <div class="cred-login muted">${escapeHtml(a.login)}</div>
+            ${(a.linkedCompanyNames||[]).length > 1 ? (a.linkedCompanyNames||[]).map(n=>`<span class="cred-co-tag">${escapeHtml(n)}</span>`).join('') : ''}
+          </td>
+          <td><div>${escapeHtml(a.companyName||'-')}</div><div class="muted" style="font-size:.78rem">${a.role==='company_admin'?'Overseer':'Branch User'}</div></td>
+          <td>${escapeHtml(a.deliveryEmail||'—')}</td>
+          <td>${a.active ? (a.mustChangePassword ? '<span class="cred-status cred-status--new">● New</span>' : '<span class="cred-status cred-status--ok">● Active</span>') : '<span class="cred-status cred-status--off">● Inactive</span>'}</td>
+          <td><div class="cred-actions">
+            <button class="btn btn-secondary btn-sm cred-edit-btn" data-id="${a.id}">Edit</button>
+            <button class="btn btn-secondary btn-sm cred-pin-btn" data-id="${a.id}">New PIN</button>
+            <button class="btn btn-secondary btn-sm cred-toggle-btn" data-id="${a.id}" data-active="${a.active}">${a.active?'Deactivate':'Activate'}</button>
+          </div></td>
+        </tr>
+        ${state.credEditId === a.id ? buildEditRow(a) : ''}
+      `).join('');
+      bindEditRow(id, tabBody);
+      return;
+    }
+
+    // New PIN
+    const pinBtn = e.target.closest('.cred-pin-btn');
+    if (pinBtn) {
+      const id = Number(pinBtn.getAttribute('data-id'));
+      const token = loadAuthToken();
+      pinBtn.disabled = true; pinBtn.textContent = '…';
+      try {
+        const r = await fetch(`/portal-api/admin/care/accounts/${id}/generate-password`, {
+          method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          credentials: 'same-origin'
+        });
+        const d = await r.json();
+        if (d.ok) {
+          const modal = tabBody.querySelector('#credPinModal');
+          const nameEl = tabBody.querySelector('#credPinName');
+          const pinEl = tabBody.querySelector('#credPinDisplay');
+          const acct = state.credAccounts.find(a => a.id === id);
+          if (nameEl) nameEl.textContent = acct?.displayName || acct?.login || '';
+          if (pinEl) pinEl.textContent = d.password;
+          modal?.classList.remove('hidden');
+          // Update in-state
+          if (acct) acct.mustChangePassword = true;
+        } else {
+          showNotice(d.message || 'Failed to generate PIN.', 'error');
+        }
+      } catch { showNotice('Network error.', 'error'); }
+      pinBtn.disabled = false; pinBtn.textContent = 'New PIN';
+      return;
+    }
+
+    // Toggle active
+    const toggleBtn = e.target.closest('.cred-toggle-btn');
+    if (toggleBtn) {
+      const id = Number(toggleBtn.getAttribute('data-id'));
+      const token = loadAuthToken();
+      toggleBtn.disabled = true;
+      try {
+        const r = await fetch(`/portal-api/admin/credentials/${id}/toggle-active`, {
+          method: 'POST',
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          credentials: 'same-origin'
+        });
+        const d = await r.json();
+        if (d.ok) {
+          const acct = state.credAccounts.find(a => a.id === id);
+          if (acct) acct.active = d.account.active;
+          await renderCredentialsTab();
+        } else showNotice(d.message || 'Failed.', 'error');
+      } catch { showNotice('Network error.', 'error'); }
+      toggleBtn.disabled = false;
+    }
+  });
+}
+
+function bindEditRow(editId, tabBody) {
+  const row = tabBody.querySelector(`#credEditRow_${editId}`);
+  if (!row) return;
+
+  // Save
+  row.querySelector('.cred-save-btn')?.addEventListener('click', async () => {
+    const token = loadAuthToken();
+    const body = {
+      displayName: row.querySelector(`#editName_${editId}`)?.value || '',
+      deliveryEmail: row.querySelector(`#editEmail_${editId}`)?.value || '',
+      login: row.querySelector(`#editLogin_${editId}`)?.value || ''
+    };
+    const r = await fetch(`/portal-api/admin/credentials/${editId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      credentials: 'same-origin',
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showNotice('Saved.', 'success');
+      state.credEditId = null;
+      await renderCredentialsTab();
+    } else showNotice(d.message || 'Failed to save.', 'error');
+  });
+
+  // Cancel
+  row.querySelector('.cred-cancel-btn')?.addEventListener('click', async () => {
+    state.credEditId = null;
+    await renderCredentialsTab();
+  });
+
+  // Unlink company
+  row.querySelectorAll('.cred-unlink-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const accountId = btn.getAttribute('data-account');
+      const companyId = btn.getAttribute('data-company');
+      if (!confirm('Remove this company from the account? The account will no longer see that company\'s data.')) return;
+      const token = loadAuthToken();
+      const r = await fetch(`/portal-api/admin/credentials/${accountId}/unlink-company/${companyId}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'same-origin'
+      });
+      const d = await r.json();
+      if (d.ok) { showNotice('Company unlinked.', 'success'); state.credEditId = editId; await renderCredentialsTab(); }
+      else showNotice(d.message || 'Failed.', 'error');
+    });
+  });
+
+  // Company link search
+  const linkInput = row.querySelector(`#linkSearch_${editId}`);
+  const linkResults = row.querySelector(`#linkResults_${editId}`);
+  if (!linkInput || !linkResults) return;
+
+  let linkTimer;
+  linkInput.addEventListener('input', () => {
+    clearTimeout(linkTimer);
+    const q = linkInput.value.trim();
+    if (!q) { linkResults.classList.add('hidden'); return; }
+    linkTimer = setTimeout(async () => {
+      const token = loadAuthToken();
+      const r = await fetch(`/portal-api/admin/care/companies?q=${encodeURIComponent(q)}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'same-origin'
+      });
+      const d = await r.json().catch(() => ({}));
+      const companies = d.companies || [];
+      if (!companies.length) { linkResults.innerHTML = '<div class="cred-link-hint">No companies found.</div>'; linkResults.classList.remove('hidden'); return; }
+      linkResults.innerHTML = companies.slice(0, 8).map(co =>
+        `<button class="cred-link-result" data-id="${co.id}" data-name="${escapeHtml(co.name)}">${escapeHtml(co.name)}</button>`
+      ).join('');
+      linkResults.classList.remove('hidden');
+      linkResults.querySelectorAll('.cred-link-result').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const token2 = loadAuthToken();
+          const r2 = await fetch(`/portal-api/admin/credentials/${editId}/link-company`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(token2 ? { Authorization: `Bearer ${token2}` } : {}) },
+            credentials: 'same-origin',
+            body: JSON.stringify({ companyId: Number(btn.getAttribute('data-id')) })
+          });
+          const d2 = await r2.json();
+          if (d2.ok) {
+            showNotice(`Linked: ${d2.companyName}`, 'success');
+            linkInput.value = '';
+            linkResults.classList.add('hidden');
+            state.credEditId = editId;
+            await renderCredentialsTab();
+          } else showNotice(d2.message || 'Failed.', 'error');
+        });
+      });
+    }, 300);
+  });
+}
+
 
 async function renderAdmin() {
   if (state.user.role !== 'corporate_admin') {
@@ -796,6 +2255,9 @@ async function renderAdmin() {
 
 async function renderView() {
   if (!state.user) return;
+  if (isInternalPortalUser() && !state.previewCompanyId && state.currentView !== 'dashboard') {
+    state.currentView = 'dashboard';
+  }
 
   switch (state.currentView) {
     case 'dashboard':
@@ -813,6 +2275,9 @@ async function renderView() {
     case 'billing':
       await renderBilling();
       break;
+    case 'history':
+      await renderHistory();
+      break;
     case 'support':
       renderSupport();
       break;
@@ -825,8 +2290,7 @@ async function renderView() {
 
   viewContainer.querySelectorAll('[data-device-id]').forEach((button) => {
     button.addEventListener('click', async () => {
-      state.selectedDeviceId = button.getAttribute('data-device-id');
-      await renderDevices();
+      await openDeviceDetail(button.getAttribute('data-device-id'));
     });
   });
 
@@ -838,13 +2302,78 @@ async function renderView() {
   });
 }
 
-async function showPortal(user) {
+async function showPortal(user, { ephemeral = false } = {}) {
   if (!roleViews[user?.role]) {
     throw new Error('This account role is not allowed in customer portal.');
   }
+  if (isInternalPortalUser(user)) {
+    state.previewCompanyId = '';
+    state.previewCompanyIds = [];
+    state.previewCompanyName = '';
+    state.previewBranchId = '';
+    state.previewSearchQuery = '';
+    state.previewSearchResults = [];
+    state.previewDraftAccount = null;
+    state.previewBranches = [];
+    state.previewPickerExpanded = true;
+    user.previewCompanyId = '';
+    user.previewCompanyIds = [];
+    user.previewCompanyName = '';
+    user.previewBranchId = '';
+    savePreviewCompanyId('');
+    savePreviewBranchId('');
+  } else {
+    state.previewCompanyId = '';
+    state.previewCompanyIds = [];
+    state.previewCompanyName = '';
+    state.previewBranchId = '';
+  }
   state.user = user;
-  state.company = await service.getCompanyById(user.companyId);
-  saveSession(user);
+  state.company = isInternalPortalUser(user) && state.previewCompanyName
+    ? {
+        id: state.previewCompanyId || user.companyId || 'marga_internal',
+        name: state.previewCompanyName,
+        status: 'active',
+        announcements: ['Internal Marga portal view.']
+      }
+    : await service.getCompanyById(activeCompanyId() || user.companyId, user);
+
+  // Load all companies this user can access (powers group switcher)
+  if (!isInternalPortalUser(user)) {
+    try {
+      const myCompaniesResp = await fetch('/portal-api/my-companies', {
+        headers: { Authorization: `Bearer ${loadAuthToken() || ''}` },
+        credentials: 'same-origin'
+      });
+      const myCompaniesData = await myCompaniesResp.json().catch(() => ({}));
+      state.portalCompanies = myCompaniesData.companies || [];
+    } catch { state.portalCompanies = []; }
+    // Default: show all groups (no filter)
+    state.activeCompanyId = null;
+  }
+
+  if (isInternalPortalUser(user) && state.previewCompanyId) {
+    state.previewDraftAccount = {
+      id: Number(state.previewCompanyId),
+      companyIds: state.previewCompanyIds.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0),
+      name: state.previewCompanyName || state.company?.name || 'Customer',
+      motherName: state.previewCompanyName || state.company?.name || 'Customer',
+      groupLabel: '',
+      type: state.previewCompanyIds.length > 1 ? 'grouped_account' : 'company',
+      branchCount: 0,
+      machineCount: 0,
+      companyMatchCount: 1,
+      matchSource: 'company',
+      note: ''
+    };
+    state.previewBranches = await service.listPreviewBranches(state.previewCompanyIds.length ? state.previewCompanyIds : state.previewCompanyId);
+    state.previewPickerExpanded = false;
+  } else if (isInternalPortalUser(user)) {
+    state.previewDraftAccount = null;
+    state.previewBranches = [];
+    state.previewPickerExpanded = true;
+  }
+  saveSession(user, { ephemeral });
 
   authView.classList.add('hidden');
   portalView.classList.remove('hidden');
@@ -860,6 +2389,7 @@ async function showPortal(user) {
 async function restoreSession() {
   const session = loadSession();
   if (!session || session.role === 'tech') return false;
+  const ephemeral = String(session.id || '').startsWith('portal:');
 
   const profile = await service.getUserById(session.id || session.uid);
   if (!profile) {
@@ -867,7 +2397,7 @@ async function restoreSession() {
     return false;
   }
 
-  await showPortal(profile);
+  await showPortal(profile, { ephemeral });
   return true;
 }
 
@@ -875,9 +2405,21 @@ function bindGlobalActions() {
   loginForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     const formData = new FormData(loginForm);
+    const params = new URLSearchParams(window.location.search);
+    const previewToken = params.get('preview_token') || '';
 
     try {
-      const user = await service.login(formData.get('email'), formData.get('password'), { techOnly: false });
+      if (previewToken) {
+        const result = await service.previewLogin(previewToken);
+        saveSession(result.user, { ephemeral: true });
+        saveAuthToken(result.token);
+        window.history.replaceState({}, '', '/');
+        await showPortal(result.user, { ephemeral: true });
+        setTopMessage('Customer preview loaded.', 'info');
+        return;
+      }
+      clearAuthToken();
+      const user = await service.login(formData.get('login'), formData.get('password'), { techOnly: false });
       await showPortal(user);
     } catch (error) {
       setTopMessage(error.message || 'Login failed.', 'error');
@@ -901,7 +2443,8 @@ function bindGlobalActions() {
 
   document.getElementById('logoutBtn').addEventListener('click', async () => {
     await service.logout();
-    clearSession();
+    clearAuthToken();
+    clearSession({ keepPersistent: String(state.user?.id || '').startsWith('portal:') });
     location.href = '/';
   });
 
@@ -944,8 +2487,8 @@ async function init() {
   await service.init();
 
   setupInstallGuide({
-    appName: 'MARGA Service Portal',
-    tagline: 'Corporate customer access for support, devices, and billing.',
+    appName: 'MARGA Care Portal',
+    tagline: 'Request support, track updates, and keep your proof in one place.',
     appIcon: '/public/assets/icons/icon-192.svg',
     storagePrefix: 'msp-portal',
     installHelpUrl: '/install/?target=portal'
@@ -971,6 +2514,18 @@ async function init() {
   }
 
   bindGlobalActions();
+  const params = new URLSearchParams(window.location.search);
+  const previewToken = params.get('preview_token') || '';
+  const previewEmail = params.get('preview_email') || '';
+  if (previewToken) {
+    clearAuthToken();
+    authView.classList.remove('hidden');
+    portalView.classList.add('hidden');
+    loginForm.elements.login.value = previewEmail;
+    loginForm.elements.password.value = 'Preview Access';
+    setTopMessage('Separate-tab customer preview is ready. Press Sign In to open the customer-facing portal.', 'info');
+    return;
+  }
   const restored = await restoreSession();
   if (!restored) {
     authView.classList.remove('hidden');

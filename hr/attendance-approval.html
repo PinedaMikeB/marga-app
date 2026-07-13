@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARGA Attendance Approval</title>
+    <link rel="stylesheet" href="../shared/css/styles.css">
+    <link rel="stylesheet" href="../shared/css/attendance-time-records.css?v=20260708-time-records-fix-time-1">
+</head>
+<body>
+    <main class="attendance-approval-page">
+        <section class="attendance-approval-card" id="approvalCard">
+            <h1>Attendance Adjustment Approval</h1>
+            <p class="attendance-time-records-status" id="approvalStatus">Loading request...</p>
+
+            <div class="attendance-approval-success" id="approvalSuccess" hidden>
+                <div class="attendance-approval-success-icon" aria-hidden="true">✓</div>
+                <h2>Approved</h2>
+                <p id="approvalSuccessMessage">Attendance record has been updated.</p>
+                <a class="btn btn-primary btn-sm" href="index.html?tab=time-records&subtab=adjustments" id="approvalHrLink">Open HR Time Records</a>
+            </div>
+
+            <div id="approvalReviewPane" hidden>
+                <div class="attendance-approval-meta" id="approvalMeta"></div>
+                <div class="attendance-approval-image-wrap" id="approvalImageWrap" hidden>
+                    <img class="attendance-approval-image" id="approvalImage" alt="Supporting image">
+                </div>
+                <label id="approvalPasswordWrap">
+                    <span>Admin approval password</span>
+                    <input type="password" id="approvalPassword" autocomplete="current-password">
+                </label>
+                <div class="attendance-time-records-actions">
+                    <button type="button" class="btn btn-primary" id="approvalSubmitBtn">Approve Request</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script src="../shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
+    <script src="../shared/js/payroll-cutoff.js?v=20260615-time-records-5"></script>
+    <script src="../shared/js/attendance-time-records.js?v=20260708-time-records-fix-time-1"></script>
+    <script>
+        let loadedRequest = null;
+
+        function getMargabaseAdminUrl(route) {
+            return window.MargaAttendanceTimeRecords.getMargabaseAdminUrl(route);
+        }
+
+        function formatTime(value) {
+            return window.MargaAttendanceTimeRecords.formatTime(value);
+        }
+
+        function buildTimeAdjustmentSummary(row) {
+            return window.MargaAttendanceTimeRecords.buildTimeAdjustmentSummary(row);
+        }
+
+        function showSuccess(message) {
+            document.getElementById('approvalReviewPane').hidden = true;
+            document.getElementById('approvalSuccess').hidden = false;
+            document.getElementById('approvalStatus').textContent = '';
+            document.getElementById('approvalSuccessMessage').textContent = message;
+            document.getElementById('approvalCard').classList.add('is-approved');
+        }
+
+        function setApproveLoading(isLoading) {
+            const button = document.getElementById('approvalSubmitBtn');
+            const password = document.getElementById('approvalPassword');
+            if (button) {
+                button.disabled = isLoading;
+                button.textContent = isLoading ? 'Approving...' : 'Approve Request';
+            }
+            if (password) password.disabled = isLoading;
+        }
+
+        async function approveRequest() {
+            const params = new URLSearchParams(window.location.search);
+            const requestId = String(params.get('request') || '').trim();
+            const token = String(params.get('token') || '').trim();
+            const password = String(document.getElementById('approvalPassword').value || '').trim();
+            if (!password) {
+                alert('Admin approval password is required.');
+                return;
+            }
+            setApproveLoading(true);
+            try {
+                const approveResponse = await fetch(getMargabaseAdminUrl('/admin/hr-attendance-adjustment/approve'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id: requestId,
+                        password,
+                        token,
+                        reviewed_by: 'email-approval'
+                    })
+                });
+                const approvePayload = await approveResponse.json().catch(() => ({}));
+                if (!approveResponse.ok || approvePayload?.error) {
+                    throw new Error(approvePayload?.error?.message || 'Approval failed.');
+                }
+                const row = loadedRequest || {};
+                const employee = row.staff_name || 'Employee';
+                const dateLabel = window.MargaPayrollCutoff.formatPayrollPeriodDate(row.attendance_date);
+                const successMessage = row.request_type === 'request_ot'
+                    ? `${employee}'s overtime for ${dateLabel} was approved and will flow into payroll. You can close this page.`
+                    : `${employee}'s time adjustment for ${dateLabel} was approved and updated. You can close this page.`;
+                showSuccess(successMessage);
+            } catch (error) {
+                alert(error?.message || 'Approval failed.');
+            } finally {
+                setApproveLoading(false);
+            }
+        }
+
+        async function loadRequest() {
+            const params = new URLSearchParams(window.location.search);
+            const requestId = String(params.get('request') || '').trim();
+            const token = String(params.get('token') || '').trim();
+            const status = document.getElementById('approvalStatus');
+            const meta = document.getElementById('approvalMeta');
+            const image = document.getElementById('approvalImage');
+            const imageWrap = document.getElementById('approvalImageWrap');
+            const reviewPane = document.getElementById('approvalReviewPane');
+            if (!requestId) {
+                status.textContent = 'Missing adjustment request id.';
+                return;
+            }
+            const url = new URL(getMargabaseAdminUrl(`/admin/hr-attendance-adjustment/${encodeURIComponent(requestId)}`), window.location.href);
+            if (token) url.searchParams.set('token', token);
+            const response = await fetch(url.toString(), { cache: 'no-store' });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.error || !payload?.row) {
+                status.textContent = payload?.error?.message || 'Unable to load adjustment request.';
+                return;
+            }
+            const row = payload.row;
+            loadedRequest = row;
+            if (String(row.status || '') !== 'pending') {
+                showSuccess(`This request is already ${row.status || 'closed'}. No further action is needed.`);
+                return;
+            }
+            status.textContent = 'Review the request below, then enter the admin approval password.';
+            reviewPane.hidden = false;
+            meta.innerHTML = `
+                <div><strong>Employee:</strong> ${row.staff_name || '--'} (#${row.staff_id || '--'})</div>
+                <div><strong>Date:</strong> ${window.MargaPayrollCutoff.formatPayrollPeriodDate(row.attendance_date)}</div>
+                <div><strong>Request:</strong> ${row.request_type === 'delete_day'
+                    ? 'Delete attendance day'
+                    : (row.request_type === 'request_ot'
+                        ? `Overtime ${formatTime(row.ot_from_time)} to ${formatTime(row.ot_to_time)} (${Number(row.ot_hours || 0).toFixed(2)} hr)`
+                        : buildTimeAdjustmentSummary(row))}</div>
+                ${row.request_type === 'request_ot'
+                    ? '<div><strong>Payroll:</strong> Approved OT will be added to OT hours and OT pay for this cutoff.</div>'
+                    : `<div><strong>Current:</strong> In ${formatTime(row.before_time_in)} · Out ${formatTime(row.before_time_out)}</div>`}
+                <div><strong>Reason:</strong> ${row.reason || '--'}</div>
+            `;
+            const inlineImage = String(row.supporting_image_data_url || '').trim();
+            const imageUrl = String(row.supporting_image_url || '').trim();
+            if (inlineImage.startsWith('data:image/')) {
+                imageWrap.hidden = false;
+                image.src = inlineImage;
+            } else if (imageUrl) {
+                imageWrap.hidden = false;
+                image.src = imageUrl.startsWith('http') ? imageUrl : `${window.location.origin}${imageUrl}`;
+            }
+            document.getElementById('approvalSubmitBtn').addEventListener('click', approveRequest);
+        }
+
+        loadRequest().catch((error) => {
+            console.error('Attendance approval page failed:', error);
+            document.getElementById('approvalStatus').textContent = error?.message || 'Unable to load approval page.';
+        });
+    </script>
+</body>
+</html>

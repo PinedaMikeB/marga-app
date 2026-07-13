@@ -1,5 +1,6 @@
 (function () {
     const QUEUE_KEY = 'marga_firestore_offline_queue_v2';
+    const FAILED_QUEUE_KEY = 'marga_firestore_offline_failed_queue_v1';
     const RESPONSE_CACHE_PREFIX = 'marga_firestore_response_cache_v1:';
     const STATUS_ID = 'margaOfflineStatus';
     const STYLE_ID = 'margaOfflineStatusStyles';
@@ -59,13 +60,38 @@
         }
     }
 
+    function readFailedQueue() {
+        try {
+            const raw = localStorage.getItem(FAILED_QUEUE_KEY);
+            if (!raw) return [];
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            console.warn('Unable to read failed offline write queue.', error);
+            return [];
+        }
+    }
+
     function writeQueue(queue) {
         localStorage.setItem(QUEUE_KEY, JSON.stringify(Array.isArray(queue) ? queue : []));
         updateStatusChip();
     }
 
+    function writeFailedQueue(queue) {
+        try {
+            const safeQueue = Array.isArray(queue) ? queue.slice(-25) : [];
+            localStorage.setItem(FAILED_QUEUE_KEY, JSON.stringify(safeQueue));
+        } catch (error) {
+            console.warn('Unable to write failed offline write queue.', error);
+        }
+    }
+
     function queueSize() {
         return readQueue().length;
+    }
+
+    function failedQueueSize() {
+        return readFailedQueue().length;
     }
 
     function toFirestoreFieldValue(value) {
@@ -154,6 +180,11 @@
 
     function isReadRequest(info) {
         return info.method === 'GET' || isRunQueryRequest(info);
+    }
+
+    function shouldBypassFirestoreReadCache(info) {
+        const mode = normalizeText(info.headers?.get?.('X-Marga-Offline-Cache') || info.headers?.get?.('x-marga-offline-cache'));
+        return mode.toLowerCase() === 'bypass';
     }
 
     function buildResponseCacheKey(info) {
@@ -390,6 +421,7 @@
         if (!document.body) return;
         const node = ensureStatusChip();
         const count = queueSize();
+        const failedCount = failedQueueSize();
         const online = navigator.onLine !== false;
         const title = node.querySelector('.marga-offline-status-title');
         const text = node.querySelector('.marga-offline-status-text');
@@ -410,7 +442,9 @@
             text.textContent = 'Queued saves are waiting to sync. Keep this tab open or reconnect to finish sending them.';
         } else {
             title.textContent = 'Online';
-            text.textContent = 'All queued changes are already synced.';
+            text.textContent = failedCount > 0
+                ? 'All retryable queued changes are already synced.'
+                : 'All queued changes are already synced.';
         }
 
         countNode.textContent = count > 0 ? `${count} queued` : (online ? 'Up to date' : 'Offline');
@@ -448,6 +482,16 @@
 
         writeQueue(queue);
         return nextItem;
+    }
+
+    function archiveFailedWrite(action, reason = '') {
+        const failedQueue = readFailedQueue();
+        failedQueue.push({
+            ...action,
+            failedAt: new Date().toISOString(),
+            lastError: normalizeText(reason) || normalizeText(action?.lastError) || 'Write could not be synced automatically.'
+        });
+        writeFailedQueue(failedQueue);
     }
 
     async function executeStructuredWrite(action) {
@@ -551,15 +595,14 @@
 
         const remaining = [];
         let processed = 0;
+        let failed = 0;
 
         for (const item of queue) {
             try {
                 if (item.kind === 'raw') {
                     if (isRetiredFirestoreWriteUrl(item.url)) {
-                        remaining.push({
-                            ...item,
-                            lastError: 'Blocked queued write because it targets a retired backend URL.'
-                        });
+                        archiveFailedWrite(item, 'Blocked queued write because it targets a retired backend URL.');
+                        failed += 1;
                         continue;
                     }
                     await executeRawWrite(item);
@@ -571,7 +614,8 @@
                 if (isNetworkLikeError(error)) {
                     remaining.push(item);
                 } else {
-                    remaining.push({ ...item, lastError: String(error?.message || error || 'Unknown error') });
+                    archiveFailedWrite(item, String(error?.message || error || 'Unknown error'));
+                    failed += 1;
                 }
             }
         }
@@ -580,7 +624,10 @@
         if (processed > 0) {
             window.MargaUtils?.showToast(`${processed} queued change(s) synced.`, 'success', 3200);
         }
-        return { processed, remaining: remaining.length };
+        if (failed > 0) {
+            window.MargaUtils?.showToast(`${failed} stale queued change(s) need to be re-saved from the app.`, 'warning', 5200);
+        }
+        return { processed, remaining: remaining.length, failed };
     }
 
     function mergePendingCollectionRows(collection, rows) {
@@ -609,6 +656,9 @@
     }
 
     async function handleFirestoreRead(info, input, init) {
+        if (shouldBypassFirestoreReadCache(info)) {
+            return originalFetch(input, init);
+        }
         try {
             const response = await originalFetch(input, init);
             try {
@@ -684,7 +734,7 @@
         });
         window.addEventListener('offline', updateStatusChip);
         window.addEventListener('storage', (event) => {
-            if (event.key === QUEUE_KEY) updateStatusChip();
+            if (event.key === QUEUE_KEY || event.key === FAILED_QUEUE_KEY) updateStatusChip();
         });
 
         if (navigator.onLine !== false) {
@@ -696,7 +746,9 @@
 
     window.MargaOfflineSync = {
         getQueue: readQueue,
+        getFailedQueue: readFailedQueue,
         queueSize,
+        failedQueueSize,
         enqueueWrite,
         writeFirestoreDoc,
         flushQueue,

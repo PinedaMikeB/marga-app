@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css?v=20260518-company-meeting-1">
-    <link rel="stylesheet" href="css/releasing.css">
+    <link rel="stylesheet" href="css/releasing.css?v=20260623-releasing-progress-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -150,6 +150,16 @@
                 <div class="release-eyebrow">DR Desk</div>
                 <h1>Releasing</h1>
                 <p id="releaseSubtitle">Loading delivery receipt queue...</p>
+                <div class="release-progress-shell" id="releaseProgressShell" aria-live="polite">
+                    <div class="release-progress-head">
+                        <span class="release-progress-stage" id="releaseProgressStage">Starting...</span>
+                        <span class="release-progress-meta" id="releaseProgressMeta">0%</span>
+                    </div>
+                    <div class="release-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Starting..." id="releaseProgressTrack">
+                        <div class="release-progress-bar" id="releaseProgressBar"></div>
+                    </div>
+                    <div class="release-progress-note" id="releaseProgressNote">Preparing Releasing module...</div>
+                </div>
             </div>
             <div class="header-actions release-actions">
                 <div class="release-status" id="releaseStatusPill">Loading...</div>
@@ -338,6 +348,14 @@
                     <span>Pickup Receipt</span>
                     <input type="text" id="releasePulloutReceiptInput" required>
                 </label>
+                <label class="release-field">
+                    <span>Ending Meter (Old Machine)</span>
+                    <input type="text" id="releasePulloutEndingMeterInput" inputmode="numeric" placeholder="e.g. 45231">
+                </label>
+                <label class="release-field" style="display:flex;align-items:center;gap:8px;padding-top:20px;">
+                    <input type="checkbox" id="releasePulloutNoMeterCheckbox" style="width:auto;margin:0;">
+                    <span>No meter available (machine down)</span>
+                </label>
                 <label class="release-field release-field-full">
                     <span>Remarks</span>
                     <textarea id="releasePulloutRemarksInput" rows="3"></textarea>
@@ -381,11 +399,11 @@
     </div>
 
     <script src="../shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
-    <script src="../shared/js/auth.js?v=20260518-login-permissions-2"></script>
+    <script src="../shared/js/auth.js?v=20260706-login-alias-fix-1"></script>
     <script src="../shared/js/utils.js"></script>
-    <script src="../shared/js/offline-sync.js?v=20260601-local-postgres-live-1"></script>
+    <script src="../shared/js/offline-sync.js?v=20260703-offline-queue-self-heal-1"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/releasing.js"></script>
+    <script src="js/releasing.js?v=20260713-meter-handoff-1"></script>
 </body>
 </html>

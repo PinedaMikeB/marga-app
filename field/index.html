@@ -16,7 +16,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css">
-    <link rel="stylesheet" href="css/field.css?v=20260602-mobile-scroll-landscape-1">
+    <link rel="stylesheet" href="../shared/css/attendance-time-records.css?v=20260708-time-records-fix-time-1">
+    <link rel="stylesheet" href="css/field.css?v=20260702-field-serial-approval-1">
 </head>
 <body>
     <main class="field-shell">
@@ -116,6 +117,7 @@
             <div class="field-attendance-actions">
                 <button type="button" class="btn btn-primary btn-sm" id="fieldAttendanceTimeInBtn">Time In</button>
                 <button type="button" class="btn btn-secondary btn-sm" id="fieldAttendanceTimeOutBtn">Time Out</button>
+                <button type="button" class="btn btn-secondary btn-sm" id="fieldAttendanceTimeRecordBtn">Time Record</button>
             </div>
         </section>
 
@@ -141,10 +143,13 @@
                     <input type="search" id="fieldCustomerSearch" class="field-customer-search" placeholder="Search customer or branch" aria-label="Search customer or branch">
                     <div class="field-tabs" role="tablist" aria-label="Task view">
                         <button type="button" class="field-tab is-active" id="fieldTodayTab" data-tab="today" role="tab" aria-selected="true">
-                            Today <span id="fieldTodayCount">0</span>
+                            Open New Today <span id="fieldTodayCount">0</span>
                         </button>
                         <button type="button" class="field-tab" id="fieldCarryoverTab" data-tab="carryover" role="tab" aria-selected="false">
-                            Past Pending <span id="fieldCarryoverCount">0</span>
+                            Open Past Pending <span id="fieldCarryoverCount">0</span>
+                        </button>
+                        <button type="button" class="field-tab" id="fieldPartsTab" data-tab="parts" role="tab" aria-selected="false">
+                            Pending Parts/Machine <span id="fieldPartsCount">0</span>
                         </button>
                         <button type="button" class="field-tab" id="fieldClosedTab" data-tab="closed" role="tab" aria-selected="false">
                             Closed <span id="fieldClosedCount">0</span>
@@ -154,7 +159,7 @@
                         <option value="all">Open / Needs Action</option>
                         <option value="pending">Pending</option>
                         <option value="carryover">Past Pending</option>
-                        <option value="ongoing">Ongoing (Parts)</option>
+                        <option value="ongoing">Pending Parts / Machine</option>
                     </select>
                 </div>
             </div>
@@ -233,10 +238,11 @@
 
                 <section class="field-reimbursement-entry-card" id="fieldReimbursementItemEntry">
                     <div class="field-reimbursement-entry-grid">
-                        <label><span>Item Group</span><select data-reimbursement-draft-field="groupId"><option value="fuel">Fuel / Gasoline</option><option value="meal">Meal Allowance</option><option value="toll">Toll</option><option value="parking">Parking</option><option value="fare">Transportation / Fare</option><option value="parts">Emergency Parts / Supplies</option><option value="delivery">Delivery / Courier</option><option value="emergency">Emergency Purchase</option><option value="other">Other Field Expense</option></select></label>
-                        <label><span>Chart Of Account</span><select data-reimbursement-draft-field="accountId"><option value="fuel_expense_motorcycle">Fuel Expense - Motorcycle</option><option value="fuel_expense_delivery_van">Fuel Expense - Delivery Van</option><option value="meal_allowance_expense_field_operations">Meal Allowance Expense - Field Operations</option><option value="parking_expense">Parking Expense</option><option value="commute_fare_expense">Transportation / Fare / Toll</option><option value="printer_repair_parts_field_expense">Printer Repair Parts Expense - Field Service</option><option value="other_materials_expense">Other Materials / Emergency Purchase</option></select></label>
+                        <label><span>Item Group</span><select data-reimbursement-draft-field="groupId"><option value="fuel">Fuel / Gasoline</option><option value="meal">Meal Allowance</option><option value="toll">Toll</option><option value="parking">Parking</option><option value="fare">Transportation / Fare</option><option value="motorcycle_maintenance">Motorcycle Maintenance</option><option value="medical_assistance">Medical Assistance</option><option value="parts">Emergency Parts / Supplies</option><option value="delivery">Delivery / Courier</option><option value="emergency">Emergency Purchase</option><option value="other">Other Field Expense</option></select></label>
+                        <label><span>Chart Of Account</span><select data-reimbursement-draft-field="accountId"><option value="fuel_expense_motorcycle">Fuel Expense - Motorcycle</option><option value="fuel_expense_delivery_van">Fuel Expense - Delivery Van</option><option value="meal_allowance_expense_field_operations">Meal Allowance Expense - Field Operations</option><option value="parking_expense">Parking Expense</option><option value="commute_fare_expense">Transportation / Fare / Toll</option><option value="repairs_maintenance_motorcycles">Repairs and Maintenance - Motorcycles</option><option value="medical_assistance_expense">Medical Assistance Expense</option><option value="printer_repair_parts_field_expense">Printer Repair Parts Expense - Field Service</option><option value="other_materials_expense">Other Materials / Emergency Purchase</option></select></label>
                         <label><span>Item / Part Note</span><input type="text" data-reimbursement-draft-field="itemNote" placeholder="Select item or choose manual"></label>
                         <label><span>Supplier / Store</span><input type="text" data-reimbursement-draft-field="supplierStoreName" placeholder="Type or select supplier/store"></label>
+                        <label><span>TIN Number</span><input type="text" data-reimbursement-draft-field="supplierTinNumber" placeholder="Supplier/store TIN"></label>
                         <label><span>Amount</span><input type="number" data-reimbursement-draft-field="amount" min="0" step="0.01" placeholder="0.00"></label>
                         <label><span>Receipt No.</span><input type="text" data-reimbursement-draft-field="receiptNumber" placeholder="OR/SI/receipt no."></label>
                         <div class="field-reimbursement-entry-action"><span>Action</span><button type="button" class="btn btn-secondary btn-sm" data-reimbursement-draft-clear>Remove</button></div>
@@ -412,6 +418,32 @@
                         </label>
                     </div>
                     <button type="button" class="btn btn-primary btn-sm" id="fieldPinLocationBtn">Pin Customer Location</button>
+                </div>
+            </section>
+
+            <section class="field-modal-section" id="fieldSerialVerificationSection">
+                <div class="field-serial-verification-card" id="fieldSerialVerificationCard">
+                    <div class="field-serial-verification-head">
+                        <div>
+                            <h3>Serial Verification</h3>
+                            <p id="fieldSerialVerificationStatus">Verify the actual customer unit serial before finishing this task.</p>
+                        </div>
+                        <span class="field-serial-verification-badge" id="fieldSerialVerificationBadge">Required</span>
+                    </div>
+                    <div class="field-serial-verification-grid">
+                        <label class="marga-field">
+                            <span>Recorded Serial</span>
+                            <input type="text" id="fieldRecordedSerialDisplay" readonly>
+                        </label>
+                        <label class="marga-field">
+                            <span>Actual Serial On Unit</span>
+                            <input type="text" id="fieldActualSerialInput" placeholder="Enter the serial seen on the customer unit">
+                        </label>
+                    </div>
+                    <div class="field-serial-verification-meta" id="fieldSerialVerificationMeta"></div>
+                    <div class="field-serial-verification-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" id="fieldVerifySerialBtn">Verify Correct</button>
+                    </div>
                 </div>
             </section>
 
@@ -619,7 +651,7 @@
                         </div>
                         <div class="ops-subtext">Search the actual invoice record, then add each invoice one by one to keep payment data accurate.</div>
                         <div id="fieldCollectionInvoiceResults" class="field-collection-invoice-results" hidden></div>
-                        <div class="field-collection-invoice-table-wrap">
+                        <div class="field-collection-invoice-table-wrap" data-horizontal-scroll="collection-invoices">
                             <table class="field-collection-invoice-table">
                                 <thead>
                                     <tr>
@@ -683,7 +715,19 @@
                             <option value="">Select payment type...</option>
                             <option value="cash">Cash</option>
                             <option value="check">Check</option>
+                            <option value="bank transfer">Bank transfer</option>
+                            <option value="e-wallet">E-Wallet</option>
                         </select>
+                    </label>
+                    <label class="marga-field">
+                        <span>Credit Memo Image</span>
+                        <input type="file" id="fieldCollectionCreditMemoImage" accept="image/*" capture="environment" disabled>
+                        <div class="ops-subtext" id="fieldCollectionCreditMemoHint">Only enabled for bank transfer.</div>
+                    </label>
+                    <label class="marga-field">
+                        <span>E-Wallet Transaction Image</span>
+                        <input type="file" id="fieldCollectionEwalletImage" accept="image/*" capture="environment" disabled>
+                        <div class="ops-subtext" id="fieldCollectionEwalletHint">Only enabled for E-Wallet.</div>
                     </label>
                     <label class="marga-field">
                         <span>Payment Status</span>
@@ -759,11 +803,13 @@
     </div>
 
     <script src="../shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
-    <script src="../shared/js/auth.js?v=20260518-login-permissions-2"></script>
+    <script src="../shared/js/auth.js?v=20260706-login-alias-fix-1"></script>
     <script src="../shared/js/utils.js?v=20260516-field-permissions-3"></script>
-    <script src="../shared/js/offline-sync.js?v=20260601-local-postgres-live-1"></script>
+    <script src="../shared/js/offline-sync.js?v=20260703-offline-queue-self-heal-1"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
+    <script src="../shared/js/payroll-cutoff.js?v=20260615-time-records-5"></script>
+    <script src="../shared/js/attendance-time-records.js?v=20260708-time-records-fix-time-1"></script>
     <script src="/shared/js/pwa-install.js?v=20260520-update-waits-1"></script>
-    <script src="js/field.js?v=20260617-field-client-context-fix-1"></script>
+    <script src="js/field.js?v=20260707-field-closed-route-guard-1"></script>
 </body>
 </html>

@@ -273,6 +273,15 @@ const MargaFinanceAccounts = (() => {
             avoid: 'Do not use for fuel or purchase of a new motorcycle.'
         },
         {
+            id: 'medical_assistance_expense',
+            name: 'Medical Assistance Expense',
+            type: 'Expense',
+            scope: 'shared',
+            meaning: 'Approved medical assistance or urgent health-related support paid by the company for staff operational welfare.',
+            useWhen: 'Use for approved medical reimbursement, clinic expense support, medicine assistance, or similar health-related petty cash aid.',
+            avoid: 'Do not use for regular payroll, meal allowance, or non-medical personal purchases.'
+        },
+        {
             id: 'employer_philhealth_contribution_expense',
             name: 'Employer PhilHealth Contribution Expense',
             type: 'Expense',

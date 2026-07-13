@@ -996,6 +996,8 @@ textarea:focus {
 
 .table-wrap {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
 }
 
 table {

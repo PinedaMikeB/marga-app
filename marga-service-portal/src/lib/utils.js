@@ -1,3 +1,41 @@
+// Strip legacy ~xx / ~x prefixes from branch names before displaying to customers
+export function cleanBranchName(value) {
+  return String(value || '').replace(/^~x+\s*/i, '').trim() || '-';
+}
+
+// Format billing period: handles "2026-" (truncated), "2026-06", or falls back to invoice_date
+export function formatBillingPeriod(period, fallbackDate) {
+  if (!period && !fallbackDate) return '-';
+  const raw = String(period || '').trim();
+  const match = raw.match(/^(\d{4})-(\d{2})$/);
+  if (match) {
+    const d = new Date(`${match[1]}-${match[2]}-01`);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-PH', { month: 'short', year: 'numeric' });
+    }
+  }
+  if (fallbackDate) {
+    const d = new Date(fallbackDate);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-PH', { month: 'short', year: 'numeric' });
+    }
+  }
+  return raw || '-';
+}
+
+// Format any date/ISO string to "Jun 30, 2026" in Manila timezone
+export function formatDatePH(value) {
+  if (!value) return '-';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString('en-PH', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
+}
+
 export function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -34,10 +72,25 @@ export function formatMoney(value) {
 }
 
 export function statusClass(status) {
-  const s = String(status || '').toLowerCase();
-  if (s.includes('complete') || s.includes('paid') || s.includes('resolved')) return 'done';
-  if (s.includes('progress') || s.includes('assigned') || s.includes('part')) return 'progress';
-  if (s.includes('open') || s.includes('overdue') || s.includes('unpaid')) return 'open';
+  const s = String(status || '').toLowerCase().trim();
+
+  // Device / machine statuses
+  if (s === 'active')            return 'status-active';
+  if (s === 'incoming')          return 'status-incoming';
+  if (s === 'under repair')      return 'status-repair';
+  if (s === 'needs attention')   return 'status-attention';
+  if (s === 'for replacement')   return 'status-inactive';
+  if (s === 'decommissioned')    return 'status-inactive';
+  if (s === 'missing')           return 'status-attention';
+  if (s === 'pending setup')     return 'status-attention';
+  if (s === 'inactive')          return 'status-inactive';
+  if (s === 'staging')           return 'status-incoming';
+
+  // Ticket / billing statuses
+  if (s.includes('complete') || s.includes('resolved') || s === 'paid') return 'done';
+  if (s.includes('progress') || s.includes('assigned'))                  return 'progress';
+  if (s.includes('open') || s.includes('overdue') || s === 'unpaid')     return 'open';
+  if (s.includes('repair') || s.includes('attention') || s === 'missing') return 'status-attention';
   return 'pending';
 }
 

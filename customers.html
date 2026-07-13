@@ -90,12 +90,29 @@
                 <p>Company, branch, department, machine, and contract records</p>
             </div>
             <div class="header-actions">
+                <button class="btn btn-primary btn-sm" id="addCustomerBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                    Add Customer
+                </button>
                 <span class="status-pill" id="customerStatusPill">Loading</span>
                 <button class="btn btn-secondary btn-sm" id="refreshCustomersBtn">Refresh</button>
             </div>
         </header>
 
         <section class="customer-workbench">
+            <section class="customer-toolbar" aria-label="Customer quick actions">
+                <div class="field">
+                    <label for="customerQuickSearch">Search Customer</label>
+                    <input id="customerQuickSearch" list="companyOptions" type="search" autocomplete="off" placeholder="Company name or customer number">
+                </div>
+                <div class="toolbar-actions">
+                    <button class="tiny-btn" id="customerQuickSearchBtn">Find</button>
+                    <button class="tiny-btn" id="customerQuickClearBtn">Clear</button>
+                </div>
+            </section>
+
             <div class="status-strip">
                 <div class="status-tile"><strong id="companyCount">0</strong><span>Companies</span></div>
                 <div class="status-tile"><strong id="branchCount">0</strong><span>Branches</span></div>
@@ -416,9 +433,9 @@
     </section>
 
     <script src="shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
-    <script src="shared/js/auth.js?v=20260518-login-permissions-2"></script>
+    <script src="shared/js/auth.js?v=20260706-login-alias-fix-1"></script>
     <script src="shared/js/utils.js"></script>
     <script src="shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
-    <script src="customers/js/customers.js?v=20260514-serial-finder-1"></script>
+    <script src="customers/js/customers.js?v=20260617-customer-toolbar-1"></script>
 </body>
 </html>

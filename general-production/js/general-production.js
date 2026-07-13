@@ -43,6 +43,13 @@ const GP_LEGACY_PANEL_LIMITS = {
     purchase: 3,
     overhaulSource: 2
 };
+const GP_SUPPLEMENTAL_MODELS = [
+    {
+        id: -730,
+        brand: 'Brother',
+        label: 'DCP - T730'
+    }
+];
 
 const GP_STATE = {
     loading: false,
@@ -67,6 +74,7 @@ const GP_STATE = {
     },
     statuses: GP_STATUS_FALLBACKS.slice(),
     rows: {
+        serialChanges: [],
         requests: [],
         termination: [],
         purchase: [],
@@ -111,6 +119,7 @@ function hydrateUserChrome() {
 
 function bindControls() {
     document.getElementById('gpRefreshBtn').addEventListener('click', () => loadProductionData());
+    document.getElementById('gpSerialChangeRefreshBtn')?.addEventListener('click', () => loadProductionData());
     document.getElementById('machineCheckerBtn').addEventListener('click', openMachineChecker);
     document.getElementById('machineCheckerCloseBtn').addEventListener('click', closeMachineChecker);
     document.getElementById('machineCheckerOverlay').addEventListener('click', closeMachineChecker);
@@ -157,6 +166,7 @@ function bindControls() {
     document.getElementById('productionActionCloseBtn').addEventListener('click', closeProductionActionModal);
     document.getElementById('productionActionCancelBtn').addEventListener('click', closeProductionActionModal);
     document.getElementById('productionActionForm').addEventListener('submit', saveProductionAction);
+    document.getElementById('serialChangeTableBody')?.addEventListener('click', handleSerialChangeAction);
 }
 
 function bindPanelSearch(inputId, key) {
@@ -195,7 +205,8 @@ async function loadProductionData() {
             shutdownRows,
             shutdownMachines,
             machineHistory,
-            billingMachineRows
+            billingMachineRows,
+            serialCorrections
         ] = await Promise.all([
             fetchOptionalCollection('tbl_machine', 1200),
             fetchOptionalCollection('tbl_model', 600),
@@ -219,7 +230,8 @@ async function loadProductionData() {
             fetchBillingMachineRows().catch((error) => {
                 console.warn('Billing machine rows unavailable for Machine Checker.', error);
                 return [];
-            })
+            }),
+            fetchLatestRows('tbl_serial_corrections', 1000).catch(() => fetchOptionalCollection('tbl_serial_corrections', 1000))
         ]);
 
         GP_STATE.raw = {
@@ -240,7 +252,8 @@ async function loadProductionData() {
             shutdownRows,
             shutdownMachines,
             machineHistory,
-            billingMachineRows
+            billingMachineRows,
+            serialCorrections
         };
         GP_STATE.statuses = normalizeStatuses(machineStatuses);
         buildLookupMaps();
@@ -251,7 +264,7 @@ async function loadProductionData() {
 
         const stamp = new Date().toLocaleString('en-PH', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
         setStatus(`Refreshed ${stamp}`);
-        document.getElementById('gpSubtitle').textContent = `${GP_STATE.rows.requests.length} machine request(s), ${GP_STATE.rows.ready.length} ready machine(s), ${GP_STATE.rows.underRepair.length} under repair.`;
+        document.getElementById('gpSubtitle').textContent = `${GP_STATE.rows.requests.length} machine request(s), ${GP_STATE.rows.serialChanges.length} serial change request(s), ${GP_STATE.rows.underRepair.length} under repair.`;
     } catch (error) {
         console.error('General Production load failed:', error);
         setStatus('Load failed. Try Refresh All.', true);
@@ -327,7 +340,7 @@ function normalizeStatuses(rows) {
 
 function buildLookupMaps() {
     GP_STATE.maps.machines = keyedMap(GP_STATE.raw.machines);
-    GP_STATE.maps.models = keyedMap(GP_STATE.raw.models);
+    GP_STATE.maps.models = keyedMap(getModelSourceRows());
     GP_STATE.maps.brands = keyedMap(GP_STATE.raw.brands);
     GP_STATE.maps.branches = keyedMap(GP_STATE.raw.branches);
     GP_STATE.maps.companies = keyedMap(GP_STATE.raw.companies);
@@ -360,6 +373,7 @@ function buildProductionRows() {
     const machineRows = (GP_STATE.raw.machines || []).map(normalizeMachineRow);
     const scheduleRows = (GP_STATE.raw.schedules || []).map(normalizeScheduleRow).filter(Boolean);
     const queueRows = (GP_STATE.raw.productionQueue || []).map(normalizeQueueRow).filter(Boolean);
+    const serialChangeRows = (GP_STATE.raw.serialCorrections || []).map(normalizeSerialChangeRow).filter(Boolean);
 
     const requestRows = scheduleRows
         .filter((row) => row.bucket === 'request')
@@ -392,6 +406,7 @@ function buildProductionRows() {
         .sort(sortMachineRows);
 
     GP_STATE.rows = {
+        serialChanges: dedupeRows(serialChangeRows, 'key'),
         requests: limitLegacyPanelRows(dedupeRows(requestRows, 'key'), 'requests'),
         termination: limitLegacyPanelRows(dedupeRows(terminationRows, 'key'), 'termination'),
         purchase: limitLegacyPanelRows(dedupeRows(purchaseRows, 'key'), 'purchase'),
@@ -399,6 +414,23 @@ function buildProductionRows() {
         ready: dedupeRows(readyRows, 'key'),
         forOverhaul: dedupeRows(forOverhaulRows, 'key'),
         underRepair: dedupeRows(underRepairRows, 'key')
+    };
+}
+
+function normalizeSerialChangeRow(row) {
+    if (!row) return null;
+    const status = clean(row.status || 'pending_approval').toLowerCase();
+    return {
+        key: `serial-change:${row._docId || row.id}`,
+        id: String(row.id || row._docId || '').trim(),
+        status,
+        customer: [clean(row.customer_name), clean(row.branch_name)].filter(Boolean).join(' · ') || `Schedule ${row.schedule_id || '-'}`,
+        recorded: clean(row.current_serial) || '(blank)',
+        requested: clean(row.requested_serial) || '-',
+        requestedBy: clean(row.requested_by_name || row.requested_by) || '-',
+        requestedAt: clean(row.requested_at),
+        scheduleDocId: clean(row.schedule_doc_id),
+        raw: row
     };
 }
 
@@ -648,6 +680,7 @@ function renderAllBoards() {
     });
     GP_STATE.view = views;
 
+    renderSerialChanges(GP_STATE.rows.serialChanges || []);
     renderRequests(views.requests);
     renderSimpleRows('termination', views.termination, ['sts', 'client', 'brand', 'model']);
     renderSimpleRows('purchase', views.purchase, ['type', 'client', 'machine', 'age']);
@@ -657,12 +690,113 @@ function renderAllBoards() {
     renderSimpleRows('underRepair', views.underRepair, ['brand', 'model', 'serial', 'tech']);
 
     document.getElementById('requestMeta').textContent = `${views.requests.length} request(s)`;
+    document.getElementById('serialChangeMeta').textContent = `${(GP_STATE.rows.serialChanges || []).length} request(s)`;
     document.getElementById('terminationCount').textContent = views.termination.length;
     document.getElementById('purchaseCount').textContent = views.purchase.length;
     document.getElementById('overhaulSourceCount').textContent = views.overhaulSource.length;
     document.getElementById('readyCount').textContent = views.ready.length;
     document.getElementById('forOverhaulCount').textContent = views.forOverhaul.length;
     document.getElementById('underRepairCount').textContent = views.underRepair.length;
+}
+
+function serialStatusChip(status) {
+    const normalized = clean(status).toLowerCase();
+    const label = normalized.replace(/_/g, ' ') || 'pending approval';
+    let className = 'gp-status-chip';
+    if (normalized.includes('pending')) className += ' is-pending';
+    else if (normalized.includes('approved')) className += ' is-approved';
+    else if (normalized.includes('rejected')) className += ' is-rejected';
+    else if (normalized.includes('applied')) className += ' is-applied';
+    return `<span class="${className}">${escapeHtml(label)}</span>`;
+}
+
+function renderSerialChanges(rows) {
+    const tbody = document.getElementById('serialChangeTableBody');
+    if (!tbody) return;
+    if (!rows.length) {
+        tbody.innerHTML = '<tr class="gp-empty-row"><td colspan="7">No serial change requests found.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map((row) => `
+        <tr>
+            <td>${serialStatusChip(row.status)}</td>
+            <td title="${escapeHtml(row.customer)}">${escapeHtml(row.customer)}</td>
+            <td>${escapeHtml(row.recorded)}</td>
+            <td>${escapeHtml(row.requested)}</td>
+            <td>${escapeHtml(row.requestedBy)}</td>
+            <td>${escapeHtml(row.requestedAt || '-')}</td>
+            <td>
+                <div class="gp-inline-actions">
+                    <button type="button" class="btn btn-secondary btn-sm" data-serial-action="approve" data-request-id="${escapeHtml(row.id)}">Approve</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-serial-action="reject" data-request-id="${escapeHtml(row.id)}">Reject</button>
+                    <button type="button" class="btn btn-primary btn-sm" data-serial-action="applied" data-request-id="${escapeHtml(row.id)}">Applied</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function handleSerialChangeAction(event) {
+    const button = event.target.closest('[data-serial-action]');
+    if (!button) return;
+    const requestId = clean(button.dataset.requestId);
+    const action = clean(button.dataset.serialAction).toLowerCase();
+    if (!requestId || !action) return;
+    button.disabled = true;
+    try {
+        await saveSerialChangeAction(requestId, action);
+    } catch (error) {
+        console.error('Serial change action failed:', error);
+        alert(`Failed to update serial request: ${error.message || error}`);
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function saveSerialChangeAction(requestId, action) {
+    const row = (GP_STATE.rows.serialChanges || []).find((item) => item.id === requestId);
+    if (!row) throw new Error('Serial change request not found.');
+    const now = new Date().toISOString();
+    const nextStatus = action === 'approve'
+        ? 'approved_for_general_production'
+        : action === 'reject'
+            ? 'rejected'
+            : 'applied_in_general_production';
+    const patch = {
+        status: nextStatus,
+        approval_action: action,
+        approval_acted_at: now,
+        approval_acted_by: currentUserLabel()
+    };
+    if (action === 'approve') {
+        patch.approved_at = now;
+        patch.approved_by = currentUserLabel();
+    }
+    if (action === 'reject') {
+        patch.rejected_at = now;
+        patch.rejected_by = currentUserLabel();
+    }
+    if (action === 'applied') {
+        patch.applied_at = now;
+        patch.applied_by = currentUserLabel();
+    }
+    await patchDocument('tbl_serial_corrections', requestId, patch, {
+        label: `Update serial change request ${requestId}`,
+        dedupeKey: `gp-serial-change:${requestId}:${action}:${now}`
+    });
+    if (row.scheduleDocId) {
+        await patchDocument('tbl_schedule', row.scheduleDocId, {
+            field_serial_verification_status: nextStatus,
+            field_serial_change_request_status: nextStatus,
+            field_updated_at: now,
+            bridge_updated_at: now
+        }, {
+            label: `Update schedule serial request ${requestId}`,
+            dedupeKey: `gp-schedule-serial-change:${row.scheduleDocId}:${action}:${now}`
+        });
+    }
+    await loadProductionData();
+    MargaUtils.showToast('Serial request updated.', 'success');
 }
 
 function renderRequests(rows) {
@@ -709,6 +843,7 @@ function bindProductionBoardRows(tbody, boardKey, rows) {
 
 function setLoadingRows() {
     [
+        'serialChangeTableBody',
         'requestsTableBody',
         'terminationTableBody',
         'purchaseTableBody',
@@ -1075,7 +1210,7 @@ function populateStatusModelOptions(machine, preferredModel = '') {
         models.push({ value: label, label });
     });
 
-    (GP_STATE.raw.models || []).forEach((row) => {
+    getModelSourceRows().forEach((row) => {
         const label = getModelLabel(row);
         const key = normalizeLoose(label);
         if (!label || seen.has(key)) return;
@@ -1104,7 +1239,7 @@ function populateBrandOptions() {
 function populateModelOptions() {
     const brandId = Number(document.getElementById('newMachineBrandInput').value || 0);
     const select = document.getElementById('newMachineModelInput');
-    const models = (GP_STATE.raw.models || [])
+    const models = getModelSourceRows()
         .map((model) => ({
             id: Number(model.id || 0),
             brandId: Number(model.brand_id || 0),
@@ -1849,6 +1984,37 @@ function getMachineModel(machine) {
 
 function getModelLabel(model) {
     return clean(model?.modelname || model?.model || model?.model_name || model?.description);
+}
+
+function getModelSourceRows() {
+    const sourceRows = Array.isArray(GP_STATE.raw.models) ? GP_STATE.raw.models : [];
+    if (!sourceRows.length && !GP_SUPPLEMENTAL_MODELS.length) return [];
+
+    const rows = sourceRows.slice();
+    const seen = new Set(
+        rows.map((row) => normalizeLoose(getModelLabel(row))).filter(Boolean)
+    );
+    const brandsByName = new Map(
+        (GP_STATE.raw.brands || [])
+            .map((brand) => [normalizeLoose(getBrandLabel(brand)), Number(brand.id || 0)])
+            .filter(([name, id]) => name && id)
+    );
+
+    GP_SUPPLEMENTAL_MODELS.forEach((model) => {
+        const key = normalizeLoose(model.label);
+        if (!key || seen.has(key)) return;
+        const brandId = brandsByName.get(normalizeLoose(model.brand)) || 0;
+        rows.push({
+            id: model.id,
+            brand_id: brandId,
+            modelname: model.label,
+            description: model.label,
+            is_supplemental: 1
+        });
+        seen.add(key);
+    });
+
+    return rows;
 }
 
 function getMachineStatusLabel(machine) {

@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css?v=20260518-company-meeting-1">
-    <link rel="stylesheet" href="css/general-production.css">
+    <link rel="stylesheet" href="css/general-production.css?v=20260702-gp-serial-requests-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -159,6 +159,33 @@
         </header>
 
         <div class="dashboard-content gp-content">
+            <section class="gp-request-board animate-in">
+                <div class="gp-board-toolbar gp-serial-change-toolbar">
+                    <div>
+                        <h2>Serial Change Requests</h2>
+                        <span id="serialChangeMeta">0 request(s)</span>
+                    </div>
+                    <div class="gp-serial-change-note">Field staff can finish after requesting. Approval here only updates request status for General Production review.</div>
+                    <button type="button" class="gp-link-btn" id="gpSerialChangeRefreshBtn">Refresh</button>
+                </div>
+                <div class="gp-table-shell gp-request-shell">
+                    <table class="gp-table">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Customer</th>
+                                <th>Recorded</th>
+                                <th>Requested</th>
+                                <th>Requested By</th>
+                                <th>Requested At</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="serialChangeTableBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
             <section class="gp-request-board animate-in">
                 <div class="gp-board-toolbar">
                     <div>
@@ -391,10 +418,10 @@
 
     <script src="../shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
     <script src="../shared/js/utils.js"></script>
-    <script src="../shared/js/auth.js?v=20260518-login-permissions-2"></script>
-    <script src="../shared/js/offline-sync.js?v=20260601-local-postgres-live-1"></script>
+    <script src="../shared/js/auth.js?v=20260706-login-alias-fix-1"></script>
+    <script src="../shared/js/offline-sync.js?v=20260703-offline-queue-self-heal-1"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/general-production.js"></script>
+    <script src="js/general-production.js?v=20260702-gp-serial-requests-1"></script>
 </body>
 </html>

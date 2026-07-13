@@ -496,6 +496,13 @@
             border: 1px solid #bfdbfe;
         }
 
+        .master-staff-meta {
+            margin: 8px 0 0;
+            color: #5b6f89;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
         .master-priority-gate {
             margin: 0 0 18px;
             min-width: 0;
@@ -607,6 +614,15 @@
             overflow-y: visible;
             -webkit-overflow-scrolling: touch;
             scrollbar-width: thin;
+            padding-bottom: 6px;
+        }
+
+        .master-table-hint {
+            display: none;
+            margin: 0 0 8px;
+            color: #5b6f89;
+            font-size: 12px;
+            font-weight: 700;
         }
 
         .master-table-shell::-webkit-scrollbar {
@@ -1397,9 +1413,14 @@
 
             .master-group,
             .master-priority-gate,
-            .master-table,
             .master-table-shell {
                 min-width: 0;
+            }
+
+            .master-table {
+                display: table;
+                min-width: 1540px;
+                width: max-content;
             }
 
             .master-group-header {
@@ -1424,55 +1445,45 @@
                 border-bottom: 1px solid #111827;
             }
 
-            .master-table,
             .master-table thead,
             .master-table tbody,
             .master-table tr,
             .master-table th,
             .master-table td {
-                display: block;
-                width: 100%;
+                width: auto;
             }
 
             .master-table thead {
-                display: none;
+                display: table-header-group;
             }
 
             .master-table tr {
-                border: 1px solid rgba(15, 23, 42, 0.22);
-                border-radius: 8px;
-                margin: 0 0 10px;
-                overflow: hidden;
-                background: #fff;
+                display: table-row;
+                border: 0;
+                border-radius: 0;
+                margin: 0;
+                overflow: visible;
+                background: transparent;
             }
 
             .master-table td {
-                display: grid;
-                grid-template-columns: 112px minmax(0, 1fr);
-                gap: 10px;
-                align-items: start;
-                border: 0;
-                border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-                min-height: 0;
-                padding: 9px 10px;
+                display: table-cell;
+                border-bottom: 1px solid #111827;
+                min-height: 21px;
+                padding: 4px 7px;
                 text-align: left;
             }
 
-            .master-table td:last-child {
-                border-bottom: 0;
-            }
-
-            .master-table td::before {
-                content: attr(data-label);
-                color: #526f8d;
-                font-size: 10px;
-                font-weight: 900;
-                letter-spacing: 0.06em;
-                text-transform: uppercase;
+            .master-table th {
+                display: table-cell;
             }
 
             .master-table td.numeric {
                 text-align: left;
+            }
+
+            .master-table-hint {
+                display: block;
             }
 
             .kaizen-grid,
@@ -1816,10 +1827,10 @@
     </section>
 
     <script src="shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
-    <script src="shared/js/auth.js?v=20260518-login-permissions-2"></script>
+    <script src="shared/js/auth.js?v=20260706-login-alias-fix-1"></script>
     <script src="shared/js/utils.js?v=20260511-active-staff-1"></script>
-    <script src="shared/js/schedule-consolidation.js?v=20260518-combined-visit-1"></script>
+    <script src="shared/js/schedule-consolidation.js?v=20260625-schedule-choice-instead-of-force-1"></script>
     <script src="shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
-    <script src="master-schedule/js/master-schedule.js?v=20260623-manual-assignment-override-1"></script>
+    <script src="master-schedule/js/master-schedule.js?v=20260707-master-closed-route-guard-1"></script>
 </body>
 </html>

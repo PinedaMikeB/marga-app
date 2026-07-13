@@ -252,6 +252,28 @@ function selectMachine(mode, machineId) {
         receivingState.selectedReceiveMachine = option.machine;
         document.getElementById('receiveSerialInput').value = option.serial;
         document.getElementById('receiveMachineContext').textContent = `${option.serial} - ${option.model || '-'} - ${option.machine.return_previous_customer || option.customer || 'Pending return'}`;
+        // Pre-fill ending meter from pullout if already captured
+        const pulloutMeter = clean(option.machine.return_ending_meter || '');
+        const meterStatus = clean(option.machine.return_ending_meter_status || '');
+        const meterInput = document.getElementById('receivedEndingMeterInput');
+        const noMeterBox = document.getElementById('receivedNoMeterCheckbox');
+        const meterContext = document.getElementById('receivedMeterContext');
+        if (pulloutMeter === 'NO_METER' || meterStatus === 'no_meter_available') {
+            meterInput.value = '';
+            noMeterBox.checked = true;
+            meterContext.textContent = 'Driver reported: no meter available (machine was down at pullout).';
+            meterContext.style.display = '';
+        } else if (pulloutMeter) {
+            meterInput.value = pulloutMeter;
+            noMeterBox.checked = false;
+            meterContext.textContent = `Pre-filled from driver pullout record: ${pulloutMeter}. Correct if needed.`;
+            meterContext.style.display = '';
+        } else {
+            meterInput.value = '';
+            noMeterBox.checked = false;
+            meterContext.textContent = 'Ending meter was not captured at pullout. Enter it here if available.';
+            meterContext.style.display = '';
+        }
     } else {
         receivingState.selectedPulloutMachine = option.machine;
         document.getElementById('pulloutSerialInput').value = option.serial;
@@ -347,6 +369,25 @@ async function saveOfficeReceive(event) {
     const time = clean(document.getElementById('receivedTimeInput').value);
     const receivedBy = clean(document.getElementById('receivedByInput').value);
     const condition = clean(document.getElementById('receivedConditionInput').value);
+    const endingMeterRaw = clean(document.getElementById('receivedEndingMeterInput').value);
+    const noMeterAvailable = document.getElementById('receivedNoMeterCheckbox').checked;
+    // Resolve ending meter: use existing pullout value if it was already captured, else use what's entered here
+    const priorMeter = clean(machine.return_ending_meter || '');
+    const priorStatus = clean(machine.return_ending_meter_status || '');
+    let endingMeter, endingMeterStatus;
+    if (noMeterAvailable) {
+        endingMeter = 'NO_METER';
+        endingMeterStatus = 'no_meter_available';
+    } else if (endingMeterRaw) {
+        endingMeter = endingMeterRaw;
+        endingMeterStatus = priorStatus === 'captured_at_pullout' ? 'captured_at_pullout' : 'captured_at_receiving';
+    } else if (priorMeter && priorMeter !== 'NO_METER') {
+        endingMeter = priorMeter;
+        endingMeterStatus = priorStatus || 'captured_at_pullout';
+    } else {
+        endingMeter = 'NO_METER';
+        endingMeterStatus = 'no_meter_available';
+    }
     const remarks = clean(document.getElementById('receivedRemarksInput').value);
     if (!date || !time || !receivedBy) {
         alert('Received by and received date/time are required.');
@@ -361,6 +402,8 @@ async function saveOfficeReceive(event) {
         receiving_received_by: receivedBy,
         receiving_received_at: `${date} ${time}:00`,
         receiving_remarks: remarks,
+        return_ending_meter: endingMeter,
+        return_ending_meter_status: endingMeterStatus,
         production_received_at: now,
         production_received_by: currentUserLabel(),
         tmestamp: now
@@ -369,7 +412,7 @@ async function saveOfficeReceive(event) {
         label: `Receive returned machine ${clean(machine.serial)}`,
         dedupeKey: `receiving-office-receive:${docId}:${date}:${time}`
     });
-    await createMachineHistoryStatusRow(machine, { date, time, receivedBy, condition, remarks, now });
+    await createMachineHistoryStatusRow(machine, { date, time, receivedBy, condition, endingMeter, endingMeterStatus, remarks, now });
     await createReceivingRecord({
         record_type: 'machine_received_by_office',
         machine_id: Number(machine.id || machine._docId || 0) || machine.id || machine._docId || '',
@@ -379,6 +422,8 @@ async function saveOfficeReceive(event) {
         pickup_receipt: clean(machine.return_pickup_receipt),
         received_by: receivedBy,
         condition,
+        ending_meter: endingMeter,
+        ending_meter_status: endingMeterStatus,
         event_at: `${date} ${time}:00`,
         remarks
     });
@@ -389,6 +434,10 @@ async function saveOfficeReceive(event) {
     setDefaultDates();
     receivingState.selectedReceiveMachine = null;
     document.getElementById('receiveMachineContext').textContent = 'Select a pending return machine received by the office.';
+    document.getElementById('receivedEndingMeterInput').value = '';
+    document.getElementById('receivedNoMeterCheckbox').checked = false;
+    const meterCtx = document.getElementById('receivedMeterContext');
+    if (meterCtx) { meterCtx.style.display = 'none'; meterCtx.textContent = ''; }
     MargaUtils.showToast('Machine received to For Overhauling.', 'success');
 }
 
@@ -416,6 +465,9 @@ async function saveOtherReceiving(event) {
 async function createMachineHistoryStatusRow(machine, receive) {
     const historyId = await allocateNextId('tbl_newmachinehistory');
     const machineId = Number(machine.id || machine._docId || 0) || machine.id || machine._docId || '';
+    const meterNote = receive.endingMeter === 'NO_METER'
+        ? 'NO METER AVAILABLE'
+        : (receive.endingMeter ? `ENDING METER: ${receive.endingMeter}` : '');
     await setDocument('tbl_newmachinehistory', String(historyId), {
         id: historyId,
         mach_id: machineId,
@@ -427,9 +479,11 @@ async function createMachineHistoryStatusRow(machine, receive) {
         branch_id: Number(machine.return_previous_client_id || 0) || 0,
         tmstmp: `${receive.date} ${receive.time}:00`,
         fromx: 0,
-        remarks: ['RECEIVED BY OFFICE', receive.receivedBy, machine.return_pickup_receipt, receive.remarks].filter(Boolean).join(' - '),
+        remarks: ['RECEIVED BY OFFICE', receive.receivedBy, machine.return_pickup_receipt, meterNote, receive.remarks].filter(Boolean).join(' - '),
         condition_id: receive.condition === 'brand_new_waste_tank' ? 1 : 0,
         receiving_condition: receive.condition,
+        receiving_ending_meter: receive.endingMeter || '',
+        receiving_ending_meter_status: receive.endingMeterStatus || '',
         receiving_created_at: receive.now,
         receiving_created_by: currentUserLabel()
     }, {

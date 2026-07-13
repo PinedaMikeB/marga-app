@@ -104,7 +104,6 @@ const RTP_PRINT_NAME_OPTIONS_STORAGE_KEY = 'marga_rtp_print_name_options_v1';
 const DEFAULT_SPOILAGE_RATE = 0.02;
 const BILLING_EXCLUSIONS_COLLECTION = 'tbl_billing_exclusions';
 const BILLING_DRAFTS_COLLECTION = 'tbl_billing_drafts';
-const SCHEDULE_PLANNER_COLLECTION = 'tbl_schedule_planner';
 const SPECIAL_TONER_BILLING_GROUPS = [
     {
         key: 'cvm-toner',
@@ -165,6 +164,56 @@ const CONTRACT_CATEGORY_META = {
     9: { code: 'REF', label: 'Refill' },
     10: { code: 'RD', label: 'Reading Only' }
 };
+
+function bindHorizontalTouchScroll(container) {
+    if (!container || container.dataset.horizontalScrollBound === '1') return;
+    container.dataset.horizontalScrollBound = '1';
+
+    let startX = 0;
+    let startY = 0;
+    let startScrollLeft = 0;
+    let draggingHorizontally = null;
+
+    container.addEventListener('touchstart', (event) => {
+        if (!event.touches || event.touches.length !== 1) return;
+        if (container.scrollWidth <= container.clientWidth + 4) return;
+        const touch = event.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        startScrollLeft = container.scrollLeft;
+        draggingHorizontally = null;
+    }, { passive: true, capture: true });
+
+    container.addEventListener('touchmove', (event) => {
+        if (!event.touches || event.touches.length !== 1) return;
+        if (container.scrollWidth <= container.clientWidth + 4) return;
+        const touch = event.touches[0];
+        const deltaX = touch.clientX - startX;
+        const deltaY = touch.clientY - startY;
+
+        if (draggingHorizontally === null) {
+            if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) return;
+            draggingHorizontally = Math.abs(deltaX) > Math.abs(deltaY);
+        }
+
+        if (!draggingHorizontally) return;
+
+        container.scrollLeft = startScrollLeft - deltaX;
+        event.preventDefault();
+    }, { passive: false, capture: true });
+
+    container.addEventListener('touchend', () => {
+        draggingHorizontally = null;
+    }, { passive: true, capture: true });
+
+    container.addEventListener('touchcancel', () => {
+        draggingHorizontally = null;
+    }, { passive: true, capture: true });
+}
+
+function setupHorizontalTouchScroll() {
+    document.querySelectorAll('[data-horizontal-scroll]').forEach(bindHorizontalTouchScroll);
+}
 
 function getMatrixSearchTerm() {
     return String(els.matrixSearchInput?.value || '').trim().toLowerCase();
@@ -906,6 +955,15 @@ function pickPrimaryBillingDoc(docs) {
         [0] || null;
 }
 
+function pickBillingDocForMode(docs, billingMode = '') {
+    const normalizedMode = String(billingMode || '').trim();
+    if (!normalizedMode) return pickPrimaryBillingDoc(docs);
+    const modeDocs = (Array.isArray(docs) ? docs : []).filter((doc) => String(doc?.billing_mode || '').trim() === normalizedMode);
+    if (modeDocs.length) return pickPrimaryBillingDoc(modeDocs);
+    if (normalizedMode === 'pird_charge' || normalizedMode === 'toner_cartridge') return null;
+    return pickPrimaryBillingDoc(docs);
+}
+
 function normalizeInvoiceNumber(value) {
     return String(value || '').trim();
 }
@@ -919,7 +977,8 @@ function billingSnapshotFromValues({
     applyQuota = true,
     quotaBypassReason = '',
     billingMode = 'single_meter_rtp',
-    linesSignature = ''
+    linesSignature = '',
+    unusedDays = 0
 } = {}) {
     return {
         invoiceNo: normalizeInvoiceNumber(invoiceNo),
@@ -932,7 +991,8 @@ function billingSnapshotFromValues({
             ? 'Quota unchecked - reason not entered'
             : quotaBypassReason || '').trim(),
         billingMode: String(billingMode || 'single_meter_rtp').trim() || 'single_meter_rtp',
-        linesSignature: String(linesSignature || '').trim()
+        linesSignature: String(linesSignature || '').trim(),
+        unusedDays: Math.min(30, Math.max(0, Number(unusedDays || 0) || 0))
     };
 }
 
@@ -990,7 +1050,8 @@ function billingSnapshotFromDoc(doc, fallback = {}) {
         applyQuota: doc?.apply_quota === undefined ? (fallback.applyQuota ?? true) : doc.apply_quota !== false,
         quotaBypassReason: doc?.quota_bypass_reason ?? fallback.quotaBypassReason ?? '',
         billingMode: doc?.billing_mode || fallback.billingMode,
-        linesSignature: doc?.billing_lines_signature || fallback.linesSignature
+        linesSignature: doc?.billing_lines_signature || fallback.linesSignature,
+        unusedDays: Number(doc?.unused_days ?? fallback.unusedDays ?? 0) || 0
     });
 }
 
@@ -1005,6 +1066,7 @@ function billingSnapshotsEqual(left, right) {
         && a.applyQuota === b.applyQuota
         && a.quotaBypassReason === b.quotaBypassReason
         && a.billingMode === b.billingMode
+        && a.unusedDays === b.unusedDays
         && (!a.linesSignature || !b.linesSignature || a.linesSignature === b.linesSignature);
 }
 
@@ -1288,69 +1350,6 @@ function buildBillingPlannerGroups(result, row, context, snapshot, estimate) {
     });
 }
 
-async function resolveBillingPlannerArea(group) {
-    const branchId = String(group?.primaryBranchId || '').trim();
-    if (!branchId) return { areaId: '', areaName: '', rule: null };
-
-    try {
-        const branch = await getFirestoreDocument('tbl_branchinfo', branchId);
-        const areaId = String(branch?.area_id || branch?.areaid || '').trim();
-        let areaName = '';
-        if (areaId) {
-            try {
-                const area = await getFirestoreDocument('tbl_area', areaId);
-                areaName = String(area?.area_name || area?.areaname || area?.name || '').trim();
-            } catch (error) {
-                console.warn('Schedule planner area name lookup failed.', error);
-            }
-        }
-
-        let rule = null;
-        const ruleIds = uniqueScheduleValues([
-            areaId ? `area_${slugFirestoreId(areaId)}` : '',
-            areaName ? `area_${slugFirestoreId(areaName)}` : '',
-            areaId,
-            areaName
-        ]);
-        for (const ruleId of ruleIds) {
-            try {
-                rule = await getFirestoreDocument(SCHEDULE_AREA_RULES_COLLECTION, ruleId);
-                if (rule) break;
-            } catch (error) {
-                console.warn('Schedule planner area rule lookup failed.', error);
-            }
-        }
-
-        return { areaId, areaName, rule };
-    } catch (error) {
-        console.warn('Schedule planner branch area lookup failed.', error);
-        return { areaId: '', areaName: '', rule: null };
-    }
-}
-
-function getScheduleRuleAssignment(rule) {
-    if (!rule) return { staffId: '', staffName: '', basis: 'no_area_rule' };
-    const staffId = String(
-        rule.default_messenger_id
-        || rule.messenger_id
-        || rule.default_staff_id
-        || rule.staff_id
-        || ''
-    ).trim();
-    const staffName = String(
-        rule.default_messenger_name
-        || rule.messenger_name
-        || rule.default_staff_name
-        || rule.staff_name
-        || ''
-    ).trim();
-    return {
-        staffId,
-        staffName,
-        basis: staffId || staffName ? 'area_rule' : 'area_rule_without_staff'
-    };
-}
-
 function buildSchedulePlannerDocId(group) {
     return `billing_invoice_${slugFirestoreId([
         group?.invoiceNo || 'invoice',
@@ -1364,7 +1363,8 @@ function buildBillingScheduleTaskDocId(plannerDocId) {
 }
 
 function buildScheduleTaskDateTime(date, time) {
-    const safeDate = String(date || '').trim() || formatIsoDate(new Date());
+    const safeDate = String(date || '').trim();
+    if (!safeDate) return '';
     const safeTime = String(time || '').trim() || '08:00';
     return `${safeDate} ${safeTime.length === 5 ? `${safeTime}:00` : safeTime}`;
 }
@@ -1395,190 +1395,43 @@ function buildReadingSchedulePlannerDocId(row, context) {
     ].join('_'))}`;
 }
 
-async function saveReadingToSchedulePlanner({ row, context, estimate }) {
-    const purpose = BILLING_SCHEDULE_PURPOSES.reading;
-    const now = new Date();
-    const { areaId, areaName, rule } = await resolveBillingPlannerArea({
-        primaryBranchId: String(row?.branch_id || '').trim(),
-        primaryBranchName: String(row?.branch_name || '').trim(),
-        branchIds: [String(row?.branch_id || '').trim()].filter(Boolean),
-        branchNames: [String(row?.branch_name || '').trim()].filter(Boolean),
+function buildBillingScheduleSourceDocId({ row, context, estimate, snapshot, savedBillingDocId = '' }) {
+    const purpose = getBillingSchedulePurposeFromEstimate(estimate);
+    if (purpose.key === 'reading') return buildReadingSchedulePlannerDocId(row, context);
+
+    const groups = buildBillingPlannerGroups({
+        docId: savedBillingDocId,
+        invoiceNo: snapshot?.invoiceNo || estimate?.invoiceNo || context?.invoiceNo || ''
+    }, row, context, snapshot || buildCurrentSnapshot(), estimate);
+    if (groups.length) return buildSchedulePlannerDocId(groups[0]);
+
+    return buildSchedulePlannerDocId({
+        invoiceNo: snapshot?.invoiceNo || estimate?.invoiceNo || context?.invoiceNo || savedBillingDocId || 'invoice',
+        monthKey: context?.monthKey || snapshot?.monthKey || 'month',
+        companyId: row?.company_id || row?.current_companyid || row?.company_name || 'customer',
         companyName: row?.company_name || row?.account_name || row?.display_name || ''
     });
-    const assignment = getScheduleRuleAssignment(rule);
-    const docId = buildReadingSchedulePlannerDocId(row, context);
-    const fields = {
-        id: docId,
-        source_module: 'billing',
-        source_action: purpose.sourceAction,
-        source_collection: '',
-        source_doc_ids: [],
-        source_doc_ids_json: '[]',
-        source_record_key: `${context?.monthKey || ''}:${row?.contractmain_id || row?.machine_id || row?.serial_number || ''}`,
-        department: 'billing',
-        purpose: purpose.label,
-        schedule_purpose: purpose.label,
-        task_type: purpose.taskType,
-        task_label: purpose.taskLabel,
-        required_role: 'messenger',
-        planner_status: 'scheduled',
-        task_status: 'scheduled',
-        route_status: 'scheduled',
-        priority: 'normal',
-        requested_date: normalizePlannerDate(now),
-        preferred_schedule_date: String(estimate?.scheduleDate || '').trim(),
-        schedule_date: String(estimate?.scheduleDate || '').trim(),
-        schedule_time: String(estimate?.scheduleTime || '').trim(),
-        schedule_type: purpose.label,
-        billing_month_key: context?.monthKey || '',
-        billing_month_label: formatMonthLabel(context?.monthKey, context?.monthKey),
-        company_id: String(row?.company_id || '').trim(),
-        company_name: String(row?.company_name || row?.account_name || row?.display_name || '').trim(),
-        account_name: String(row?.account_name || row?.display_name || row?.company_name || '').trim(),
-        primary_branch_id: String(row?.branch_id || '').trim(),
-        primary_branch_name: String(row?.branch_name || '').trim(),
-        branch_ids: [String(row?.branch_id || '').trim()].filter(Boolean),
-        branch_ids_json: JSON.stringify([String(row?.branch_id || '').trim()].filter(Boolean)),
-        branch_names_json: JSON.stringify([String(row?.branch_name || '').trim()].filter(Boolean)),
-        branch_count: row?.branch_id ? 1 : 0,
-        line_count: 1,
-        contractmain_ids: [String(row?.contractmain_id || '').trim()].filter(Boolean),
-        contractmain_ids_json: JSON.stringify([String(row?.contractmain_id || '').trim()].filter(Boolean)),
-        machine_ids: [String(row?.machine_id || '').trim()].filter(Boolean),
-        machine_ids_json: JSON.stringify([String(row?.machine_id || '').trim()].filter(Boolean)),
-        serial_numbers_json: JSON.stringify([String(row?.serial_number || '').trim()].filter(Boolean)),
-        model: String(row?.machine_label || '').trim(),
-        serial: String(row?.serial_number || '').trim(),
-        area_id: areaId,
-        area_name: areaName,
-        suggested_staff_id: assignment.staffId,
-        suggested_staff_name: assignment.staffName,
-        suggested_messenger_id: assignment.staffId,
-        suggested_messenger_name: assignment.staffName,
-        assignment_basis: assignment.basis,
-        assigned_staff_id: String(estimate?.scheduleAssignedStaffId || '').trim(),
-        assigned_staff_name: String(estimate?.scheduleAssignedStaffName || '').trim(),
-        assigned_to_id: String(estimate?.scheduleAssignedStaffId || '').trim(),
-        assigned_to: String(estimate?.scheduleAssignedStaffName || '').trim(),
-        assigned_by: '',
-        assigned_at: '',
-        scheduler_locked: false,
-        published: false,
-        completed_at: '',
-        completion_notes: '',
-        notes: `${purpose.notesVerb}${row?.branch_name ? ` at ${row.branch_name}` : ''}${row?.serial_number ? ` (${row.serial_number})` : ''}.`,
-        created_at: now.toISOString(),
-        updated_at: now.toISOString()
-    };
-    const saveResult = await setFirestoreDocument(SCHEDULE_PLANNER_COLLECTION, docId, fields, {
-        mode: 'set',
-        label: `Reading schedule ${row?.serial_number || docId}`,
-        dedupeKey: `${SCHEDULE_PLANNER_COLLECTION}:${docId}`
-    });
-    return { ...saveResult, docId, fields, docs: [{ ...saveResult, docId, fields }], savedCount: 1 };
 }
 
-async function saveBillingToSchedulePlanner({ result, row, context, estimate, snapshot }) {
-    const purpose = getBillingSchedulePurposeFromEstimate(estimate);
-    const groups = buildBillingPlannerGroups(result, row, context, snapshot, estimate);
-    if (!groups.length) return { ok: true, queued: false, savedCount: 0, docs: [] };
-
-    const now = new Date();
-    const today = normalizePlannerDate(now);
-    const savedDocs = [];
-
-    for (const group of groups) {
-        const { areaId, areaName, rule } = await resolveBillingPlannerArea(group);
-        const assignment = getScheduleRuleAssignment(rule);
-        const docId = buildSchedulePlannerDocId(group);
-        const fields = {
-            id: docId,
-            source_module: 'billing',
-            source_action: purpose.sourceAction,
-            source_collection: 'tbl_billing',
-            source_doc_ids: group.billingDocIds,
-            source_doc_ids_json: JSON.stringify(group.billingDocIds),
-            source_record_key: `${group.invoiceNo || ''}:${group.monthKey || ''}:${group.companyId || group.companyName || ''}`,
-            department: 'billing',
-            purpose: purpose.label,
-            schedule_purpose: purpose.label,
-            task_type: purpose.taskType,
-            task_label: purpose.taskLabel,
-            required_role: 'messenger',
-            planner_status: estimate?.scheduleSaved ? 'scheduled' : 'suggested',
-            task_status: estimate?.scheduleSaved ? 'scheduled' : 'pending_scheduler',
-            route_status: estimate?.scheduleSaved ? 'scheduled' : 'unscheduled',
-            priority: 'normal',
-            requested_date: today,
-            preferred_schedule_date: today,
-            schedule_date: String(estimate?.scheduleDate || '').trim(),
-            schedule_time: String(estimate?.scheduleTime || '').trim(),
-            schedule_type: purpose.label,
-            invoice_no: group.invoiceNo,
-            billing_month_key: group.monthKey,
-            billing_month_label: formatMonthLabel(group.monthKey, group.monthKey),
-            amount_due: Number(group.amountDue || 0) || 0,
-            company_id: group.companyId,
-            company_name: group.companyName,
-            account_name: group.accountName || group.companyName,
-            primary_branch_id: group.primaryBranchId,
-            primary_branch_name: group.primaryBranchName,
-            branch_ids: group.branchIds,
-            branch_ids_json: JSON.stringify(group.branchIds),
-            branch_names_json: JSON.stringify(group.branchNames),
-            branch_count: group.branchIds.length,
-            line_count: group.lineCount,
-            contractmain_ids: group.contractIds,
-            contractmain_ids_json: JSON.stringify(group.contractIds),
-            machine_ids: group.machineIds,
-            machine_ids_json: JSON.stringify(group.machineIds),
-            serial_numbers_json: JSON.stringify(group.serialNumbers),
-            area_id: areaId,
-            area_name: areaName,
-            suggested_staff_id: assignment.staffId,
-            suggested_staff_name: assignment.staffName,
-            suggested_messenger_id: assignment.staffId,
-            suggested_messenger_name: assignment.staffName,
-            assignment_basis: assignment.basis,
-            assigned_staff_id: String(estimate?.scheduleAssignedStaffId || '').trim(),
-            assigned_staff_name: String(estimate?.scheduleAssignedStaffName || '').trim(),
-            assigned_by: '',
-            assigned_at: '',
-            transfer_count: 0,
-            transfer_reason: '',
-            scheduler_locked: false,
-            published: false,
-            completed_at: '',
-            completion_notes: '',
-            notes: `${purpose.notesVerb} ${group.invoiceNo || ''}${group.primaryBranchName ? ` to ${group.primaryBranchName}` : ''}.`,
-            created_at: now.toISOString(),
-            updated_at: now.toISOString()
-        };
-        const saveResult = await setFirestoreDocument(SCHEDULE_PLANNER_COLLECTION, docId, fields, {
-            mode: 'set',
-            label: `Schedule planner invoice ${group.invoiceNo || docId}`,
-            dedupeKey: `${SCHEDULE_PLANNER_COLLECTION}:${docId}`
-        });
-        savedDocs.push({ ...saveResult, docId, fields });
-    }
-
-    return {
-        ok: savedDocs.every((entry) => entry.ok !== false),
-        queued: savedDocs.some((entry) => entry.queued),
-        savedCount: savedDocs.length,
-        docs: savedDocs
-    };
+function resolveBillingScheduleTaskDocId(scheduleDocId = '', scheduleTaskDocId = '', scheduleSourceDocId = '') {
+    const directDocId = String(scheduleTaskDocId || '').trim() || String(scheduleDocId || '').trim();
+    if (directDocId.startsWith('billing_task_')) return directDocId;
+    return buildBillingScheduleTaskDocId(scheduleSourceDocId || directDocId || Date.now());
 }
 
-async function saveBillingScheduleToFieldTask({ plannerDocId, row, context, estimate, purpose, staffId, staffName, auditName = '' }) {
-    const taskDocId = buildBillingScheduleTaskDocId(plannerDocId);
+async function saveBillingScheduleToFieldTask({ scheduleSourceDocId, taskDocId = '', row, context, estimate, purpose, staffId, staffName, auditName = '' }) {
+    const resolvedSourceDocId = String(scheduleSourceDocId || '').trim();
+    const resolvedTaskDocId = String(taskDocId || '').trim() || buildBillingScheduleTaskDocId(resolvedSourceDocId || Date.now());
     const nowIso = new Date().toISOString();
     const scheduleDate = String(estimate?.scheduleDate || '').trim();
     const scheduleTime = String(estimate?.scheduleTime || '').trim();
     const taskDateTime = buildScheduleTaskDateTime(scheduleDate, scheduleTime);
+    if (!taskDateTime) {
+        throw new Error('Choose schedule date before saving this billing schedule.');
+    }
     const taskId = firstNumericValue(
         estimate?.scheduleTaskId,
-        String(taskDocId).replace(/\D/g, '').slice(-12),
+        String(resolvedTaskDocId).replace(/\D/g, '').slice(-12),
         Date.now()
     );
     const branchId = firstNumericValue(row?.branch_id, row?.primaryBranchId);
@@ -1590,10 +1443,10 @@ async function saveBillingScheduleToFieldTask({ plannerDocId, row, context, esti
     const fields = {
         id: taskId,
         source_module: 'billing',
-        source_planner_doc_id: plannerDocId,
+        source_schedule_doc_id: resolvedSourceDocId,
         task_datetime: taskDateTime,
         original_sched: taskDateTime,
-        tech_id: Number(staffId || 0) || staffId,
+        tech_id: Number(staffId || 0) || 0,
         purpose_id: purposeId,
         purpose: purpose?.label || 'Printed Billing',
         schedule_purpose: purpose?.label || 'Printed Billing',
@@ -1619,7 +1472,7 @@ async function saveBillingScheduleToFieldTask({ plannerDocId, row, context, esti
         pending_parts: 0,
         master_schedule_status: 'open',
         master_schedule_status_label: 'Open',
-        field_billing_schedule_doc_id: plannerDocId,
+        field_billing_schedule_doc_id: resolvedSourceDocId,
         field_billing_assigned_staff_id: String(staffId || '').trim(),
         field_billing_assigned_staff_name: String(staffName || '').trim(),
         inserted_by: auditName,
@@ -1630,12 +1483,12 @@ async function saveBillingScheduleToFieldTask({ plannerDocId, row, context, esti
     if (estimate?.scheduleConsolidationFields && typeof estimate.scheduleConsolidationFields === 'object') {
         Object.assign(fields, estimate.scheduleConsolidationFields);
     }
-    const result = await setFirestoreDocument('tbl_schedule', taskDocId, fields, {
+    const result = await setFirestoreDocument('tbl_schedule', resolvedTaskDocId, fields, {
         mode: 'set',
-        label: `Field schedule ${purpose?.label || 'Billing'} ${row?.serial_number || taskDocId}`,
-        dedupeKey: `tbl_schedule:${taskDocId}`
+        label: `Field schedule ${purpose?.label || 'Billing'} ${row?.serial_number || resolvedTaskDocId}`,
+        dedupeKey: `tbl_schedule:${resolvedTaskDocId}`
     });
-    return { ...result, docId: taskDocId, taskId, fields };
+    return { ...result, docId: resolvedTaskDocId, taskId, fields };
 }
 
 function billingScheduleStaffName(employee) {
@@ -1658,6 +1511,8 @@ function billingScheduleStaffRole(employee) {
     return label ? label.replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Staff';
 }
 
+const BILLING_FIELD_ASSIGNMENT_ROLE_KEYS = ['messenger', 'driver', 'technician', 'production'];
+
 function isActiveBillingScheduleStaff(employee) {
     if (window.MargaUtils?.isOfficialActiveEmployee) return MargaUtils.isOfficialActiveEmployee(employee);
     if (!employee) return false;
@@ -1671,10 +1526,8 @@ async function loadBillingScheduleStaffOptions() {
         console.warn('Unable to load schedule staff options.', error);
         return [];
     });
-    const options = window.MargaUtils?.filterEmployeeAssignmentOptions
-        ? MargaUtils.filterEmployeeAssignmentOptions(employees, {
-            includeRoleKeys: ['billing', 'collection', 'technician', 'messenger', 'driver']
-        }).map((employee) => ({
+    const options = window.MargaUtils?.getActiveAssignmentEmployees
+        ? MargaUtils.getActiveAssignmentEmployees(employees).map((employee) => ({
             id: String(employee.id || '').trim(),
             name: employee.name,
             role: employee.designation || employee.role || 'Staff',
@@ -1683,15 +1536,14 @@ async function loadBillingScheduleStaffOptions() {
         : employees
             .filter(isActiveBillingScheduleStaff)
             .map((employee) => ({
-            id: String(employee.id || employee._docId || '').trim(),
-            name: billingScheduleStaffName(employee),
-            role: billingScheduleStaffRole(employee),
-            roleKey: window.MargaUtils?.getEmployeeRoleKey ? MargaUtils.getEmployeeRoleKey(employee) : ''
+            id: String(employee.id || '').trim(),
+                name: billingScheduleStaffName(employee),
+                role: billingScheduleStaffRole(employee),
+                roleKey: window.MargaUtils?.getEmployeeRoleKey ? MargaUtils.getEmployeeRoleKey(employee) : ''
             }))
         .filter((employee) => employee.id && employee.name);
-    const scheduleOptions = options.filter((employee) => ['billing', 'collection', 'technician', 'messenger', 'driver'].includes(employee.roleKey));
-    return (scheduleOptions.length ? scheduleOptions : options)
-        .sort((left, right) => `${left.name} ${left.role}`.localeCompare(`${right.name} ${right.role}`));
+    const filtered = options.filter((employee) => BILLING_FIELD_ASSIGNMENT_ROLE_KEYS.includes(String(employee.roleKey || '').toLowerCase()));
+    return filtered.sort((left, right) => `${left.name} ${left.role}`.localeCompare(`${right.name} ${right.role}`));
 }
 
 function renderBillingScheduleStaffOptions(options = [], selectedId = '') {
@@ -1700,6 +1552,23 @@ function renderBillingScheduleStaffOptions(options = [], selectedId = '') {
         '<option value="">Select employee</option>',
         ...options.map((staff) => `<option value="${escapeHtml(staff.id)}"${staff.id === selected ? ' selected' : ''}>${escapeHtml(staff.name)} - ${escapeHtml(staff.role)}</option>`)
     ].join('');
+}
+
+function resolveBillingScheduleStaffSelection(options = [], selectedId = '', fallbackName = '') {
+    const normalizedId = String(selectedId || '').trim();
+    const normalizedName = String(fallbackName || '').trim().toLowerCase();
+    const byId = options.find((staff) => String(staff.id || '').trim() === normalizedId) || null;
+    if (byId) return { ...byId, id: String(byId.id || '').trim(), name: String(byId.name || '').trim() };
+    const byName = normalizedName
+        ? options.find((staff) => String(staff.name || '').trim().toLowerCase() === normalizedName) || null
+        : null;
+    if (byName) return { ...byName, id: String(byName.id || '').trim(), name: String(byName.name || '').trim() };
+    return {
+        id: normalizedId,
+        name: String(fallbackName || '').trim() || normalizedId,
+        role: '',
+        roleKey: ''
+    };
 }
 
 function isActiveBillingExclusion(exclusion) {
@@ -1853,6 +1722,7 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
     const secondaryLine = lineItems.find((line) => String(line?.label || '').toLowerCase().includes('color'))
         || (String(snapshot?.billingMode || '').trim() === 'multi_meter_rtp' ? lineItems[1] : null)
         || {};
+    const pirdEstimate = String(snapshot?.billingMode || '').trim() === 'pird_charge' ? estimate : null;
     const linesSignature = buildBillingLinesSignature(lineItems);
 
     return {
@@ -1894,6 +1764,9 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         succeeding_page_rate: Number(estimate?.succeedingRate || getSucceedingPageRate(context?.profile) || 0) || 0,
         monthly_quota: Number(context?.profile?.monthly_quota || 0) || 0,
         monthly_rate: Number(context?.profile?.monthly_rate || 0) || 0,
+        unused_days: Number(estimate?.unusedDays || 0) || 0,
+        unused_discount: Number(estimate?.unusedDiscount || 0) || 0,
+        unused_daily_rate: Number(estimate?.unusedDailyRate || 0) || 0,
         quota_pages: Number(estimate?.quotaPages || 0) || 0,
         succeeding_pages: Number(estimate?.succeedingPages || 0) || 0,
         quota_amount: Number(estimate?.quotaAmount || 0) || 0,
@@ -1903,6 +1776,10 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         billing_item_quantity: Number(estimate?.tonerQuantity || primaryLine.quantity || 0) || 0,
         billing_item_unit_price: Number(estimate?.tonerUnitPrice || primaryLine.unitPrice || 0) || 0,
         billing_item_vat_inclusive: String(estimate?.billingMode || snapshot?.billingMode || '').trim() === 'toner_cartridge' ? 1 : 0,
+        pird_rd_enabled: pirdEstimate?.refundableDepositEnabled === true,
+        pird_rd_amount: Number(pirdEstimate?.rdAmount || 0) || 0,
+        pird_pi_enabled: pirdEstimate?.productionInstallationEnabled === true,
+        pird_pi_amount: Number(pirdEstimate?.piAmount || 0) || 0,
         withvat: context?.profile?.with_vat ? 1 : 0,
         category_id: Number(context?.profile?.category_id || 0) || 0,
         category_code: String(context?.profile?.category_code || '').trim(),
@@ -2087,7 +1964,7 @@ async function saveBillingRecord({ row, context, estimate, snapshot, existingDoc
     if (!row?.contractmain_id) throw new Error('This row has no contract ID, so billing cannot be saved yet.');
 
     const rowDocs = existingDocs.length ? existingDocs : await queryBillingDocsByContractMonth(row.contractmain_id, context.monthKey);
-    const targetDoc = pickPrimaryBillingDoc(rowDocs);
+    const targetDoc = pickBillingDocForMode(rowDocs, snapshot?.billingMode || '');
     const duplicateDocs = await queryBillingDocsByInvoice(invoiceNo);
     const conflictingDoc = duplicateDocs.find((doc) => doc?._docId && doc._docId !== targetDoc?._docId);
     if (conflictingDoc) {
@@ -2947,32 +2824,44 @@ function showBillingSaveResult({ type = 'info', title = '', message = '' } = {})
 
 function setRtpPrintPayload(payload) {
     currentRtpPrintPayload = payload || null;
-    const printCode = String(payload?.contractCode || 'Invoice').trim().toUpperCase() || 'Invoice';
+    const printCode = String(payload?.printButtonLabel || payload?.contractCode || 'Invoice').trim().toUpperCase() || 'Invoice';
+    const supportsDotMatrix = payload?.supportsDotMatrix !== false;
+    const supportsMeterForm = payload?.supportsMeterForm !== false;
+    const supportsEnvelope = payload?.supportsEnvelope !== false;
+    const inlinePrintBtn = document.getElementById('calcInlinePrintBtn');
     els.rtpInvoicePrintBtn?.classList.toggle('hidden', !payload);
-    els.rtpInvoiceDotMatrixBtn?.classList.toggle('hidden', !payload);
+    els.rtpInvoiceDotMatrixBtn?.classList.toggle('hidden', !payload || !supportsDotMatrix);
     els.billingCalcPrintBtn?.classList.toggle('hidden', !payload);
-    els.billingCalcDotMatrixBtn?.classList.toggle('hidden', !payload);
-    els.billingCalcMeterFormBtn?.classList.toggle('hidden', !payload);
-    els.billingCalcEnvelopeBtn?.classList.toggle('hidden', !payload);
+    els.billingCalcDotMatrixBtn?.classList.toggle('hidden', !payload || !supportsDotMatrix);
+    els.billingCalcMeterFormBtn?.classList.toggle('hidden', !payload || !supportsMeterForm);
+    els.billingCalcEnvelopeBtn?.classList.toggle('hidden', !payload || !supportsEnvelope);
     if (els.rtpInvoicePrintBtn) els.rtpInvoicePrintBtn.textContent = `Print ${printCode}`;
     if (els.rtpInvoiceDotMatrixBtn) els.rtpInvoiceDotMatrixBtn.textContent = `${printCode} Dot Matrix Print`;
     if (els.billingCalcPrintBtn) els.billingCalcPrintBtn.textContent = `Print ${printCode}`;
     if (els.billingCalcDotMatrixBtn) els.billingCalcDotMatrixBtn.textContent = `${printCode} Dot Matrix Print`;
+    if (inlinePrintBtn) inlinePrintBtn.textContent = `Print ${printCode}`;
     if (els.billingCalcMeterFormBtn) els.billingCalcMeterFormBtn.textContent = 'Print Meter Reading Form';
     if (els.billingCalcEnvelopeBtn) els.billingCalcEnvelopeBtn.textContent = 'Print Envelope';
 }
 
 async function recordBillingPrintEvent(preview, channel = 'browser_print') {
     const invoiceNo = normalizeInvoiceNumber(preview?.invoiceNo || document.getElementById('calcInvoiceInput')?.value || '');
+    const billingMonthKey = String(preview?.billingMonthKey || preview?.monthKey || '').trim();
     let docIds = Array.isArray(preview?.billingDocIds)
         ? preview.billingDocIds.map((id) => String(id || '').trim()).filter(Boolean)
         : [];
-    if (!docIds.length && invoiceNo) {
+    if (invoiceNo) {
         const docs = await queryBillingDocsByInvoice(invoiceNo).catch((error) => {
             console.warn('Unable to find billing docs for print audit.', error);
             return [];
         });
-        docIds = docs.map((doc) => String(doc?._docId || '').trim()).filter(Boolean);
+        const monthScopedDocs = billingMonthKey
+            ? docs.filter((doc) => getBillingDocMonthKey(doc) === billingMonthKey)
+            : docs;
+        docIds = [
+            ...docIds,
+            ...monthScopedDocs.map((doc) => String(doc?._docId || '').trim()).filter(Boolean)
+        ];
     }
     docIds = Array.from(new Set(docIds));
     if (!docIds.length) {
@@ -3197,6 +3086,7 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
     return {
         invoiceNo,
         billingDocIds,
+        billingMonthKey: String(monthKey || '').trim(),
         branchId: String(row?.branch_id || '').trim(),
         companyId: String(row?.company_id || '').trim(),
         billInfoDocId: String(billInfo?._docId || billInfo?.id || '').trim(),
@@ -3243,8 +3133,10 @@ async function buildRtpPreviewPayload(row, cell, monthKey) {
 }
 
 async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
-    const contractCode = String(context?.profile?.category_code || '').trim().toUpperCase();
-    if (!isPrintableContractCode(contractCode)) return null;
+    const baseContractCode = String(context?.profile?.category_code || '').trim().toUpperCase();
+    if (!isPrintableContractCode(baseContractCode)) return null;
+    const isPirdInvoice = String(estimate?.billingMode || '').trim() === 'pird_charge';
+    const contractCode = isPirdInvoice ? 'PI / RD' : baseContractCode;
 
     const references = await loadInvoicePreviewReferenceData();
     const company = references.companies.get(String(row?.company_id || '').trim()) || null;
@@ -3269,6 +3161,9 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
     const groupedRows = isGroupedPrint && Array.isArray(context?.groupedMachineRows) ? context.groupedMachineRows : [];
     const groupedSerialNumbers = collectInvoiceSerialNumbers(groupedRows);
     const snapshotInvoiceNo = normalizeInvoiceNumber(context?.savedSnapshot?.invoiceNo || estimate?.invoiceNo || '');
+    const pirdLines = Array.isArray(estimate?.lineItems)
+        ? estimate.lineItems.filter((line) => Number(line?.amountDue || 0) > 0)
+        : [];
     const address = isGroupedPrint
         ? (getGroupedBillingAddress(references, groupedRows, company) || 'N/A')
         : (getBillInfoAddress(billInfo) || buildBranchAddress(branch) || 'N/A');
@@ -3276,6 +3171,7 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
     return {
         invoiceNo: snapshotInvoiceNo,
         billingDocIds: [],
+        billingMonthKey: String(context?.monthKey || '').trim(),
         branchId: String(row?.branch_id || '').trim(),
         companyId: String(row?.company_id || '').trim(),
         billInfoDocId: String(billInfo?._docId || billInfo?.id || '').trim(),
@@ -3290,9 +3186,10 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         tin: String(company?.company_tin || '').trim() || 'N/A',
         address,
         invoiceDate: formatUsDate(invoiceDate),
-        readingCode: row?.reading_day ? `RDG${row.reading_day}` : 'RDG',
+        readingCode: isPirdInvoice ? 'PI/RD' : (row?.reading_day ? `RDG${row.reading_day}` : 'RDG'),
         monthLabel: formatMonthLongLabel(context?.monthKey, context?.monthLabel || ''),
         contractCode,
+        printButtonLabel: isPirdInvoice ? 'PI / RD' : contractCode,
         businessStyle: String(company?.business_style || '').trim() || 'N/A',
         printerModel: formatInvoiceMachineSerialValue({ isGroupedPrint, modelName, serialNumber, serialNumbers: groupedSerialNumbers, fallbackSerial: row?.serial_number }),
         machineModel: modelName || row?.machine_label || 'N/A',
@@ -3308,19 +3205,34 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         previousReadingDate: period.from || (context?.latestPriorGroup?.task_date ? formatIsoDate(asValidDate(context.latestPriorGroup.task_date)) : ''),
         billingFrom: period.from || 'N/A',
         billingTo: period.to || 'N/A',
-        itemDescription: estimate?.tonerDescription || estimate?.lineItems?.[0]?.description || '',
+        itemDescription: isPirdInvoice
+            ? pirdLines.map((line) => `${line.description || line.label}: ${formatFixedAmount(line.amountDue || 0)}`).join(' • ')
+            : (estimate?.tonerDescription || estimate?.lineItems?.[0]?.description || ''),
         itemQuantity: Number(estimate?.tonerQuantity || estimate?.lineItems?.[0]?.quantity || 0) || 0,
         itemUnitPrice: Number(estimate?.tonerUnitPrice || estimate?.lineItems?.[0]?.unitPrice || 0) || 0,
-        totalPages: contractCode === 'RTF' ? 0 : (Number(estimate?.netPages || 0) || 0),
-        rate: contractCode === 'RTF'
+        itemLines: isPirdInvoice
+            ? pirdLines.map((line) => ({
+                label: String(line?.description || line?.label || '').trim(),
+                amount: Number(line?.amountDue || 0) || 0
+            }))
+            : [],
+        totalPages: baseContractCode === 'RTF' || isPirdInvoice ? 0 : (Number(estimate?.netPages || 0) || 0),
+        rate: baseContractCode === 'RTF' || isPirdInvoice
             ? Number(context?.profile?.monthly_rate || 0) || 0
             : Number(context?.profile?.page_rate || 0) || 0,
         monthlyRate: Number(context?.profile?.monthly_rate || 0) || 0,
+        unusedDays: Number(estimate?.unusedDays || 0) || 0,
+        unusedDiscount: Number(estimate?.unusedDiscount || 0) || 0,
+        unusedDailyRate: Number(estimate?.unusedDailyRate || 0) || 0,
         quota: Number(context?.profile?.monthly_quota || 0) || 0,
         quotaPages: Number(estimate?.quotaPages || 0) || 0,
         succeedingPages: Number(estimate?.succeedingPages || 0) || 0,
         succeedingRate: Number(estimate?.succeedingRate || getSucceedingPageRate(context?.profile) || 0) || 0,
-        totals: computePreviewAmountsFromEstimate(estimate)
+        totals: computePreviewAmountsFromEstimate(estimate),
+        supportsDotMatrix: !isPirdInvoice,
+        supportsMeterForm: !isPirdInvoice,
+        supportsEnvelope: true,
+        isPirdInvoice
     };
 }
 
@@ -3377,18 +3289,18 @@ const RTP_PRINT_SECTION_LAYOUT = {
 };
 
 const RTP_PRINT_CALIBRATION = {
-    paperWidthCm: 20,
+    paperWidthCm: 21,
     paperHeightCm: 18,
     orientation: 'portrait',
     scale: 0.54,
-    offsetXmm: 1.5,
-    offsetYmm: 18,
+    offsetXmm: 29.5,
+    offsetYmm: 15,
     rightMarginMm: 0,
     sections: {
-        header: { xMm: 0, yMm: 0, fontScale: 1 },
-        description: { xMm: 0, yMm: 0, fontScale: 1 },
-        meta: { xMm: 0, yMm: 0, fontScale: 1 },
-        totals: { xMm: 0, yMm: 0, fontScale: 1, amountWidthMm: 34, amountScaleX: 0.92, amountRightPadMm: 2, amountDueFontScale: 1.2 }
+        header: { xMm: -22, yMm: 15, fontScale: 1.3 },
+        description: { xMm: -30, yMm: 43.5, fontScale: 1.4 },
+        meta: { xMm: 30.5, yMm: 15, fontScale: 1.3 },
+        totals: { xMm: 36, yMm: 44, fontScale: 1.15, amountWidthMm: 34, amountScaleX: 0.92, amountRightPadMm: 2, amountDueFontScale: 1.2 }
     }
 };
 
@@ -3892,6 +3804,8 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
     const contractCode = String(preview?.contractCode || 'RTP').trim().toUpperCase() || 'RTP';
     const isFixedRate = contractCode === 'RTF';
     const isTonerInvoice = contractCode === 'RTC' && String(preview?.itemDescription || '').trim();
+    const isPirdInvoice = preview?.isPirdInvoice === true;
+    const pirdLines = Array.isArray(preview?.itemLines) ? preview.itemLines.filter((line) => line?.label) : [];
     return `
         <div class="rtp-section-block" style="${buildRtpSectionStyle('header', mode)}">
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 0, widthMm: 150 }, mode)}"><strong>${escapeHtml(preview?.customerName || 'Unknown Customer')}</strong></div>
@@ -3911,6 +3825,16 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
             <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 142, yMm: 21, widthMm: 34, textAlign: 'center' }, mode)}">${escapeHtml(preview?.billingTo || 'N/A')}</div>
 
             ${
+                isPirdInvoice
+                    ? `
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 32, widthMm: 60 }, mode)}"><strong>Charge Type:</strong></div>
+                        <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 62, yMm: 32, widthMm: 112 }, mode)}">Production and Installation / Refundable Deposit</div>
+                        ${pirdLines.map((line, index) => `
+                            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 42 + (index * 10), widthMm: 110 }, mode)}"><strong>${escapeHtml(line.label)}:</strong></div>
+                            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 112, yMm: 42 + (index * 10), widthMm: 42, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(line.amount || 0))}</div>
+                        `).join('')}
+                    `
+                    :
                 isTonerInvoice
                     ? `
                         <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 32, widthMm: 60 }, mode)}"><strong>Description:</strong></div>
@@ -3924,6 +3848,12 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
                     ? `
                         <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 32, widthMm: 60 }, mode)}"><strong>Monthly Rate:</strong></div>
                         <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 32, widthMm: 24 }, mode)}">${escapeHtml(formatFixedAmount(preview?.monthlyRate || preview?.rate || 0))}</div>
+                        ${Number(preview?.unusedDays || 0) > 0 ? `
+                            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 42, widthMm: 60 }, mode)}"><strong>Unused Days:</strong></div>
+                            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 42, widthMm: 24 }, mode)}">${escapeHtml(formatCount(preview?.unusedDays || 0))}</div>
+                            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 52, widthMm: 60 }, mode)}"><strong>Unused Discount:</strong></div>
+                            <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 92, yMm: 52, widthMm: 42, textAlign: 'right' }, mode)}">${escapeHtml(formatFixedAmount(preview?.unusedDiscount || 0))}</div>
+                        ` : ''}
                     `
                     : `
                         <div class="rtp-block-field" style="${buildRtpPositionStyle({ xMm: 0, yMm: 32, widthMm: 60 }, mode)}"><strong>Total Pages consumed :</strong></div>
@@ -4170,6 +4100,7 @@ function buildDotMatrixInvoiceText(preview) {
     const totals = preview?.totals || {};
     const contractCode = String(preview?.contractCode || 'RTP').trim().toUpperCase() || 'RTP';
     const isFixedRate = contractCode === 'RTF';
+    const isPirdInvoice = preview?.isPirdInvoice === true;
     const lines = [];
     lines.push('');
     lines.push(dotMatrixFit(preview?.customerName || 'Unknown Customer', 58) + dotMatrixFit(preview?.invoiceDate || '', 22, 'right'));
@@ -4179,9 +4110,18 @@ function buildDotMatrixInvoiceText(preview) {
     lines.push('');
     lines.push(buildDotMatrixPair('Business Style :', preview?.businessStyle || 'N/A'));
     lines.push(buildDotMatrixPair('Printer Model/Serial', preview?.printerModel || 'N/A'));
-    lines.push(`${dotMatrixFit('Printer Rental Billing for :', 29)}${dotMatrixFit(preview?.billingFrom || 'N/A', 15)}${dotMatrixFit('to', 8, 'center')}${dotMatrixFit(preview?.billingTo || 'N/A', 15)}`);
-    if (isFixedRate) {
+    lines.push(`${dotMatrixFit(isPirdInvoice ? 'Separate Billing for :' : 'Printer Rental Billing for :', 29)}${dotMatrixFit(preview?.billingFrom || 'N/A', 15)}${dotMatrixFit('to', 8, 'center')}${dotMatrixFit(preview?.billingTo || 'N/A', 15)}`);
+    if (isPirdInvoice) {
+        const itemLines = Array.isArray(preview?.itemLines) ? preview.itemLines : [];
+        itemLines.forEach((line) => {
+            lines.push(buildDotMatrixPair(`${line.label}:`, formatFixedAmount(line.amount || 0)));
+        });
+    } else if (isFixedRate) {
         lines.push(buildDotMatrixPair('Monthly Rate:', formatFixedAmount(preview?.monthlyRate || preview?.rate || 0)));
+        if (Number(preview?.unusedDays || 0) > 0) {
+            lines.push(buildDotMatrixPair('Unused Days:', formatCount(preview?.unusedDays || 0)));
+            lines.push(buildDotMatrixPair('Unused Discount:', formatFixedAmount(preview?.unusedDiscount || 0)));
+        }
     } else {
         lines.push(buildDotMatrixPair('Total Pages consumed :', formatCount(preview?.totalPages || 0)));
         lines.push(buildDotMatrixPair('Rate per Page:', formatFixedAmount(preview?.rate || 0)));
@@ -6271,9 +6211,10 @@ function buildMultiMeterSeedLine({
         approvalNote: String(savedLine?.approvalNote || '').trim(),
         approvedBy: String(savedLine?.approvedBy || '').trim(),
         approvedAt: String(savedLine?.approvedAt || '').trim(),
+        applyQuota: savedLine?.applyQuota !== false,
         row
     });
-    return { ...line, profile: mergedProfile, previousMeterReference: String(previousMeterReference || '').trim() };
+    return { ...line, applyQuota: savedLine?.applyQuota !== false, profile: mergedProfile, previousMeterReference: String(previousMeterReference || '').trim() };
 }
 
 function roundBillingAmount(value) {
@@ -6298,6 +6239,7 @@ function calculateMeterLineEstimate({
     approvedAt = '',
     actualSpoilageRequestedBy = '',
     actualSpoilageRequestedAt = '',
+    unusedDays = 0,
     applyQuota = true,
     quotaBypassReason = '',
     forceFixed = false,
@@ -6313,6 +6255,7 @@ function calculateMeterLineEstimate({
     const succeedingRate = getSucceedingPageRate(profile);
     const monthlyQuota = Number(profile.monthly_quota || 0) || 0;
     const monthlyRate = Number(profile.monthly_rate || 0) || 0;
+    const normalizedUnusedDays = Math.min(30, Math.max(0, Number(unusedDays || 0) || 0));
     const withVat = Boolean(profile.with_vat);
     const spoilageRate = Math.max(0, Number(spoilagePercent || 0) || 0) / 100;
     const isFixed = forceFixed || (!isReadingPricing(profile) && monthlyRate > 0);
@@ -6326,6 +6269,8 @@ function calculateMeterLineEstimate({
     let quotaAmount = 0;
     let succeedingAmount = 0;
     let amountDue = 0;
+    let unusedDailyRate = 0;
+    let unusedDiscount = 0;
     let formula = 'not_available';
     let warning = '';
     const shouldApplyQuota = applyQuota !== false;
@@ -6380,8 +6325,10 @@ function calculateMeterLineEstimate({
             }
         }
     } else {
-        amountDue = monthlyRate;
-        formula = 'fixed_monthly_rate';
+        unusedDailyRate = monthlyRate > 0 ? roundBillingAmount(monthlyRate / 30) : 0;
+        unusedDiscount = roundBillingAmount((monthlyRate / 30) * normalizedUnusedDays);
+        amountDue = Math.max(0, monthlyRate - unusedDiscount);
+        formula = normalizedUnusedDays > 0 ? 'fixed_monthly_rate_less_unused_days' : 'fixed_monthly_rate';
     }
 
     amountDue = roundBillingAmount(amountDue);
@@ -6421,6 +6368,9 @@ function calculateMeterLineEstimate({
         pageRate,
         monthlyQuota,
         monthlyRate,
+        unusedDays: normalizedUnusedDays,
+        unusedDailyRate,
+        unusedDiscount,
         applyQuota: shouldApplyQuota,
         quotaBypassed: formula === 'quota_bypassed_actual_usage',
         quotaBypassReason: String(!shouldApplyQuota && !String(quotaBypassReason || '').trim()
@@ -6497,6 +6447,10 @@ function buildSavedLegacyBillingEstimate({ doc, context = {}, profile = {}, row 
         pageRate,
         succeedingRate,
         monthlyQuota,
+        monthlyRate: Number(doc?.monthly_rate ?? seedEstimate?.monthlyRate ?? profile.monthly_rate ?? 0) || 0,
+        unusedDays: Number(doc?.unused_days || 0) || 0,
+        unusedDiscount: Number(doc?.unused_discount || 0) || 0,
+        unusedDailyRate: Number(doc?.unused_daily_rate || 0) || 0,
         amountDue,
         netAmount,
         vatAmount,
@@ -6726,6 +6680,8 @@ function buildBillingLinesSignature(lineItems = []) {
         succeedingRate: Number(line.succeedingRate || 0) || 0,
         monthlyQuota: Number(line.monthlyQuota || 0) || 0,
         monthlyRate: Number(line.monthlyRate || 0) || 0,
+        unusedDays: Number(line.unusedDays || 0) || 0,
+        unusedDiscount: Number(line.unusedDiscount || 0) || 0,
         description: String(line.description || '').trim(),
         quantity: Number(line.quantity || 0) || 0,
         unitPrice: Number(line.unitPrice || 0) || 0,
@@ -6775,6 +6731,11 @@ function getUniqueBranchCount(rows = []) {
     return new Set((Array.isArray(rows) ? rows : [])
         .map((row) => String(row?.branch_id || row?.branch_name || '').trim())
         .filter(Boolean)).size;
+}
+
+function shouldAllocateSharedQuotaAcrossMachineLines(rows = []) {
+    const branchCount = getUniqueBranchCount(rows);
+    return branchCount <= 1;
 }
 
 function buildSummaryBillingRow(row, groupedMachineRows) {
@@ -7204,7 +7165,7 @@ function getSavedToPrintDateRange(report = {}) {
 }
 
 function summarizeSavedToPrint(rows = [], from = '', to = '') {
-    const filteredRows = rows.filter((row) => isDateInWorkRange(row.saved_at, from, to));
+    const filteredRows = getSavedToPrintVisibleRows(rows, from, to);
     const byPreparer = new Map();
     const byMonth = new Map();
     filteredRows.forEach((row) => {
@@ -7252,17 +7213,178 @@ function summarizeSavedToPrint(rows = [], from = '', to = '') {
     };
 }
 
+function getSavedToPrintRangeRows(rows = [], from = '', to = '') {
+    return rows.filter((row) => isDateInWorkRange(row.saved_at, from, to));
+}
+
+function getSavedToPrintVisibleRows(rows = [], from = '', to = '') {
+    return getSavedToPrintRangeRows(rows, from, to)
+        .filter((row) => String(row.receipt_status || '').trim() !== 'received');
+}
+
+function getSavedToPrintReceivedRows(rows = [], from = '', to = '') {
+    return getSavedToPrintRangeRows(rows, from, to)
+        .filter((row) => String(row.receipt_status || '').trim() === 'received');
+}
+
+function updateSavedToPrintStateRows(nextRows = []) {
+    if (!billingWorkDistributionState) return;
+    billingWorkDistributionState.sourceRows = nextRows;
+    if (billingWorkDistributionState.report?.saved_to_print) {
+        billingWorkDistributionState.report.saved_to_print.invoices = nextRows;
+    }
+}
+
+function removeSavedToPrintRows(matchFn) {
+    if (!billingWorkDistributionState || typeof matchFn !== 'function') return;
+    const currentRows = Array.isArray(billingWorkDistributionState.sourceRows) ? billingWorkDistributionState.sourceRows : [];
+    updateSavedToPrintStateRows(currentRows.filter((row) => !matchFn(row)));
+}
+
+function rerenderSavedToPrintView() {
+    const state = billingWorkDistributionState || {};
+    const report = state.report || lastPayload?.productivity_report || null;
+    if (!report) return;
+    if (state.mode === 'saved_to_print_month_detail' && state.activeMonthKey) {
+        renderSavedToPrintMonthDetail(state.activeMonthKey);
+        return;
+    }
+    renderSavedToPrintDistribution(report, {
+        from: state.from,
+        to: state.to
+    });
+}
+
+async function markPreparedInvoiceRowsPrinted(rows = [], {
+    channel = 'manual_prepared_queue',
+    note = '',
+    printedAt = null
+} = {}) {
+    const targets = Array.isArray(rows) ? rows.filter(Boolean) : [];
+    if (!targets.length) return { updatedInvoiceCount: 0, updatedDocCount: 0 };
+
+    const audit = getCurrentUserAudit();
+    const eventDate = printedAt ? new Date(printedAt) : new Date();
+    const now = Number.isNaN(eventDate.getTime()) ? new Date() : eventDate;
+    const nowIso = now.toISOString();
+    const nowSql = toSqlDateTime(now);
+    let updatedDocCount = 0;
+    const updatedKeys = new Set();
+
+    for (const row of targets) {
+        const invoiceNo = normalizeInvoiceNumber(row?.invoice_no || '');
+        const monthKey = String(row?.month_key || '').trim();
+        let docIds = Array.isArray(row?.doc_ids)
+            ? row.doc_ids.map((id) => String(id || '').trim()).filter(Boolean)
+            : [];
+        if (invoiceNo) {
+            const docs = await queryBillingDocsByInvoice(invoiceNo).catch((error) => {
+                console.warn('Unable to find prepared billing docs for manual queue update.', error);
+                return [];
+            });
+            const monthScopedDocs = monthKey
+                ? docs.filter((doc) => getBillingDocMonthKey(doc) === monthKey)
+                : docs;
+            docIds = [
+                ...docIds,
+                ...monthScopedDocs
+                    .filter((doc) => !String(doc?.billing_printed_at || '').trim())
+                    .map((doc) => String(doc?._docId || '').trim())
+                    .filter(Boolean)
+            ];
+        }
+        docIds = Array.from(new Set(docIds));
+        if (!docIds.length) continue;
+
+        const updates = await Promise.allSettled(docIds.map((docId) => setFirestoreDocument('tbl_billing', docId, {
+            billing_printed_at: nowIso,
+            billing_printed_date: nowSql,
+            billing_printed_by_id: String(audit.id || '').trim(),
+            billing_printed_by: String(audit.name || '').trim(),
+            billing_print_channel: channel,
+            billing_print_note: String(note || '').trim(),
+            billing_print_count: 1,
+            updated_at: nowIso
+        }, {
+            mode: 'patch',
+            label: `Prepared invoice printed ${invoiceNo || docId}`,
+            dedupeKey: `tbl_billing:${docId}:prepared-printed:${nowIso}:${channel}`
+        })));
+        updatedDocCount += updates.filter((entry) => entry.status === 'fulfilled').length;
+        updatedKeys.add(`${invoiceNo}:${monthKey}`);
+    }
+
+    return {
+        updatedInvoiceCount: updatedKeys.size,
+        updatedDocCount
+    };
+}
+
+async function markPreparedInvoiceRowPrinted(row, trigger = null) {
+    const invoiceNo = String(row?.invoice_no || '').trim();
+    if (!invoiceNo) {
+        MargaUtils.showToast('Missing invoice number.', 'error');
+        return;
+    }
+    if (trigger) trigger.disabled = true;
+    try {
+        const result = await markPreparedInvoiceRowsPrinted([row], {
+            channel: 'manual_prepared_queue',
+            note: 'Marked printed from prepared invoice list'
+        });
+        if (!result.updatedDocCount) {
+            throw new Error(`No saved billing rows were updated for invoice ${invoiceNo}.`);
+        }
+        removeSavedToPrintRows((entry) => (
+            String(entry.invoice_no || '').trim() === invoiceNo
+            && String(entry.month_key || '').trim() === String(row?.month_key || '').trim()
+        ));
+        rerenderSavedToPrintView();
+        await loadDashboard({ forceRefresh: true }).catch(() => {});
+        MargaUtils.showToast(`Marked invoice ${invoiceNo} as printed.`, 'success');
+    } catch (error) {
+        MargaUtils.showToast(String(error?.message || 'Unable to mark invoice as printed.'), 'error');
+    } finally {
+        if (trigger) trigger.disabled = false;
+    }
+}
+
+async function scanPreparedInvoicesForReceived(trigger = null) {
+    const state = billingWorkDistributionState || {};
+    const receivedRows = getSavedToPrintReceivedRows(state.sourceRows || [], state.from, state.to);
+    if (!receivedRows.length) {
+        MargaUtils.showToast('No received invoices found in the prepared queue for this date range.', 'info');
+        return;
+    }
+    if (trigger) trigger.disabled = true;
+    try {
+        const result = await markPreparedInvoiceRowsPrinted(receivedRows, {
+            channel: 'received_delivery_reconcile',
+            note: 'Auto-removed from prepared queue after received invoice scan'
+        });
+        removeSavedToPrintRows((entry) => String(entry.receipt_status || '').trim() === 'received');
+        rerenderSavedToPrintView();
+        await loadDashboard({ forceRefresh: true }).catch(() => {});
+        MargaUtils.showToast(`Removed ${formatCount(result.updatedInvoiceCount)} received invoice${result.updatedInvoiceCount === 1 ? '' : 's'} from the prepared list.`, 'success');
+    } catch (error) {
+        MargaUtils.showToast(String(error?.message || 'Unable to scan received invoices.'), 'error');
+    } finally {
+        if (trigger) trigger.disabled = false;
+    }
+}
+
 function renderSavedToPrintDistribution(report, overrideRange = {}) {
     const defaultRange = getSavedToPrintDateRange(report);
     const from = overrideRange.from || billingWorkDistributionState?.from || defaultRange.from;
     const to = overrideRange.to || billingWorkDistributionState?.to || defaultRange.to;
     const sourceRows = report?.saved_to_print?.invoices || [];
     const summary = summarizeSavedToPrint(sourceRows, from, to);
+    const receivedRows = getSavedToPrintReceivedRows(sourceRows, from, to);
     const queueStartDate = report?.saved_to_print?.queue_start_date || '';
     const queueStartCopy = queueStartDate
         ? ` Queue starts ${escapeHtml(queueStartDate)} because older saved rows do not have reliable print-audit status.`
         : '';
-    billingWorkDistributionState = { report, sourceRows, from, to, summary, mode: 'saved_to_print' };
+    billingWorkDistributionState = { report, sourceRows, from, to, summary, mode: 'saved_to_print', activeMonthKey: '' };
 
     if (els.billingScorecardTitle) els.billingScorecardTitle.textContent = 'Prepared Invoices';
     if (els.billingScorecardSubtitle) {
@@ -7275,7 +7397,7 @@ function renderSavedToPrintDistribution(report, overrideRange = {}) {
             <div class="work-distribution-toolbar">
                 <div>
                     <div class="detail-section-title">Saved invoices ready to print</div>
-                    <p class="sheet-copy">Filter by saved date, then open a preparer to review the exact invoices waiting for print.${queueStartCopy}</p>
+                    <p class="sheet-copy">Filter by saved date, then open a preparer to review the exact invoices waiting for print. Received invoices are hidden from this list and can be cleared from the backend queue with Scan for Received Invoice.${queueStartCopy}</p>
                 </div>
                 <div class="work-distribution-filters">
                     <label>
@@ -7286,9 +7408,11 @@ function renderSavedToPrintDistribution(report, overrideRange = {}) {
                         <span>To</span>
                         <input type="date" data-saved-dist-to value="${escapeHtml(to)}">
                     </label>
+                    <button class="btn btn-secondary" type="button" data-saved-dist-scan-received>Scan for Received Invoice</button>
                     <button class="btn btn-secondary" type="button" data-saved-dist-apply>Apply</button>
                 </div>
             </div>
+            ${receivedRows.length ? `<div class="detail-empty warning">${escapeHtml(formatCount(receivedRows.length))} received invoice${receivedRows.length === 1 ? '' : 's'} already reached the customer and are hidden from the waiting list. Click Scan for Received Invoice to clear them from the backend queue.</div>` : ''}
             <div class="work-summary-strip saved-summary-strip">
                 <div class="work-metric-card">
                     <span>Total</span>
@@ -7350,8 +7474,7 @@ function renderSavedToPrintDistribution(report, overrideRange = {}) {
 
 function renderSavedToPrintMonthDetail(monthKey) {
     const state = billingWorkDistributionState || {};
-    const rows = (state.sourceRows || [])
-        .filter((row) => isDateInWorkRange(row.saved_at, state.from, state.to))
+    const rows = getSavedToPrintVisibleRows(state.sourceRows || [], state.from, state.to)
         .filter((row) => String(row.month_key || '').trim() === String(monthKey || '').trim())
         .sort((a, b) => String(b.saved_at || '').localeCompare(String(a.saved_at || '')) || String(a.invoice_no || '').localeCompare(String(b.invoice_no || '')));
     const monthLabel = state.summary?.byMonth?.find((row) => String(row.month_key) === String(monthKey))?.month_label
@@ -7364,6 +7487,11 @@ function renderSavedToPrintMonthDetail(monthKey) {
     if (els.billingScorecardSubtitle) {
         els.billingScorecardSubtitle.textContent = `${monthLabel} • ${formatMetricCount(rows.length, 'invoice')} • ${formatCurrency(total)}`;
     }
+    billingWorkDistributionState = {
+        ...state,
+        mode: 'saved_to_print_month_detail',
+        activeMonthKey: String(monthKey || '').trim()
+    };
     if (!els.billingScorecardContent) return;
     els.billingScorecardContent.innerHTML = `
         <div class="work-distribution-shell">
@@ -7393,13 +7521,21 @@ function renderSavedToPrintMonthDetail(monthKey) {
                                 <td><strong>${escapeHtml(row.invoice_no || '-')}</strong></td>
                                 <td class="text-right">${escapeHtml(formatCurrency(row.amount_total || 0))}</td>
                                 <td>
-                                    <button
-                                        class="btn btn-primary btn-sm"
-                                        type="button"
-                                        data-productivity-view-invoice="${escapeHtml(row.invoice_no || '')}"
-                                        data-productivity-row-id="${escapeHtml(row.row_id || '')}"
-                                        data-productivity-month-key="${escapeHtml(row.month_key || '')}"
-                                    >View to Print</button>
+                                    <div class="table-action-row">
+                                        <button
+                                            class="btn btn-primary btn-sm"
+                                            type="button"
+                                            data-productivity-view-invoice="${escapeHtml(row.invoice_no || '')}"
+                                            data-productivity-row-id="${escapeHtml(row.row_id || '')}"
+                                            data-productivity-month-key="${escapeHtml(row.month_key || '')}"
+                                        >View to Print</button>
+                                        <button
+                                            class="btn btn-secondary btn-sm"
+                                            type="button"
+                                            data-saved-dist-mark-printed="${escapeHtml(row.invoice_no || '')}"
+                                            data-saved-dist-mark-month="${escapeHtml(row.month_key || '')}"
+                                        >Printed</button>
+                                    </div>
                                 </td>
                             </tr>
                         `).join('') : '<tr><td colspan="5" class="muted-cell">No invoices for this billing month in the selected date range.</td></tr>'}
@@ -8075,6 +8211,7 @@ function calculateBillingEstimate(context, previousMeterValue, presentMeterValue
         approvalNote: extras.approvalNote ?? context?.approvalNote ?? '',
         approvedBy: extras.approvedBy ?? context?.approvedBy ?? '',
         approvedAt: extras.approvedAt ?? context?.approvedAt ?? '',
+        unusedDays: extras.unusedDays ?? context?.unusedDays ?? 0,
         forceFixed: Boolean(context?.isFixed),
         row: context?.row || null
     });
@@ -8144,6 +8281,177 @@ function calculateTonerBillingEstimate(context, values = {}) {
     };
 }
 
+function extractPirdSavedValues(doc) {
+    const lineItems = parseBillingDocLineItems(doc);
+    const refundableDepositLine = lineItems.find((line) => /refund/i.test(String(line?.label || line?.description || '')));
+    const productionInstallationLine = lineItems.find((line) => /production|installation/i.test(String(line?.label || line?.description || '')));
+    const rdAmount = roundBillingAmount(
+        doc?.pird_rd_amount
+        ?? doc?.rd_amount
+        ?? refundableDepositLine?.amountDue
+        ?? refundableDepositLine?.unitPrice
+        ?? 0
+    );
+    const piAmount = roundBillingAmount(
+        doc?.pird_pi_amount
+        ?? doc?.pi_amount
+        ?? productionInstallationLine?.amountDue
+        ?? productionInstallationLine?.unitPrice
+        ?? 0
+    );
+    return {
+        refundableDepositEnabled: doc?.pird_rd_enabled === undefined
+            ? rdAmount > 0
+            : doc.pird_rd_enabled === true || Number(doc.pird_rd_enabled) === 1,
+        rdAmount,
+        productionInstallationEnabled: doc?.pird_pi_enabled === undefined
+            ? piAmount > 0
+            : doc.pird_pi_enabled === true || Number(doc.pird_pi_enabled) === 1,
+        piAmount
+    };
+}
+
+function calculatePirdBillingEstimate(context, values = {}) {
+    const withVat = Boolean(context?.profile?.with_vat);
+    const refundableDepositEnabled = values.refundableDepositEnabled === true;
+    const productionInstallationEnabled = values.productionInstallationEnabled === true;
+    const rdAmount = roundBillingAmount(values.rdAmount);
+    const piAmount = roundBillingAmount(values.piAmount);
+    const lineItems = [];
+
+    if (refundableDepositEnabled) {
+        lineItems.push({
+            label: 'Refundable Deposit',
+            description: 'Refundable Deposit',
+            subtitle: 'PI / RD charge',
+            rowId: String(context?.row?.row_id || context?.row?.company_id || '').trim(),
+            companyName: String(context?.row?.company_name || context?.row?.account_name || '').trim(),
+            branchName: String(context?.row?.branch_name || '').trim(),
+            machineId: String(context?.row?.machine_id || '').trim(),
+            contractmainId: String(context?.row?.contractmain_id || '').trim(),
+            serialNumber: String(context?.row?.serial_number || '').trim(),
+            machineModel: String(context?.row?.machine_label || '').trim(),
+            quantity: 1,
+            unitPrice: rdAmount,
+            previousMeter: 0,
+            presentMeter: 0,
+            rawPages: 0,
+            spoilagePercent: 0,
+            spoilageRate: 0,
+            systemSpoilagePages: 0,
+            actualSpoilagePages: 0,
+            totalSpoilagePages: 0,
+            spoilagePages: 0,
+            netPages: 0,
+            billedPages: 0,
+            quotaPages: 0,
+            succeedingPages: 0,
+            quotaAmount: 0,
+            succeedingAmount: 0,
+            succeedingRate: 0,
+            pageRate: 0,
+            monthlyQuota: 0,
+            monthlyRate: rdAmount,
+            applyQuota: false,
+            quotaBypassed: false,
+            quotaBypassReason: '',
+            pages: 0,
+            amountDue: rdAmount,
+            formula: 'pird_refundable_deposit',
+            warning: '',
+            approvalStatus: 'none'
+        });
+    }
+
+    if (productionInstallationEnabled) {
+        lineItems.push({
+            label: 'Production and Installation',
+            description: 'Production and Installation',
+            subtitle: 'PI / RD charge',
+            rowId: String(context?.row?.row_id || context?.row?.company_id || '').trim(),
+            companyName: String(context?.row?.company_name || context?.row?.account_name || '').trim(),
+            branchName: String(context?.row?.branch_name || '').trim(),
+            machineId: String(context?.row?.machine_id || '').trim(),
+            contractmainId: String(context?.row?.contractmain_id || '').trim(),
+            serialNumber: String(context?.row?.serial_number || '').trim(),
+            machineModel: String(context?.row?.machine_label || '').trim(),
+            quantity: 1,
+            unitPrice: piAmount,
+            previousMeter: 0,
+            presentMeter: 0,
+            rawPages: 0,
+            spoilagePercent: 0,
+            spoilageRate: 0,
+            systemSpoilagePages: 0,
+            actualSpoilagePages: 0,
+            totalSpoilagePages: 0,
+            spoilagePages: 0,
+            netPages: 0,
+            billedPages: 0,
+            quotaPages: 0,
+            succeedingPages: 0,
+            quotaAmount: 0,
+            succeedingAmount: 0,
+            succeedingRate: 0,
+            pageRate: 0,
+            monthlyQuota: 0,
+            monthlyRate: piAmount,
+            applyQuota: false,
+            quotaBypassed: false,
+            quotaBypassReason: '',
+            pages: 0,
+            amountDue: piAmount,
+            formula: 'pird_production_installation',
+            warning: '',
+            approvalStatus: 'none'
+        });
+    }
+
+    const amountDue = roundBillingAmount(lineItems.reduce((sum, line) => sum + (Number(line.amountDue || 0) || 0), 0));
+    const netAmount = withVat ? roundBillingAmount(amountDue / 1.12) : amountDue;
+    const vatAmount = withVat ? roundBillingAmount(amountDue - netAmount) : roundBillingAmount(amountDue * 0.12);
+    const savedComputation = lineItems.length
+        ? lineItems.map((line) => `${line.label}: ${formatAmount(line.amountDue || 0)}`).join(' • ')
+        : 'No PI / RD charge selected yet.';
+
+    return {
+        label: 'PI / RD Charge',
+        description: 'Production and Installation / Refundable Deposit',
+        billingMode: 'pird_charge',
+        lineItems,
+        amountDue,
+        netAmount,
+        vatAmount,
+        rawPages: 0,
+        systemSpoilagePages: 0,
+        totalSpoilagePages: 0,
+        spoilagePages: 0,
+        netPages: 0,
+        billedPages: 0,
+        quotaPages: 0,
+        succeedingPages: 0,
+        quotaAmount: 0,
+        succeedingAmount: 0,
+        succeedingRate: 0,
+        pageRate: 0,
+        monthlyQuota: 0,
+        monthlyRate: amountDue,
+        pages: 0,
+        quotaVariance: null,
+        applyQuota: false,
+        quotaBypassed: false,
+        quotaBypassReason: '',
+        formula: 'pird_charge_components',
+        warning: '',
+        approvalStatus: 'none',
+        savedComputation,
+        refundableDepositEnabled,
+        rdAmount,
+        productionInstallationEnabled,
+        piAmount
+    };
+}
+
 function getBillingModeOptions(context) {
     const options = [];
     const savedMode = String(context?.savedBillingMode || '').trim();
@@ -8156,6 +8464,7 @@ function getBillingModeOptions(context) {
     if (context?.isReading && canUseGroupedInvoiceMode && groupedRows.length > 1) {
         options.push({ key: 'multi_machine_rtp', label: 'One Invoice, Multiple Machines' });
     }
+    options.push({ key: 'pird_charge', label: 'PI / RD Charge' });
     if (!options.length) options.push({ key: 'single_meter_rtp', label: 'Single Meter RTP' });
     return options;
 }
@@ -8315,6 +8624,7 @@ function renderMeterLineCard(line, mode, index) {
     const quotaHelp = line.sharedQuotaGroup
         ? '<small>One quota is shared by all machines in this invoice group.</small>'
         : '';
+    const lineApplyQuota = line.applyQuota !== false;
     return `
         <article class="calc-meter-line" data-calc-line-card="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}">
             <div class="calc-meter-line-head">
@@ -8357,6 +8667,13 @@ function renderMeterLineCard(line, mode, index) {
                 <div class="calc-field">
                     <label>Exceed Rate</label>
                     <input type="number" min="0" step="0.01" value="${escapeHtml(String(line.succeedingRate || line.pageRate || 0))}" data-calc-line-mode="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}" data-calc-line-field="succeedingRate">
+                </div>
+                <div class="calc-field calc-field-span-2">
+                    <label class="calc-checkbox-label">
+                        <input type="checkbox" ${lineApplyQuota ? 'checked' : ''} data-calc-line-checkbox="applyQuota" data-calc-line-mode="${escapeHtml(mode)}" data-calc-line-index="${escapeHtml(String(index))}">
+                        <span>Apply Quota</span>
+                    </label>
+                    ${!lineApplyQuota ? '<small style="color:var(--color-warning,#b45309)">Quota not applied — actual consumption only will be charged.</small>' : ''}
                 </div>
             </div>
             <div class="calc-meter-line-math ${line.warning ? 'error' : ''}" id="${escapeHtml(prefix)}-math">${escapeHtml(formatLineComputation(line))}</div>
@@ -8435,13 +8752,44 @@ function renderTonerBillingPanel(context, estimate) {
     `;
 }
 
+function renderPirdBillingPanel(estimate) {
+    return `
+        <section class="calc-panel calc-line-panel hidden" data-calc-mode-panel="pird_charge">
+            <div class="calc-panel-title">PI / RD Charge</div>
+            <div class="calc-note calc-note-tight">Use this for a separate Production and Installation or Refundable Deposit billing. When PI / RD is selected, save it with its own invoice number so it does not mix with rental charges.</div>
+            <div class="calc-panel-grid calc-contract-grid">
+                <label class="calc-checkbox-line calc-field calc-field-span-2">
+                    <input type="checkbox" id="calcPirdRdEnabledInput" ${estimate?.refundableDepositEnabled ? 'checked' : ''}>
+                    <span>Refundable Deposit</span>
+                </label>
+                <div class="calc-field">
+                    <label for="calcPirdRdAmountInput">RD Amount</label>
+                    <input type="number" id="calcPirdRdAmountInput" min="0" step="0.01" value="${escapeHtml(String(estimate?.rdAmount || 0))}">
+                </div>
+                <label class="calc-checkbox-line calc-field calc-field-span-2">
+                    <input type="checkbox" id="calcPirdPiEnabledInput" ${estimate?.productionInstallationEnabled ? 'checked' : ''}>
+                    <span>Production and Installation</span>
+                </label>
+                <div class="calc-field">
+                    <label for="calcPirdPiAmountInput">PI Amount</label>
+                    <input type="number" id="calcPirdPiAmountInput" min="0" step="0.01" value="${escapeHtml(String(estimate?.piAmount || 0))}">
+                </div>
+                <div class="calc-field calc-field-strong calc-field-span-2">
+                    <label>Total</label>
+                    <input type="text" id="calcPirdTotalValue" readonly value="${escapeHtml(formatAmount(estimate?.amountDue || 0))}">
+                </div>
+            </div>
+        </section>
+    `;
+}
+
 function formatLineComputation(line) {
     if (!line) return '';
     if (line.formula === 'saved_legacy_invoice_total') {
         return line.savedComputation || `Saved invoice total ${formatAmount(line.amountDue || 0)}.`;
     }
-    if (line.formula === 'fixed_monthly_rate') {
-        return `Fixed monthly rate ${formatAmount(line.monthlyRate || 0)}.`;
+    if (line.formula === 'fixed_monthly_rate' || line.formula === 'fixed_monthly_rate_less_unused_days') {
+        return formatFixedRateComputationFlow(line);
     }
     if (line.formula === 'missing_prior_meter') {
         return line.warning || 'No available previous meter reading found yet.';
@@ -8456,6 +8804,20 @@ function formatLineComputation(line) {
         return line.sharedLineComputation || line.sharedGroupComputation || formatBillingComputationFlow(line);
     }
     return formatBillingComputationFlow(line);
+}
+
+function formatFixedRateComputationFlow(estimate = {}, monthLabel = '') {
+    const monthlyRate = Number(estimate.monthlyRate || 0) || 0;
+    const unusedDays = Number(estimate.unusedDays || 0) || 0;
+    const unusedDiscount = Number(estimate.unusedDiscount || 0) || 0;
+    const periodLabel = String(monthLabel || '').trim();
+    if (unusedDays > 0) {
+        const monthText = periodLabel ? ` for ${periodLabel}` : '';
+        return `${formatAmount(monthlyRate)} fixed monthly rate${monthText} - ${formatCount(unusedDays)} unused days discount ${formatAmount(unusedDiscount)} = ${formatAmount(estimate.amountDue || 0)}.`;
+    }
+    return periodLabel
+        ? `Fixed monthly bill uses ${formatAmount(monthlyRate)} for ${periodLabel}.`
+        : `Fixed monthly rate ${formatAmount(monthlyRate)}.`;
 }
 
 function formatBillingComputationFlow(estimate = {}) {
@@ -8570,6 +8932,8 @@ async function openBillingCalcModal(rowId, monthKey) {
     context.scheduleRequired = savedBillingDoc ? savedBillingDoc.schedule_required === true : false;
     context.scheduleSaved = savedBillingDoc?.schedule_saved === true;
     context.scheduleDocId = String(savedBillingDoc?.schedule_doc_id || '').trim();
+    context.scheduleTaskDocId = String(savedBillingDoc?.schedule_task_doc_id || savedBillingDoc?.schedule_doc_id || '').trim();
+    context.scheduleSourceDocId = String(savedBillingDoc?.schedule_source_doc_id || savedBillingDoc?.field_billing_schedule_doc_id || savedBillingDoc?.schedule_doc_id || '').trim();
     context.scheduleDate = String(savedBillingDoc?.schedule_date || '').trim();
     context.scheduleTime = String(savedBillingDoc?.schedule_time || '').trim();
     context.scheduleType = String(savedBillingDoc?.schedule_type || savedBillingDoc?.schedule_purpose || 'Printed Billing').trim() || 'Printed Billing';
@@ -8633,6 +8997,7 @@ async function openBillingCalcModal(rowId, monthKey) {
         }
     }
     const latest = context.latestPriorGroup;
+    context.savedBillingMode = savedBillingDoc?.billing_mode || '';
     const initialSnapshot = savedBillingDoc
         ? billingSnapshotFromDoc(savedBillingDoc, {
             invoiceNo: '',
@@ -8658,14 +9023,18 @@ async function openBillingCalcModal(rowId, monthKey) {
             quantity: savedBillingDoc.billing_item_quantity || savedBillingDoc.toner_quantity || context.specialTonerBilling?.defaultQuantity,
             unitPrice: savedBillingDoc.billing_item_unit_price || savedBillingDoc.toner_unit_price || context.specialTonerBilling?.unitPrice
         } : {})
+        : context.savedBillingMode === 'pird_charge'
+        ? calculatePirdBillingEstimate(context, savedBillingDoc ? extractPirdSavedValues(savedBillingDoc) : {})
         : calculateBillingEstimate(
             context,
             initialSnapshot.previousMeter,
             initialSnapshot.presentMeter,
-            initialSnapshot.spoilagePercent / 100
+            initialSnapshot.spoilagePercent / 100,
+            {
+                unusedDays: initialSnapshot.unusedDays
+            }
         );
 
-    context.savedBillingMode = savedBillingDoc?.billing_mode || '';
     const billingModeOptions = getBillingModeOptions(context);
     let activeBillingMode = getDefaultBillingMode(context);
     const secondaryProfile = getRtpSecondaryProfile(profile);
@@ -9068,6 +9437,14 @@ async function openBillingCalcModal(rowId, monthKey) {
                                 <label>Monthly Rate</label>
                                 <input type="text" readonly value="${escapeHtml(formatAmount(profile.monthly_rate || 0))}">
                             </div>
+                            <div class="calc-field ${activeBillingMode === 'rtf' ? '' : 'hidden'}" id="calcUnusedDaysField">
+                                <label for="calcUnusedDaysInput">Unused Days</label>
+                                <input type="number" id="calcUnusedDaysInput" min="0" max="30" step="1" value="${escapeHtml(String(initialSnapshot.unusedDays || estimate.unusedDays || 0))}">
+                            </div>
+                            <div class="calc-field ${activeBillingMode === 'rtf' ? '' : 'hidden'}" id="calcUnusedDiscountField">
+                                <label>Unused Discount</label>
+                                <input type="text" id="calcUnusedDiscountValue" readonly value="${escapeHtml(formatAmount(estimate.unusedDiscount || 0))}">
+                            </div>
                             <div class="calc-field">
                                 <label>Succeeding Pages</label>
                                 <input type="text" id="calcSucceedingPagesValue" readonly value="${escapeHtml(formatCount(estimate.succeedingPages || 0))}">
@@ -9094,7 +9471,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                         ${
                             context.isReading
                                 ? `This estimate applies spoilage first, bills quota pages at the within-quota rate, then bills pages above quota at the succeeding rate. If no succeeding rate is saved, the within-quota rate is used.`
-                                : `This contract is currently treated as a fixed monthly bill. The estimate below uses the saved monthly rate for ${escapeHtml(context.monthLabel)}.`
+                                : `This contract is currently treated as a fixed monthly bill. You can enter unused days to auto-compute the downtime discount for ${escapeHtml(context.monthLabel)}.`
                         }
                     </div>
                     <div class="calc-approval-panel ${Number(estimate.actualSpoilagePages || 0) > 0 ? '' : 'hidden'}" id="calcApprovalPanel">
@@ -9132,7 +9509,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                                 ? estimate.savedComputation
                                 : context.isReading
                                 ? formatBillingComputationFlow(estimate)
-                                : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`
+                                : formatFixedRateComputationFlow(estimate, context.monthLabel)
                         )}</div>
                     </div>
                     <div class="detail-list-block calc-detail-block">
@@ -9148,6 +9525,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             ${renderBillingLinePanel('multi_meter_rtp', 'Multiple Meter RTP', 'Use this for color copiers with separate Print and Copy counters for black/white and colored pages.', multiMeterSeedLines, legacyMultiMeterNote)}
             ${renderBillingLinePanel('multi_machine_rtp', 'One Invoice, Multiple Machines', 'Use one invoice number, compute each machine line, then sum the invoice total.', multiMachineSeedLines)}
             ${renderTonerBillingPanel(context, estimate)}
+            ${renderPirdBillingPanel(estimate)}
             ${renderBillingExclusionEditor()}
             ${renderSavedBillingExclusions(savedExclusionsForContext)}
             ${
@@ -9247,6 +9625,10 @@ async function openBillingCalcModal(rowId, monthKey) {
     const quotaBypassReasonInput = document.getElementById('calcQuotaBypassReasonInput');
     const quotaBypassReasonField = document.getElementById('calcQuotaBypassReasonField');
     const amountValue = document.getElementById('calcAmountValue');
+    const unusedDaysField = document.getElementById('calcUnusedDaysField');
+    const unusedDaysInput = document.getElementById('calcUnusedDaysInput');
+    const unusedDiscountField = document.getElementById('calcUnusedDiscountField');
+    const unusedDiscountValue = document.getElementById('calcUnusedDiscountValue');
     const rawPagesValue = document.getElementById('calcRawPagesValue');
     const spoilagePagesValue = document.getElementById('calcSpoilagePagesValue');
     const totalSpoilageValue = document.getElementById('calcTotalSpoilageValue');
@@ -9306,6 +9688,11 @@ async function openBillingCalcModal(rowId, monthKey) {
     const tonerVatValue = document.getElementById('calcTonerVatValue');
     const tonerNetValue = document.getElementById('calcTonerNetValue');
     const tonerTotalValue = document.getElementById('calcTonerTotalValue');
+    const pirdRdEnabledInput = document.getElementById('calcPirdRdEnabledInput');
+    const pirdRdAmountInput = document.getElementById('calcPirdRdAmountInput');
+    const pirdPiEnabledInput = document.getElementById('calcPirdPiEnabledInput');
+    const pirdPiAmountInput = document.getElementById('calcPirdPiAmountInput');
+    const pirdTotalValue = document.getElementById('calcPirdTotalValue');
     const exclusionEditor = document.getElementById('calcExclusionEditor');
     const exclusionTargetInput = document.getElementById('calcExclusionTargetInput');
     const exclusionReasonInput = document.getElementById('calcExclusionReasonInput');
@@ -9334,10 +9721,47 @@ async function openBillingCalcModal(rowId, monthKey) {
     let approvedAt = context.approvedAt || '';
     let scheduleRequired = Boolean(context.scheduleRequired);
     let scheduleSaved = Boolean(context.scheduleSaved);
-    let scheduleDocId = context.scheduleDocId || '';
+    let scheduleDocId = context.scheduleTaskDocId || context.scheduleDocId || '';
+    let scheduleSourceDocId = context.scheduleSourceDocId || '';
     const getSelectedSchedulePurpose = () => getBillingSchedulePurpose(schedulePurposeInput?.value || context.schedulePurposeKey || context.schedulePurpose || 'Printed Billing');
+    const syncBillingScheduleAssignmentState = () => {
+        const resolved = resolveBillingScheduleStaffSelection(
+            scheduleStaffOptions,
+            String(scheduleStaffInput?.value || activeEstimate?.scheduleAssignedStaffId || context.scheduleAssignedStaffId || '').trim(),
+            String(activeEstimate?.scheduleAssignedStaffName || context.scheduleAssignedStaffName || '').trim()
+        );
+        if (activeEstimate) {
+            activeEstimate.scheduleAssignedStaffId = resolved.id;
+            activeEstimate.scheduleAssignedStaffName = resolved.name;
+        }
+        return resolved;
+    };
     const lineInputValues = new Map();
     const draftSaveTimers = new Map();
+    const modeInvoiceDrafts = new Map();
+
+    const syncSavedDocForMode = (mode, options = {}) => {
+        const { preserveCurrentInvoice = false } = options;
+        const modeDoc = pickBillingDocForMode(existingBillingDocs, mode);
+        savedBillingDocId = modeDoc?._docId || '';
+        savedSnapshot = modeDoc ? billingSnapshotFromDoc(modeDoc, initialSnapshot) : null;
+        savedDocExists = Boolean(modeDoc);
+        scheduleRequired = modeDoc ? modeDoc.schedule_required === true : false;
+        scheduleSaved = modeDoc?.schedule_saved === true;
+        scheduleDocId = String(modeDoc?.schedule_task_doc_id || modeDoc?.schedule_doc_id || '').trim();
+        scheduleSourceDocId = String(modeDoc?.schedule_source_doc_id || modeDoc?.field_billing_schedule_doc_id || modeDoc?.schedule_doc_id || '').trim();
+        if (scheduleDateInput) scheduleDateInput.value = String(modeDoc?.schedule_date || context.scheduleDate || '').trim();
+        if (scheduleTimeInput) scheduleTimeInput.value = String(modeDoc?.schedule_time || context.scheduleTime || '').trim();
+        if (schedulePurposeInput) schedulePurposeInput.value = getBillingSchedulePurpose(String(modeDoc?.schedule_purpose || context.schedulePurpose || 'Printed Billing')).key;
+        if (scheduleStaffInput) scheduleStaffInput.value = String(modeDoc?.schedule_assigned_staff_id || context.scheduleAssignedStaffId || '').trim();
+        syncBillingScheduleAssignmentState();
+        if (invoiceInput && !preserveCurrentInvoice) {
+            const nextInvoice = modeDoc
+                ? (savedSnapshot?.invoiceNo || '')
+                : (modeInvoiceDrafts.get(mode) || '');
+            invoiceInput.value = nextInvoice;
+        }
+    };
 
     inlinePrintBtn?.addEventListener('click', printCurrentRtpInvoice);
     printBreakdownBtn?.addEventListener('click', () => {
@@ -9438,6 +9862,13 @@ async function openBillingCalcModal(rowId, monthKey) {
         return value;
     };
 
+    const readLineApplyQuota = (mode, index, fallback = true) => {
+        const card = document.querySelector(`[data-calc-line-card="${mode}"][data-calc-line-index="${index}"]`);
+        const checkbox = card?.querySelector(`[data-calc-line-checkbox="applyQuota"]`);
+        if (checkbox) return checkbox.checked;
+        return fallback;
+    };
+
     const estimateLineFromSeed = (seed, mode, index) => {
         const lineProfile = {
             ...(seed.profile || profile),
@@ -9455,7 +9886,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             previousMeter: readLineInputValue(mode, index, 'previousMeter', seed.previousMeter),
             presentMeter: readLineInputValue(mode, index, 'presentMeter', seed.presentMeter),
             spoilagePercent: readLineInputValue(mode, index, 'spoilagePercent', seed.spoilagePercent),
-            applyQuota: applyQuotaInput?.checked !== false,
+            applyQuota: readLineApplyQuota(mode, index, seed.applyQuota !== false),
             quotaBypassReason: quotaBypassReasonInput?.value || '',
             row: seed.row || null,
             missingMeterMessage: seed.missingMeterMessage,
@@ -9525,6 +9956,14 @@ async function openBillingCalcModal(rowId, monthKey) {
                 unitPrice: tonerUnitPriceInput?.value
             });
         }
+        if (activeBillingMode === 'pird_charge') {
+            return calculatePirdBillingEstimate(context, {
+                refundableDepositEnabled: pirdRdEnabledInput?.checked === true,
+                rdAmount: pirdRdAmountInput?.value,
+                productionInstallationEnabled: pirdPiEnabledInput?.checked === true,
+                piAmount: pirdPiAmountInput?.value
+            });
+        }
         if (activeBillingMode === 'multi_meter_rtp') {
             const lines = multiMeterSeedLines.map((seed, index) => estimateLineFromSeed({ ...seed, profile: seed.profile || profile, row }, activeBillingMode, index));
             const summary = applySharedMultiMeterQuota(lines);
@@ -9538,7 +9977,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                 profile: seed.profile || getSharedBillingGroupProfile(groupedRowsForBilling[index], getRowBillingProfile(groupedRowsForBilling[index]) || profile),
                 row: groupedRowsForBilling[index] || row
             }, activeBillingMode, index));
-            const summary = hasSharedBillingGroupQuota(groupedRowsForBilling)
+            const summary = hasSharedBillingGroupQuota(groupedRowsForBilling) && shouldAllocateSharedQuotaAcrossMachineLines(groupedRowsForBilling)
                 ? applySharedMultiMeterQuota(lines)
                 : summarizeBillingLines(lines);
             summary.lineItems.forEach((line, index) => updateLineCardDisplay(activeBillingMode, index, line));
@@ -9558,6 +9997,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                 actualSpoilageProofType: actualSpoilageProof.type || '',
                 actualSpoilageRequestedBy: context.actualSpoilageRequestedBy || '',
                 actualSpoilageRequestedAt: context.actualSpoilageRequestedAt || '',
+                unusedDays: unusedDaysInput ? Number(unusedDaysInput.value || 0) || 0 : (context.unusedDays || 0),
                 applyQuota: applyQuotaInput?.checked !== false,
                 quotaBypassReason: quotaBypassReasonInput?.value || '',
                 approvalStatus,
@@ -9587,15 +10027,21 @@ async function openBillingCalcModal(rowId, monthKey) {
             if (activeBillingMode === 'multi_meter_rtp') {
                 modeSummaryCopy.textContent = 'Print and Copy counters are computed separately for black/white and colored pages, then summed into one invoice.';
             } else if (activeBillingMode === 'multi_machine_rtp') {
-                modeSummaryCopy.textContent = 'Machine lines share one invoice number, one combined quota, and one rate plan.';
+                modeSummaryCopy.textContent = groupedBranchCount > 1
+                    ? 'Machine lines share one invoice number and one rate plan. Each branch line still keeps its own quota-floor computation.'
+                    : 'Machine lines share one invoice number, one combined quota, and one rate plan.';
             } else if (activeBillingMode === 'toner_cartridge') {
                 modeSummaryCopy.textContent = 'This invoice uses toner quantity and unit amount only. VAT is computed from the VAT-inclusive total.';
+            } else if (activeBillingMode === 'pird_charge') {
+                modeSummaryCopy.textContent = 'This invoice uses manual PI and RD charge amounts only. Rental page counters and grouped machine computation stay unchanged.';
             } else if (activeBillingMode === 'rtf') {
-                modeSummaryCopy.textContent = 'This invoice uses the fixed monthly contract rate.';
+                modeSummaryCopy.textContent = 'This invoice uses the fixed monthly contract rate and can deduct unused downtime days.';
             } else {
                 modeSummaryCopy.textContent = 'This invoice uses one meter reading, one quota, and one rate plan.';
             }
         }
+        unusedDaysField?.classList.toggle('hidden', activeBillingMode !== 'rtf');
+        unusedDiscountField?.classList.toggle('hidden', activeBillingMode !== 'rtf');
     };
 
     const buildCurrentSnapshot = () => {
@@ -9609,6 +10055,7 @@ async function openBillingCalcModal(rowId, monthKey) {
             applyQuota: primaryLine ? primaryLine.applyQuota !== false : applyQuotaInput?.checked !== false,
             quotaBypassReason: primaryLine ? primaryLine.quotaBypassReason : (quotaBypassReasonInput?.value || ''),
             billingMode: activeBillingMode,
+            unusedDays: primaryLine ? primaryLine.unusedDays : (unusedDaysInput?.value || 0),
             schedulePurposeKey: getSelectedSchedulePurpose().key,
             schedulePurpose: getSelectedSchedulePurpose().label,
             linesSignature: buildBillingLinesSignature(activeEstimate?.lineItems || [])
@@ -9626,7 +10073,11 @@ async function openBillingCalcModal(rowId, monthKey) {
         const isReadingSchedule = schedulePurpose.key === 'reading';
         const quotaUnchecked = applyQuotaInput?.checked === false;
 
-        if (saveBillingBtn) saveBillingBtn.textContent = savedDocExists ? 'Update Billing' : 'Save Billing';
+        if (saveBillingBtn) {
+            saveBillingBtn.textContent = activeBillingMode === 'pird_charge'
+                ? (savedDocExists ? 'Update PI / RD Billing' : 'Save PI / RD Billing')
+                : (savedDocExists ? 'Update Billing' : 'Save Billing');
+        }
         if (saveBillingBtn) saveBillingBtn.disabled = isReadingSchedule;
         if (invoiceInput) invoiceInput.disabled = isReadingSchedule;
         if (saveScheduleBtn) saveScheduleBtn.disabled = schedulePurpose.requiresBilling && !savedDocExists;
@@ -9641,6 +10092,8 @@ async function openBillingCalcModal(rowId, monthKey) {
                 saveStatus.textContent = workflowError;
             } else if (isReadingSchedule) {
                 saveStatus.textContent = 'Reading schedule only. Invoice number and billing calculation are not required.';
+            } else if (activeBillingMode === 'pird_charge' && !savedDocExists) {
+                saveStatus.textContent = 'Enter a separate PI / RD invoice number, then click Save PI / RD Billing.';
             } else if (!savedDocExists) {
                 saveStatus.textContent = `Save this billing first so it lands in ${savedMonthLabel} and unlocks printing.`;
             } else if (isDirty && allowSavedReprints) {
@@ -9720,20 +10173,26 @@ async function openBillingCalcModal(rowId, monthKey) {
             els.billingCalcPrintBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);
             els.billingCalcPrintBtn.disabled = !printEnabled;
         }
+        const supportsDotMatrix = currentRtpPrintPayload?.supportsDotMatrix !== false;
+        const supportsMeterForm = currentRtpPrintPayload?.supportsMeterForm !== false;
+        const supportsEnvelope = currentRtpPrintPayload?.supportsEnvelope !== false;
         if (els.billingCalcDotMatrixBtn) {
-            els.billingCalcDotMatrixBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);
+            els.billingCalcDotMatrixBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule || !supportsDotMatrix);
             els.billingCalcDotMatrixBtn.disabled = !dotMatrixPrintEnabled;
         }
         if (els.billingCalcMeterFormBtn) {
-            els.billingCalcMeterFormBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);
+            els.billingCalcMeterFormBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule || !supportsMeterForm);
             els.billingCalcMeterFormBtn.disabled = !printEnabled;
         }
         if (els.billingCalcEnvelopeBtn) {
-            els.billingCalcEnvelopeBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule);
+            els.billingCalcEnvelopeBtn.classList.toggle('hidden', !canPrintInvoice || isReadingSchedule || !supportsEnvelope);
             els.billingCalcEnvelopeBtn.disabled = !printEnabled;
         }
         if (printBreakdownBtn) printBreakdownBtn.disabled = !printEnabled;
-        if (printMeterFormBtn) printMeterFormBtn.disabled = !printEnabled;
+        if (printMeterFormBtn) {
+            printMeterFormBtn.disabled = !printEnabled;
+            printMeterFormBtn.classList.toggle('hidden', !supportsMeterForm);
+        }
         if (printEnvelopeBtn) printEnvelopeBtn.disabled = !printEnabled;
     };
 
@@ -9834,6 +10293,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     const recompute = () => {
         const next = calculateActiveEstimate();
         setElementDisplayValue(amountValue, formatAmount(next.amountDue || 0));
+        setElementDisplayValue(unusedDiscountValue, formatAmount(next.unusedDiscount || 0));
         setElementDisplayValue(rawPagesValue, formatCount(next.rawPages || 0));
         setElementDisplayValue(spoilagePagesValue, formatCount(next.systemSpoilagePages ?? next.spoilagePages ?? 0));
         setElementDisplayValue(totalSpoilageValue, formatCount(next.totalSpoilagePages ?? next.spoilagePages ?? 0));
@@ -9847,10 +10307,15 @@ async function openBillingCalcModal(rowId, monthKey) {
         setElementDisplayValue(tonerVatValue, formatAmount(next.vatAmount || 0));
         setElementDisplayValue(tonerNetValue, formatAmount(next.netAmount || 0));
         setElementDisplayValue(tonerTotalValue, formatAmount(next.amountDue || 0));
+        setElementDisplayValue(pirdTotalValue, formatAmount(next.amountDue || 0));
         if (formulaValue) formulaValue.textContent = next.formula;
         if (quotaValue) {
             quotaValue.textContent = next.sharedMeterGroups?.length
                 ? next.sharedMeterGroups.map((group) => `${group.label}: ${formatCount(group.quotaPages)} shared quota / ${formatCount(group.netPages)} net`).join(' • ')
+                : activeBillingMode === 'pird_charge'
+                ? 'PI / RD manual charge mode. No rental quota or meter movement is used.'
+                : activeBillingMode === 'rtf'
+                ? 'Fixed monthly contract. Unused days reduce the monthly rate as a downtime discount.'
                 : next.quotaVariance === null
                 ? (next.lineItems?.length > 1 ? `${formatCount(next.lineItems.length)} billing lines summed.` : 'No quota saved on this contract.')
                 : `${formatCount(profile.monthly_quota || 0)} quota floor • ${next.quotaVariance >= 0 ? '+' : ''}${formatCount(next.quotaVariance)} vs net pages`;
@@ -9862,11 +10327,13 @@ async function openBillingCalcModal(rowId, monthKey) {
                 ? next.lineItems.map((line) => `${line.label}: ${formatAmount(line.amountDue || 0)}`).join(' • ')
                 : next.savedComputation
                 ? next.savedComputation
+                : activeBillingMode === 'pird_charge'
+                ? 'Manual PI / RD charge mode.'
                 : activeBillingMode === 'toner_cartridge'
                 ? (next.savedComputation || `${next.tonerDescription || 'Toner Cartridge'}: ${formatCount(next.tonerQuantity || 0)} pc x ${formatAmount(next.tonerUnitPrice || 0)} = ${formatAmount(next.amountDue || 0)}.`)
                 : context.isReading
                 ? formatBillingComputationFlow(next)
-                : `Fixed monthly bill uses ${formatAmount(profile.monthly_rate || 0)} for ${context.monthLabel}.`;
+                : formatFixedRateComputationFlow(next, context.monthLabel);
         }
         if (warningValue) warningValue.textContent = next.warning || '';
         activeEstimate = next;
@@ -9881,6 +10348,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     invoiceInput?.addEventListener('input', () => {
         workflowError = '';
         invoiceInput.classList.remove('input-error');
+        modeInvoiceDrafts.set(activeBillingMode, String(invoiceInput.value || '').trim());
         syncCalcWorkflowState();
         if (activeBillingMode === 'multi_machine_rtp') {
             (activeEstimate?.lineItems || []).forEach((_, index) => queueDraftLineSave(index, 1200));
@@ -9917,8 +10385,25 @@ async function openBillingCalcModal(rowId, monthKey) {
         workflowError = '';
         recompute();
     });
+    unusedDaysInput?.addEventListener('input', () => {
+        calculationEdited = true;
+        workflowError = '';
+        recompute();
+    });
     [tonerDescriptionInput, tonerQuantityInput, tonerUnitPriceInput].forEach((input) => {
         input?.addEventListener('input', () => {
+            calculationEdited = true;
+            workflowError = '';
+            recompute();
+        });
+    });
+    [pirdRdEnabledInput, pirdRdAmountInput, pirdPiEnabledInput, pirdPiAmountInput].forEach((input) => {
+        input?.addEventListener('input', () => {
+            calculationEdited = true;
+            workflowError = '';
+            recompute();
+        });
+        input?.addEventListener('change', () => {
             calculationEdited = true;
             workflowError = '';
             recompute();
@@ -9951,12 +10436,14 @@ async function openBillingCalcModal(rowId, monthKey) {
                 scheduleSaved = false;
                 syncCalcWorkflowState();
             }
+            if (input === scheduleStaffInput) syncBillingScheduleAssignmentState();
         });
         input?.addEventListener('change', () => {
             if (scheduleSaved) {
                 scheduleSaved = false;
                 syncCalcWorkflowState();
             }
+            if (input === scheduleStaffInput) syncBillingScheduleAssignmentState();
         });
     });
     schedulePurposeInput?.addEventListener('change', () => {
@@ -9968,7 +10455,9 @@ async function openBillingCalcModal(rowId, monthKey) {
         syncCalcWorkflowState();
     });
     modeTabs.forEach((tab) => tab.addEventListener('click', () => {
+        if (invoiceInput) modeInvoiceDrafts.set(activeBillingMode, String(invoiceInput.value || '').trim());
         activeBillingMode = tab.dataset.calcModeTab || activeBillingMode;
+        syncSavedDocForMode(activeBillingMode);
         calculationEdited = true;
         if (Number(actualSpoilageInput?.value || 0) > 0 && approvalStatus === 'approved') {
             approvalStatus = 'pending';
@@ -9996,6 +10485,12 @@ async function openBillingCalcModal(rowId, monthKey) {
             if (input.dataset.calcLineMode === 'multi_machine_rtp') {
                 queueDraftLineSave(Number(input.dataset.calcLineIndex || 0), 0);
             }
+        });
+    });
+    document.querySelectorAll('[data-calc-line-checkbox="applyQuota"]').forEach((checkbox) => {
+        checkbox.addEventListener('change', () => {
+            calculationEdited = true;
+            recompute();
         });
     });
     document.querySelectorAll('[data-calc-exclusion-action="open"]').forEach((button) => {
@@ -10179,11 +10674,14 @@ async function openBillingCalcModal(rowId, monthKey) {
             MargaUtils.showToast('Choose a schedule date before printing.', 'error');
             return;
         }
+        const assignmentSelection = syncBillingScheduleAssignmentState();
+        staffId = assignmentSelection.id;
+        staffOption = scheduleStaffOptions.find((staff) => staff.id === staffId) || assignmentSelection || null;
         if (!staffId) {
             MargaUtils.showToast('Choose an assigned messenger or tech before printing.', 'error');
             return;
         }
-        let staffName = staffOption?.name || staffId;
+        let staffName = assignmentSelection.name || staffOption?.name || staffId;
         if (window.MargaScheduleConsolidation?.validateRequiredAssignment) {
             const assignment = MargaScheduleConsolidation.validateRequiredAssignment({
                 staffId,
@@ -10215,8 +10713,10 @@ async function openBillingCalcModal(rowId, monthKey) {
             if (!consolidation.ok) return;
             staffId = String(consolidation.staffId || staffId);
             activeEstimate.scheduleConsolidationFields = consolidation.scheduleFields || {};
-            staffOption = scheduleStaffOptions.find((staff) => staff.id === staffId) || staffOption;
-            staffName = staffOption?.name || staffName || staffId;
+            const consolidatedSelection = resolveBillingScheduleStaffSelection(scheduleStaffOptions, staffId, staffName);
+            staffOption = scheduleStaffOptions.find((staff) => staff.id === consolidatedSelection.id) || consolidatedSelection || staffOption;
+            staffId = consolidatedSelection.id;
+            staffName = consolidatedSelection.name || staffName || staffId;
             if (scheduleStaffInput) scheduleStaffInput.value = staffId;
         }
         saveScheduleBtn.disabled = true;
@@ -10228,27 +10728,21 @@ async function openBillingCalcModal(rowId, monthKey) {
             activeEstimate.scheduleTime = scheduleTime;
             activeEstimate.scheduleAssignedStaffId = staffId;
             activeEstimate.scheduleAssignedStaffName = staffName;
-            if (!scheduleDocId) {
-                const plannerResult = schedulePurpose.key === 'reading'
-                    ? await saveReadingToSchedulePlanner({ row, context, estimate: activeEstimate })
-                    : await saveBillingToSchedulePlanner({
-                        result: {
-                            docId: savedBillingDocId,
-                            invoiceNo: buildCurrentSnapshot().invoiceNo,
-                            fields: { _docId: savedBillingDocId }
-                        },
-                        row,
-                        context,
-                        estimate: activeEstimate,
-                        snapshot: buildCurrentSnapshot()
-                    });
-                scheduleDocId = plannerResult.docs?.[0]?.docId || scheduleDocId;
-            }
-            if (!scheduleDocId) throw new Error('Unable to create Master Schedule planner row.');
+            const currentSnapshot = buildCurrentSnapshot();
+            scheduleSourceDocId = scheduleSourceDocId || buildBillingScheduleSourceDocId({
+                row,
+                context,
+                estimate: activeEstimate,
+                snapshot: currentSnapshot,
+                savedBillingDocId
+            });
+            scheduleDocId = resolveBillingScheduleTaskDocId(scheduleDocId, activeEstimate.scheduleTaskDocId, scheduleSourceDocId);
+            if (!scheduleDocId) throw new Error('Unable to create Master Schedule schedule row.');
             const audit = getCurrentUserAudit();
             const nowIso = new Date().toISOString();
             const scheduleTask = await saveBillingScheduleToFieldTask({
-                plannerDocId: scheduleDocId,
+                scheduleSourceDocId,
+                taskDocId: scheduleDocId,
                 row,
                 context,
                 estimate: activeEstimate,
@@ -10257,37 +10751,12 @@ async function openBillingCalcModal(rowId, monthKey) {
                 staffName,
                 auditName: audit.name
             });
-            await setFirestoreDocument(SCHEDULE_PLANNER_COLLECTION, scheduleDocId, {
-                planner_status: 'scheduled',
-                task_status: 'scheduled',
-                route_status: 'scheduled',
-                schedule_task_doc_id: scheduleTask.docId,
-                schedule_task_id: scheduleTask.taskId,
-                purpose: schedulePurpose.label,
-                schedule_purpose: schedulePurpose.label,
-                schedule_purpose_key: schedulePurpose.key,
-                task_type: schedulePurpose.taskType,
-                task_label: schedulePurpose.taskLabel,
-                schedule_date: scheduleDate,
-                schedule_time: scheduleTime,
-                schedule_type: scheduleType,
-                assigned_staff_id: staffId,
-                assigned_staff_name: staffName,
-                assigned_to_id: staffId,
-                assigned_to: staffName,
-                assigned_by: audit.name,
-                assigned_at: nowIso,
-                updated_at: nowIso
-            }, {
-                mode: 'patch',
-                label: `Billing schedule ${buildCurrentSnapshot().invoiceNo || scheduleDocId}`,
-                dedupeKey: `${SCHEDULE_PLANNER_COLLECTION}:${scheduleDocId}:schedule:${scheduleDate}:${staffId}`
-            });
             if (savedBillingDocId) {
                 await setFirestoreDocument('tbl_billing', savedBillingDocId, {
                     schedule_required: true,
                     schedule_saved: true,
-                    schedule_doc_id: scheduleDocId,
+                    schedule_doc_id: scheduleTask.docId,
+                    schedule_source_doc_id: scheduleSourceDocId,
                     schedule_date: scheduleDate,
                     schedule_time: scheduleTime,
                     schedule_type: scheduleType,
@@ -10300,14 +10769,15 @@ async function openBillingCalcModal(rowId, monthKey) {
                     updated_at: nowIso
                 }, {
                     mode: 'patch',
-                    label: `Billing schedule gate ${buildCurrentSnapshot().invoiceNo || savedBillingDocId}`,
+                    label: `Billing schedule gate ${currentSnapshot.invoiceNo || savedBillingDocId}`,
                     dedupeKey: `tbl_billing:${savedBillingDocId}:schedule:${scheduleDate}:${staffId}`
                 });
             }
             scheduleRequired = true;
             scheduleSaved = true;
             activeEstimate.scheduleSaved = true;
-            activeEstimate.scheduleDocId = scheduleDocId;
+            activeEstimate.scheduleDocId = scheduleTask.docId;
+            activeEstimate.scheduleSourceDocId = scheduleSourceDocId;
             activeEstimate.scheduleTaskDocId = scheduleTask.docId;
             activeEstimate.scheduleTaskId = scheduleTask.taskId;
             MargaUtils.showToast(`Saved to Master Schedule for ${scheduleDate}.`, 'success');
@@ -10361,6 +10831,14 @@ async function openBillingCalcModal(rowId, monthKey) {
                 };
             }
         }
+        const scheduleAssignment = syncBillingScheduleAssignmentState();
+        activeEstimate.schedulePurposeKey = schedulePurpose.key;
+        activeEstimate.schedulePurpose = schedulePurpose.label;
+        activeEstimate.scheduleType = schedulePurpose.label;
+        activeEstimate.scheduleDate = String(scheduleDateInput?.value || context.scheduleDate || '').trim();
+        activeEstimate.scheduleTime = String(scheduleTimeInput?.value || context.scheduleTime || '').trim();
+        activeEstimate.scheduleAssignedStaffId = String(scheduleAssignment.id || '').trim();
+        activeEstimate.scheduleAssignedStaffName = String(scheduleAssignment.name || '').trim();
         const currentSnapshot = buildCurrentSnapshot();
         workflowError = '';
         invoiceInput?.classList.remove('input-error');
@@ -10379,32 +10857,12 @@ async function openBillingCalcModal(rowId, monthKey) {
             });
             savedSnapshot = currentSnapshot;
             savedDocExists = true;
-            let plannerResult = null;
-            let plannerError = '';
-            try {
-                plannerResult = await saveBillingToSchedulePlanner({
-                    result,
-                    row,
-                    context,
-                    estimate: activeEstimate,
-                    snapshot: currentSnapshot
-                });
-            } catch (error) {
-                plannerError = String(error?.message || 'Schedule Planner save failed.');
-                console.warn('Invoice saved but Schedule Planner write failed.', error);
-            }
-            if (!savedBillingDoc) {
-                existingBillingDocs = [{
-                    _docId: result.docId,
-                    ...result.fields
-                }];
-            } else {
-                existingBillingDocs = [{
-                    _docId: result.docId,
-                    ...result.fields
-                }];
-            }
+            existingBillingDocs = [
+                { _docId: result.docId, ...result.fields },
+                ...existingBillingDocs.filter((doc) => String(doc?._docId || '').trim() !== String(result.docId || '').trim())
+            ];
             savedBillingDocId = result.docId || savedBillingDocId;
+            modeInvoiceDrafts.set(activeBillingMode, currentSnapshot.invoiceNo);
             if (currentRtpPrintPayload) {
                 const docIds = Array.isArray(result.docs) && result.docs.length
                     ? result.docs.map((entry) => String(entry.docId || '').trim()).filter(Boolean)
@@ -10421,37 +10879,94 @@ async function openBillingCalcModal(rowId, monthKey) {
                 });
             }
             approvalStatus = String(result.fields?.approval_status || approvalStatus || 'none');
+            let scheduleTask = null;
+            let scheduleError = '';
+            try {
+                const schedulePurpose = getBillingSchedulePurposeFromEstimate(activeEstimate);
+                const selectedAssignment = syncBillingScheduleAssignmentState();
+                const staffId = String(selectedAssignment.id || '').trim();
+                const staffName = String(selectedAssignment.name || '').trim();
+                scheduleSourceDocId = buildBillingScheduleSourceDocId({
+                    row,
+                    context,
+                    estimate: activeEstimate,
+                    snapshot: currentSnapshot,
+                    savedBillingDocId: result.docId || savedBillingDocId
+                });
+                scheduleDocId = resolveBillingScheduleTaskDocId(
+                    scheduleDocId,
+                    activeEstimate.scheduleTaskDocId,
+                    scheduleSourceDocId
+                );
+                scheduleTask = await saveBillingScheduleToFieldTask({
+                    scheduleSourceDocId,
+                    taskDocId: scheduleDocId,
+                    row,
+                    context,
+                    estimate: activeEstimate,
+                    purpose: schedulePurpose,
+                    staffId,
+                    staffName,
+                    auditName: getCurrentUserAudit().name
+                });
+                await setFirestoreDocument('tbl_billing', result.docId || savedBillingDocId, {
+                    schedule_required: true,
+                    schedule_saved: true,
+                    schedule_doc_id: scheduleTask.docId,
+                    schedule_source_doc_id: scheduleSourceDocId,
+                    schedule_date: String(activeEstimate?.scheduleDate || '').trim(),
+                    schedule_time: String(activeEstimate?.scheduleTime || '').trim(),
+                    schedule_type: schedulePurpose.label,
+                    schedule_purpose: schedulePurpose.label,
+                    schedule_purpose_key: schedulePurpose.key,
+                    schedule_task_doc_id: scheduleTask.docId,
+                    schedule_task_id: scheduleTask.taskId,
+                    schedule_assigned_staff_id: staffId,
+                    schedule_assigned_staff_name: staffName,
+                    updated_at: new Date().toISOString()
+                }, {
+                    mode: 'patch',
+                    label: `Billing schedule gate ${currentSnapshot.invoiceNo || result.docId || savedBillingDocId}`,
+                    dedupeKey: `tbl_billing:${result.docId || savedBillingDocId}:schedule:${activeEstimate?.scheduleDate || ''}:${staffId || 'unassigned'}`
+                });
+            } catch (error) {
+                scheduleError = String(error?.message || 'Schedule save failed.');
+                console.warn('Invoice saved but schedule row write failed.', error);
+            }
             scheduleRequired = true;
-            scheduleSaved = false;
-            scheduleDocId = plannerResult?.docs?.[0]?.docId || scheduleDocId || '';
+            scheduleSaved = Boolean(scheduleTask);
+            activeEstimate.scheduleSaved = Boolean(scheduleTask);
+            if (scheduleTask?.docId) scheduleDocId = scheduleTask.docId;
+            if (scheduleTask?.docId) activeEstimate.scheduleDocId = scheduleTask.docId;
+            if (scheduleTask?.docId) activeEstimate.scheduleTaskDocId = scheduleTask.docId;
+            if (scheduleTask?.taskId) activeEstimate.scheduleTaskId = scheduleTask.taskId;
+            if (scheduleSourceDocId) activeEstimate.scheduleSourceDocId = scheduleSourceDocId;
             syncCalcWorkflowState();
-            const plannerCount = Number(plannerResult?.savedCount || 0) || 0;
-            const plannerQueued = Boolean(plannerResult?.queued);
-            const plannerMessage = plannerError
-                ? `Invoice saved, but Schedule Planner was not updated: ${plannerError}`
+            const scheduleMessage = scheduleError
+                ? `Invoice saved, but the table schedule row was not updated: ${scheduleError}`
                 : approvalStatus === 'pending'
                     ? `Saved Invoice ${currentSnapshot.invoiceNo} as pending admin approval for actual spoilage.`
-                : plannerQueued
-                    ? `Invoice ${currentSnapshot.invoiceNo} was queued and the Schedule Planner request was queued too.`
-                    : `Saved Invoice ${currentSnapshot.invoiceNo} and saved ${plannerCount || 1} request${plannerCount === 1 ? '' : 's'} to Schedule Planner.`;
+                : result.queued
+                    ? `Invoice ${currentSnapshot.invoiceNo} was queued for Billing and the table schedule row was queued too.`
+                    : `Saved Invoice ${currentSnapshot.invoiceNo} directly to table schedule.`;
             MargaUtils.showToast(
-                plannerError
-                    ? `Invoice ${currentSnapshot.invoiceNo} saved. Schedule Planner needs retry.`
+                scheduleError
+                    ? `Invoice ${currentSnapshot.invoiceNo} saved. Table schedule update needs retry.`
                     : approvalStatus === 'pending'
                         ? `Invoice ${currentSnapshot.invoiceNo} saved - pending admin approval.`
-                    : result.queued || plannerQueued
-                        ? `Invoice ${currentSnapshot.invoiceNo} queued for Billing and Schedule Planner.`
-                        : `Saved Invoice ${currentSnapshot.invoiceNo} - saved to Schedule Planner.`,
-                plannerError ? 'error' : 'success'
+                    : result.queued
+                        ? `Invoice ${currentSnapshot.invoiceNo} queued for Billing and table schedule.`
+                        : `Saved Invoice ${currentSnapshot.invoiceNo} - schedule saved.`,
+                scheduleError ? 'error' : 'success'
             );
             showBillingSaveResult({
-                type: plannerError ? 'error' : 'success',
-                title: plannerError ? 'Saved Invoice, Planner Failed' : (approvalStatus === 'pending' ? 'Pending Approval' : (result.queued || plannerQueued ? 'Saved Invoice Queued' : 'Saved Invoice')),
-                message: plannerError
-                    ? plannerMessage
+                type: scheduleError ? 'error' : 'success',
+                title: scheduleError ? 'Saved Invoice, Schedule Failed' : (approvalStatus === 'pending' ? 'Pending Approval' : (result.queued ? 'Saved Invoice Queued' : 'Saved Invoice')),
+                message: scheduleError
+                    ? scheduleMessage
                     : approvalStatus === 'pending'
-                        ? `${plannerMessage} Print ${printContractCode || 'Invoice'} is locked until approval.`
-                        : `${plannerMessage} Print ${printContractCode || 'Invoice'} is ready.`
+                        ? `${scheduleMessage} Print ${printContractCode || 'Invoice'} is locked until approval.`
+                        : `${scheduleMessage} Print ${printContractCode || 'Invoice'} is ready.`
             });
             if (!result.queued) {
                 loadDashboard({ forceRefresh: true }).catch((error) => {
@@ -10513,6 +11028,7 @@ async function openBillingCalcModal(rowId, monthKey) {
     els.billingCalcModal.classList.remove('hidden');
     await renderCalcPreview(activeEstimate);
     syncMultiMachineSearch();
+    syncSavedDocForMode(activeBillingMode);
     syncCalcWorkflowState();
 }
 
@@ -10828,6 +11344,7 @@ function renderMatrixTable(payload) {
             </tfoot>
         </table>
     `;
+    setupHorizontalTouchScroll();
 }
 
 function closeInvoiceDetailModal() {
@@ -12885,10 +13402,29 @@ function bindEvents() {
             });
             return;
         }
+        const savedScanReceived = event.target.closest('[data-saved-dist-scan-received]');
+        if (savedScanReceived) {
+            event.preventDefault();
+            scanPreparedInvoicesForReceived(savedScanReceived);
+            return;
+        }
         const savedMonth = event.target.closest('[data-saved-dist-month]');
         if (savedMonth) {
             event.preventDefault();
             renderSavedToPrintMonthDetail(savedMonth.dataset.savedDistMonth || '');
+            return;
+        }
+        const savedMarkPrinted = event.target.closest('[data-saved-dist-mark-printed]');
+        if (savedMarkPrinted) {
+            event.preventDefault();
+            const state = billingWorkDistributionState || {};
+            const invoiceNo = String(savedMarkPrinted.dataset.savedDistMarkPrinted || '').trim();
+            const monthKey = String(savedMarkPrinted.dataset.savedDistMarkMonth || '').trim();
+            const row = (state.sourceRows || []).find((entry) => (
+                String(entry.invoice_no || '').trim() === invoiceNo
+                && String(entry.month_key || '').trim() === monthKey
+            ));
+            if (row) markPreparedInvoiceRowPrinted(row, savedMarkPrinted);
             return;
         }
         const receivedBack = event.target.closest('[data-received-detail-back]');
@@ -13067,6 +13603,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     restoreMatrixSortValue();
     initDefaults();
+    setupHorizontalTouchScroll();
     bindEvents();
     loadDashboard();
 });

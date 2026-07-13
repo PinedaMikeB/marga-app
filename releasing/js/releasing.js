@@ -2,10 +2,15 @@ if (!MargaAuth.requireAccess('releasing')) {
     throw new Error('Unauthorized access to Releasing module.');
 }
 
-const RELEASE_QUERY_LIMIT = 20000;
+const RELEASE_QUERY_LIMIT = 4000;
 const RELEASE_ROWS_PER_VIEW = 600;
 const RELEASE_FETCH_TIMEOUT_MS = 9000;
 const RELEASE_ROUTE_COLLECTION_LIMIT = 6000;
+const RELEASE_INITIAL_ROUTE_COLLECTION_LIMIT = 800;
+const RELEASE_QUERY_IN_CHUNK_SIZE = 10;
+const RELEASE_QUERY_IN_CONCURRENCY = 4;
+const RELEASE_FALLBACK_FETCH_CONCURRENCY = 12;
+const RELEASE_READ_HEADERS = { 'X-Marga-Offline-Cache': 'bypass' };
 const RELEASE_ZERO_DATES = new Set([
     '',
     '0000-00-00',
@@ -70,6 +75,9 @@ initializeDrPrintTemplateState();
 
 const releaseState = {
     loading: false,
+    loadVersion: 0,
+    progressTimer: null,
+    progressStartedAt: 0,
     rows: [],
     viewRows: [],
     createRows: [],
@@ -209,19 +217,37 @@ function bindReleaseControls() {
 async function loadReleasingData() {
     if (releaseState.loading) return;
     releaseState.loading = true;
+    const loadVersion = releaseState.loadVersion + 1;
+    releaseState.loadVersion = loadVersion;
     setReleaseStatus('Loading DR requests...');
+    startReleaseProgress({
+        percent: 6,
+        stage: 'Starting load',
+        note: 'Preparing the DR queue and checking live data sources.'
+    });
     setReleaseLoadingRows();
 
     try {
-        const [schedules, savedSchedules, printedSchedules, requestItems, finalDrs, branches, companies, machines, troubles, models] = await Promise.all([
+        setReleaseProgress({
+            percent: 18,
+            stage: 'Loading current requests',
+            note: 'Getting recent DR requests, saved routes, and live references.'
+        });
+        const [recentSchedules, recentSavedSchedules, recentPrintedSchedules, requestItems, finalDrs, branches, companies, machines, troubles, models] = await Promise.all([
             fetchLatestRows('tbl_schedule', RELEASE_QUERY_LIMIT).catch((error) => {
                 console.warn('tbl_schedule latest query unavailable for Releasing; using route/request fallbacks.', error);
                 return [];
             }),
-            fetchRouteSchedules('tbl_savedscheds').catch(() => []),
-            fetchRouteSchedules('tbl_printedscheds').catch(() => []),
-            fetchLatestRows('tbl_newfordr', RELEASE_QUERY_LIMIT).catch(() => []),
-            fetchLatestRows('tbl_finaldr', RELEASE_QUERY_LIMIT).catch(() => []),
+            fetchRouteSchedules('tbl_savedscheds', RELEASE_INITIAL_ROUTE_COLLECTION_LIMIT).catch(() => []),
+            fetchRouteSchedules('tbl_printedscheds', RELEASE_INITIAL_ROUTE_COLLECTION_LIMIT).catch(() => []),
+            fetchLatestRows('tbl_newfordr', RELEASE_QUERY_LIMIT).catch((error) => {
+                console.warn('tbl_newfordr latest query unavailable for Releasing.', error);
+                return [];
+            }),
+            fetchLatestRows('tbl_finaldr', RELEASE_QUERY_LIMIT).catch((error) => {
+                console.warn('tbl_finaldr latest query unavailable for Releasing.', error);
+                return [];
+            }),
             fetchOptionalCollection('tbl_branchinfo', 1200),
             fetchOptionalCollection('tbl_companylist', 1000),
             fetchOptionalCollection('tbl_machine', 1200),
@@ -229,7 +255,32 @@ async function loadReleasingData() {
             fetchOptionalCollection('tbl_model', 600)
         ]);
 
-        releaseState.raw = { schedules: mergeScheduleRows(schedules, savedSchedules, printedSchedules), requestItems, finalDrs, models };
+        setReleaseProgress({
+            percent: 46,
+            stage: 'Matching schedule references',
+            note: 'Finding exact schedule rows only for the request references already in the queue.'
+        });
+        const scheduleRefs = collectReleaseReferenceIds(requestItems);
+        const exactSchedules = scheduleRefs.length
+            ? await fetchSchedulesByReferenceIds(scheduleRefs).catch((error) => {
+                console.warn('Exact schedule hydration unavailable for Releasing.', error);
+                return [];
+            })
+            : [];
+
+        if (loadVersion !== releaseState.loadVersion) return;
+
+        setReleaseProgress({
+            percent: 68,
+            stage: 'Building DR rows',
+            note: 'Preparing the queue table, lookups, and printable item rows.'
+        });
+        releaseState.raw = {
+            schedules: mergeScheduleRows(recentSchedules, recentSavedSchedules, recentPrintedSchedules, exactSchedules),
+            requestItems,
+            finalDrs,
+            models
+        };
         releaseState.maps.branches = keyedMap(branches);
         releaseState.maps.companies = keyedMap(companies);
         releaseState.maps.machines = keyedMap(machines);
@@ -246,12 +297,52 @@ async function loadReleasingData() {
 
         const stamp = new Date().toLocaleString('en-PH', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
         setReleaseStatus(`Refreshed ${stamp}`);
+        setReleaseProgress({
+            percent: 84,
+            stage: 'Queue ready',
+            note: 'The first pass is loaded. Checking older route records in the background.'
+        });
+
+        void enrichReleasingDataInBackground(loadVersion);
     } catch (error) {
         console.error('Releasing load failed:', error);
         setReleaseStatus('Load failed. Try Refresh.', true);
         document.getElementById('releaseSubtitle').textContent = 'Unable to load DR requests.';
+        failReleaseProgress(error?.message || 'Unable to load DR requests.');
     } finally {
         releaseState.loading = false;
+    }
+}
+
+async function enrichReleasingDataInBackground(loadVersion) {
+    try {
+        setReleaseProgress({
+            percent: 90,
+            stage: 'Checking older routes',
+            note: 'Loading older saved and printed route records without blocking the first screen.'
+        });
+        const [savedSchedules, printedSchedules] = await Promise.all([
+            fetchRouteSchedules('tbl_savedscheds', RELEASE_ROUTE_COLLECTION_LIMIT).catch(() => []),
+            fetchRouteSchedules('tbl_printedscheds', RELEASE_ROUTE_COLLECTION_LIMIT).catch(() => [])
+        ]);
+        if (loadVersion !== releaseState.loadVersion) return;
+
+        const nextSchedules = mergeScheduleRows(releaseState.raw.schedules, savedSchedules, printedSchedules);
+        if (nextSchedules.length === releaseState.raw.schedules.length) {
+            completeReleaseProgress('Releasing queue finished loading. No extra older route rows were needed.');
+            return;
+        }
+
+        releaseState.raw.schedules = nextSchedules;
+        buildReleaseRows();
+        renderReleaseTables();
+
+        const stamp = new Date().toLocaleString('en-PH', { month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+        setReleaseStatus(`Refreshed ${stamp}`);
+        completeReleaseProgress('Releasing queue finished loading and background checks are complete.');
+    } catch (error) {
+        console.warn('Background Releasing route enrichment failed.', error);
+        failReleaseProgress(`Background route check failed: ${error?.message || error}`);
     }
 }
 
@@ -287,7 +378,9 @@ async function fetchCollectionLimited(collection, { pageSize = 500, maxPages = 1
         const params = new URLSearchParams({ pageSize: String(pageSize), key: FIREBASE_CONFIG.apiKey });
         params.set('orderBy', 'doc_id_desc');
         if (pageToken) params.set('pageToken', pageToken);
-        const response = await fetchWithTimeout(`${FIREBASE_CONFIG.baseUrl}/${collection}?${params.toString()}`, {}, RELEASE_FETCH_TIMEOUT_MS);
+        const response = await fetchWithTimeout(`${FIREBASE_CONFIG.baseUrl}/${collection}?${params.toString()}`, {
+            headers: RELEASE_READ_HEADERS
+        }, RELEASE_FETCH_TIMEOUT_MS);
         const payload = await response.json().catch(() => ({}));
         if (response.status === 404) break;
         if (!response.ok || payload?.error) throw new Error(payload?.error?.message || `Failed to load ${collection}`);
@@ -314,7 +407,7 @@ function mergeScheduleRows(...groups) {
 async function fetchLatestRows(collectionId, limit = 500, orderField = 'id') {
     const response = await fetchWithTimeout(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...RELEASE_READ_HEADERS },
         body: JSON.stringify({
             structuredQuery: {
                 from: [{ collectionId }],
@@ -332,6 +425,131 @@ async function fetchLatestRows(collectionId, limit = 500, orderField = 'id') {
         : [];
 }
 
+function uniqueNonBlankValues(values = []) {
+    const seen = new Set();
+    const unique = [];
+    values.forEach((value) => {
+        const key = String(value ?? '').trim();
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        unique.push(value);
+    });
+    return unique;
+}
+
+function chunkValues(values = [], size = 10) {
+    const chunks = [];
+    for (let index = 0; index < values.length; index += size) {
+        chunks.push(values.slice(index, index + size));
+    }
+    return chunks;
+}
+
+async function runStructuredQuery(structuredQuery, timeoutMs = RELEASE_FETCH_TIMEOUT_MS) {
+    const response = await fetchWithTimeout(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...RELEASE_READ_HEADERS },
+        body: JSON.stringify({ structuredQuery })
+    }, timeoutMs);
+    const payload = await response.json();
+    if (!response.ok || payload?.error || payload?.[0]?.error) {
+        throw new Error(payload?.error?.message || payload?.[0]?.error?.message || 'Query failed.');
+    }
+    return Array.isArray(payload)
+        ? payload.map((entry) => entry.document ? MargaUtils.parseFirestoreDoc(entry.document) : null).filter(Boolean)
+        : [];
+}
+
+async function queryIn(collectionId, fieldPath, values = [], options = {}) {
+    const uniqueValues = uniqueNonBlankValues(values);
+    if (!uniqueValues.length) return [];
+
+    const byDocId = new Map();
+    const chunks = chunkValues(uniqueValues, options.chunkSize || RELEASE_QUERY_IN_CHUNK_SIZE);
+    const concurrency = Math.max(1, Number(options.concurrency || RELEASE_QUERY_IN_CONCURRENCY));
+
+    for (let index = 0; index < chunks.length; index += concurrency) {
+        const batch = chunks.slice(index, index + concurrency);
+        const results = await Promise.all(batch.map((chunk) => runStructuredQuery({
+            from: [{ collectionId }],
+            where: {
+                fieldFilter: {
+                    field: { fieldPath },
+                    op: 'IN',
+                    value: {
+                        arrayValue: {
+                            values: chunk.map((value) => toFirestoreFieldValue(value))
+                        }
+                    }
+                }
+            }
+        })));
+
+        results.flat().forEach((row) => {
+            const key = String(row?._docId || row?.id || '').trim();
+            if (key && !byDocId.has(key)) byDocId.set(key, row);
+        });
+    }
+
+    return [...byDocId.values()];
+}
+
+async function fetchDocsWithLimitedConcurrency(collection, ids = [], concurrency = RELEASE_FALLBACK_FETCH_CONCURRENCY) {
+    const uniqueIds = uniqueNonBlankValues(ids.map((id) => String(id ?? '').trim()));
+    if (!uniqueIds.length) return [];
+
+    const docs = [];
+    for (let index = 0; index < uniqueIds.length; index += concurrency) {
+        const slice = uniqueIds.slice(index, index + concurrency);
+        const results = await Promise.all(slice.map((id) => fetchDoc(collection, id).catch(() => null)));
+        results.filter(Boolean).forEach((doc) => docs.push(doc));
+    }
+    return docs;
+}
+
+function collectReleaseReferenceIds(requestItems = []) {
+    return uniqueNonBlankValues(
+        (requestItems || [])
+            .map((item) => Number(item?.reference_id || 0))
+            .filter((value) => Number.isFinite(value) && value > 0)
+    );
+}
+
+async function fetchSchedulesByReferenceIds(referenceIds = []) {
+    const refs = uniqueNonBlankValues(
+        referenceIds
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value) && value > 0)
+    );
+    if (!refs.length) return [];
+
+    const merged = new Map();
+    const collections = ['tbl_schedule', 'tbl_savedscheds', 'tbl_printedscheds'];
+
+    for (const collection of collections) {
+        const queriedRows = await queryIn(collection, 'id', refs).catch(() => []);
+        queriedRows.forEach((row) => {
+            const key = String(row?.id || row?._docId || '').trim();
+            if (!key) return;
+            const current = merged.get(key) || {};
+            merged.set(key, { ...current, ...row });
+        });
+
+        const missingRefs = refs.filter((ref) => !merged.has(String(ref)));
+        if (!missingRefs.length) continue;
+
+        const fallbackRows = await fetchDocsWithLimitedConcurrency(collection, missingRefs);
+        fallbackRows.forEach((row) => {
+            const key = String(row?.id || row?._docId || '').trim();
+            if (!key) return;
+            const current = merged.get(key) || {};
+            merged.set(key, { ...current, ...row });
+        });
+    }
+
+    return Array.from(merged.values());
+}
+
 async function fetchWithTimeout(url, options = {}, timeoutMs = RELEASE_FETCH_TIMEOUT_MS) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -345,7 +563,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = RELEASE_FETCH_TIM
 async function queryEqualsLimit(collectionId, fieldPath, value, limit = 50) {
     const response = await fetchWithTimeout(`${FIREBASE_CONFIG.baseUrl}:runQuery?key=${FIREBASE_CONFIG.apiKey}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...RELEASE_READ_HEADERS },
         body: JSON.stringify({
             structuredQuery: {
                 from: [{ collectionId }],
@@ -368,7 +586,9 @@ async function queryEqualsLimit(collectionId, fieldPath, value, limit = 50) {
 }
 
 async function fetchDoc(collection, docId) {
-    const response = await fetchWithTimeout(`${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(String(docId))}?key=${FIREBASE_CONFIG.apiKey}`, {}, RELEASE_FETCH_TIMEOUT_MS);
+    const response = await fetchWithTimeout(`${FIREBASE_CONFIG.baseUrl}/${collection}/${encodeURIComponent(String(docId))}?key=${FIREBASE_CONFIG.apiKey}`, {
+        headers: RELEASE_READ_HEADERS
+    }, RELEASE_FETCH_TIMEOUT_MS);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.error) return null;
     return MargaUtils.parseFirestoreDoc(payload);
@@ -548,7 +768,12 @@ function normalizeReleaseItem(item, schedule, unitIndex = 1, totalQty = 1) {
     const key = rowKey(refNo, item, schedule, unitIndex);
     const draft = releaseState.detailDrafts.get(key) || {};
     const merged = { ...seed, ...draft };
-    const companyLabel = buildClientName(company, branch) || clean(item?.company || schedule?.company || '') || 'Unknown Client';
+    const companyLabel = buildClientName(company, branch)
+        || buildInlineClientName({
+            companyName: item?.company_name || item?.company || schedule?.company_name || schedule?.company || '',
+            branchName: item?.branch_name || schedule?.branch_name || ''
+        })
+        || 'Unknown Client';
     const requestDate = firstDate(schedule?.task_datetime, schedule?.original_sched, item?.tmestmp, item?.tmstmp);
     const serial = clean(merged.serial) || 'N/A';
     const notes = clean(merged.notes) || 'N/A';
@@ -1100,6 +1325,8 @@ async function openPulloutForm() {
     document.getElementById('releasePulloutByInput').value = currentUserLabel();
     document.getElementById('releasePulloutRepInput').value = '';
     document.getElementById('releasePulloutReceiptInput').value = payload.defaultReceipt;
+    document.getElementById('releasePulloutEndingMeterInput').value = '';
+    document.getElementById('releasePulloutNoMeterCheckbox').checked = false;
     document.getElementById('releasePulloutRemarksInput').value = payload.defaultRemarks;
     const now = new Date();
     document.getElementById('releasePulloutDateInput').value = localDateInputValue(now);
@@ -1200,6 +1427,9 @@ async function printAndSavePulloutForm(event) {
     const date = clean(document.getElementById('releasePulloutDateInput').value);
     const time = clean(document.getElementById('releasePulloutTimeInput').value);
     const receipt = clean(document.getElementById('releasePulloutReceiptInput').value);
+    const endingMeterRaw = clean(document.getElementById('releasePulloutEndingMeterInput').value);
+    const noMeterAvailable = document.getElementById('releasePulloutNoMeterCheckbox').checked;
+    const endingMeter = noMeterAvailable ? 'NO_METER' : (endingMeterRaw || '');
     const remarks = clean(document.getElementById('releasePulloutRemarksInput').value);
     if (!pulledBy || !rep || !date || !time || !receipt) {
         alert('Pulled out by, customer representative, date/time, and pickup receipt are required.');
@@ -1209,7 +1439,7 @@ async function printAndSavePulloutForm(event) {
     if (!printWindow) return;
     const button = event.submitter;
     if (button) button.disabled = true;
-    const completed = { ...payload, pulledBy, customerRep: rep, eventDate: date, eventTime: time, pickupReceipt: receipt, remarks };
+    const completed = { ...payload, pulledBy, customerRep: rep, eventDate: date, eventTime: time, pickupReceipt: receipt, endingMeter, remarks };
     try {
         releaseState.lastPrintedPulloutSignature = payload.signature;
         writePrintHtmlDocument(printWindow, buildPulloutPrintDocument(completed));
@@ -1283,6 +1513,7 @@ async function savePulloutPendingReturns(payload) {
         const previousCustomer = resolveMachineCustomer(machine, item.row);
         const previousClientId = Number(machine.client_id || machine.branch_id || item.row.branchId || 0) || 0;
         const previousCompanyId = Number(machine.company_id || item.row.schedule?.company_id || 0) || 0;
+        const endingMeterValue = payload.endingMeter || '';
         const fields = {
             client_id: 0,
             branch_id: 0,
@@ -1301,6 +1532,8 @@ async function savePulloutPendingReturns(payload) {
             return_previous_company_id: previousCompanyId,
             return_logged_at: now,
             return_logged_by: currentUserLabel(),
+            return_ending_meter: endingMeterValue,
+            return_ending_meter_status: endingMeterValue === 'NO_METER' ? 'no_meter_available' : (endingMeterValue ? 'captured_at_pullout' : 'pending'),
             production_customer_unlinked_at: now,
             production_customer_unlinked_by: currentUserLabel(),
             tmestamp: now
@@ -1320,6 +1553,8 @@ async function savePulloutPendingReturns(payload) {
             pulled_out_by: payload.pulledBy,
             customer_representative: payload.customerRep,
             pickup_receipt: payload.pickupReceipt,
+            ending_meter: endingMeterValue,
+            ending_meter_status: endingMeterValue === 'NO_METER' ? 'no_meter_available' : (endingMeterValue ? 'captured_at_pullout' : 'pending'),
             event_at: `${payload.eventDate} ${payload.eventTime}:00`,
             remarks: payload.remarks
         });
@@ -2272,6 +2507,8 @@ function buildPulloutPrintDocument(payload) {
                     <div class="field"><span class="label">Address</span>${escapeHtml(payload.address || '')}</div>
                     <div class="field"><span class="label">Pulled Out By</span>${escapeHtml(payload.pulledBy)}</div>
                     <div class="field"><span class="label">Released By / Customer Rep</span>${escapeHtml(payload.customerRep)}</div>
+                    <div class="field"><span class="label">Ending Meter (Old Machine)</span>${payload.endingMeter === 'NO_METER' ? 'No meter available — machine down' : (escapeHtml(payload.endingMeter || '') || '(not recorded)')}</div>
+                    <div class="field"><span class="label">&nbsp;</span>&nbsp;</div>
                 </div>
             </div>
             <div class="section">
@@ -2427,6 +2664,72 @@ function setReleaseLoadingRows() {
     document.getElementById('releaseCreateBody').innerHTML = '<tr class="release-empty-row"><td colspan="7">No items added to DR yet.</td></tr>';
 }
 
+function startReleaseProgress({ percent = 0, stage = 'Loading', note = '' } = {}) {
+    releaseState.progressStartedAt = Date.now();
+    if (releaseState.progressTimer) window.clearInterval(releaseState.progressTimer);
+    releaseState.progressTimer = window.setInterval(() => {
+        const track = document.getElementById('releaseProgressTrack');
+        if (!track) return;
+        track.dataset.elapsedSeconds = String(Math.max(0, Math.round((Date.now() - releaseState.progressStartedAt) / 1000)));
+        const meta = document.getElementById('releaseProgressMeta');
+        if (!meta) return;
+        const currentPercent = Number(track.getAttribute('aria-valuenow') || 0);
+        meta.textContent = `${Math.max(0, Math.min(100, Math.round(currentPercent)))}% • ${track.dataset.elapsedSeconds}s`;
+    }, 1000);
+    setReleaseProgress({ percent, stage, note, isIndeterminate: false });
+}
+
+function setReleaseProgress({ percent = 0, stage = 'Loading', note = '', isIndeterminate = false, isError = false, isComplete = false } = {}) {
+    const shell = document.getElementById('releaseProgressShell');
+    const stageNode = document.getElementById('releaseProgressStage');
+    const metaNode = document.getElementById('releaseProgressMeta');
+    const noteNode = document.getElementById('releaseProgressNote');
+    const track = document.getElementById('releaseProgressTrack');
+    const bar = document.getElementById('releaseProgressBar');
+    if (!shell || !stageNode || !metaNode || !noteNode || !track || !bar) return;
+
+    const clamped = Math.max(0, Math.min(100, Number(percent) || 0));
+    const elapsedSeconds = releaseState.progressStartedAt
+        ? Math.max(0, Math.round((Date.now() - releaseState.progressStartedAt) / 1000))
+        : 0;
+
+    shell.classList.toggle('is-error', Boolean(isError));
+    shell.classList.toggle('is-complete', Boolean(isComplete));
+    track.classList.toggle('is-indeterminate', Boolean(isIndeterminate));
+    stageNode.textContent = stage;
+    noteNode.textContent = note || 'Loading Releasing module...';
+    metaNode.textContent = `${Math.round(clamped)}% • ${elapsedSeconds}s`;
+    track.setAttribute('aria-valuenow', String(clamped));
+    track.setAttribute('aria-valuetext', `${stage} ${Math.round(clamped)} percent`);
+    bar.style.width = `${clamped}%`;
+}
+
+function completeReleaseProgress(note = 'Releasing module is ready.') {
+    setReleaseProgress({
+        percent: 100,
+        stage: 'Ready',
+        note,
+        isComplete: true
+    });
+    if (releaseState.progressTimer) {
+        window.clearInterval(releaseState.progressTimer);
+        releaseState.progressTimer = null;
+    }
+}
+
+function failReleaseProgress(note = 'Loading failed.') {
+    setReleaseProgress({
+        percent: 100,
+        stage: 'Needs attention',
+        note,
+        isError: true
+    });
+    if (releaseState.progressTimer) {
+        window.clearInterval(releaseState.progressTimer);
+        releaseState.progressTimer = null;
+    }
+}
+
 function setReleaseStatus(message, isError = false) {
     const pill = document.getElementById('releaseStatusPill');
     pill.textContent = message;
@@ -2455,6 +2758,17 @@ function buildClientName(company, branch) {
     const branchKey = normalizeLoose(branchName);
     if (branchKey.includes(companyKey)) return branchName;
     return `${companyName} - ${branchName}`;
+}
+
+function buildInlineClientName({ companyName = '', branchName = '' } = {}) {
+    const cleanCompany = clean(companyName);
+    const cleanBranch = clean(branchName);
+    if (!cleanCompany) return cleanBranch;
+    if (!cleanBranch || cleanBranch.toLowerCase() === 'main') return cleanCompany;
+    const companyKey = normalizeLoose(cleanCompany);
+    const branchKey = normalizeLoose(cleanBranch);
+    if (branchKey.includes(companyKey)) return cleanBranch;
+    return `${cleanCompany} - ${cleanBranch}`;
 }
 
 function compactAddress(value) {

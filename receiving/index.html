@@ -113,6 +113,15 @@
                         <label class="receiving-field"><span>Received Date</span><input type="date" id="receivedDateInput" required></label>
                         <label class="receiving-field"><span>Received Time</span><input type="time" id="receivedTimeInput" required></label>
                         <label class="receiving-field"><span>Condition</span><select id="receivedConditionInput"><option value="customer_pullout">Customer Pullout</option><option value="brand_new_waste_tank">Brand New / Waste Tank</option><option value="damaged">Damaged</option></select></label>
+                        <label class="receiving-field">
+                            <span>Ending Meter (Old Machine)</span>
+                            <input type="text" id="receivedEndingMeterInput" inputmode="numeric" placeholder="e.g. 45231">
+                        </label>
+                        <label class="receiving-field" style="display:flex;align-items:center;gap:8px;padding-top:20px;">
+                            <input type="checkbox" id="receivedNoMeterCheckbox" style="width:auto;margin:0;">
+                            <span>No meter available</span>
+                        </label>
+                        <div class="receiving-context" id="receivedMeterContext" style="display:none;font-size:12px;color:#0f6df2;margin-top:2px;"></div>
                         <label class="receiving-field receiving-field-full"><span>Remarks</span><textarea id="receivedRemarksInput" rows="2"></textarea></label>
                         <button type="submit" class="receiving-save">Receive to For Overhauling</button>
                     </form>
@@ -136,10 +145,10 @@
 
     <script src="../shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
     <script src="../shared/js/utils.js"></script>
-    <script src="../shared/js/auth.js?v=20260518-login-permissions-2"></script>
-    <script src="../shared/js/offline-sync.js?v=20260601-local-postgres-live-1"></script>
+    <script src="../shared/js/auth.js?v=20260706-login-alias-fix-1"></script>
+    <script src="../shared/js/offline-sync.js?v=20260703-offline-queue-self-heal-1"></script>
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
-    <script src="js/receiving.js"></script>
+    <script src="js/receiving.js?v=20260713-meter-handoff-1"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@
     const ZERO_DATETIME = '0000-00-00 00:00:00';
     const EMPTY_DATES = new Set(['', ZERO_DATETIME, 'null', 'undefined', 'invalid date']);
 
-    const TIME_RECORDS_FORM_VERSION = '20260616-ot-form-5';
+    const TIME_RECORDS_FORM_VERSION = '20260708-fix-time-in-out-1';
 
     const modalState = {
         staffId: 0,
@@ -168,6 +168,28 @@
 
     function isOvertimeAdjustment(row = {}) {
         return String(row.request_type || '').trim() === 'request_ot';
+    }
+
+    function isDeleteDayAdjustment(row = {}) {
+        return String(row.request_type || '').trim() === 'delete_day';
+    }
+
+    function isTimeAdjustment(row = {}) {
+        return !isDeleteDayAdjustment(row) && !isOvertimeAdjustment(row);
+    }
+
+    function buildTimeAdjustmentSummary(row = {}) {
+        const requestedIn = formatTime(row.requested_time_in);
+        const requestedOut = formatTime(row.requested_time_out);
+        const hasRequestedIn = Boolean(normalizeDateTime(row.requested_time_in));
+        const hasRequestedOut = Boolean(normalizeDateTime(row.requested_time_out));
+        const parts = [];
+        if (hasRequestedIn) parts.push(`In ${requestedIn}`);
+        if (hasRequestedOut) parts.push(`Out ${requestedOut}`);
+        const location = String(row.requested_location_type || '').trim();
+        const suffix = hasRequestedIn && location ? ` (${location})` : '';
+        if (!parts.length) return `Adjust time${suffix}`;
+        return `Adjust ${parts.join(' · ')}${suffix}`;
     }
 
     function summarizeRequestedOt(adjustments = [], staffId = 0, period = {}) {
@@ -525,10 +547,14 @@
                             <span>Reason</span>
                             <textarea id="attendanceTimeRecordsReason" required></textarea>
                         </label>
-                        <div id="attendanceTimeRecordsFixTimeInWrap" hidden>
+                        <div id="attendanceTimeRecordsFixTimeWrap" hidden>
                             <label>
                                 <span>Requested Time In</span>
                                 <input type="time" id="attendanceTimeRecordsTimeIn" name="requested_time_in">
+                            </label>
+                            <label>
+                                <span>Requested Time Out</span>
+                                <input type="time" id="attendanceTimeRecordsTimeOut" name="requested_time_out">
                             </label>
                         </div>
                         <div id="attendanceTimeRecordsLocationWrap" hidden>
@@ -652,10 +678,10 @@
             delete form.dataset.formMode;
             delete form.dataset.formDate;
         }
-        const fixTimeInWrap = document.getElementById('attendanceTimeRecordsFixTimeInWrap');
+        const fixTimeWrap = document.getElementById('attendanceTimeRecordsFixTimeWrap');
         const locationWrap = document.getElementById('attendanceTimeRecordsLocationWrap');
         const otWrap = document.getElementById('attendanceTimeRecordsOtWrap');
-        if (fixTimeInWrap) fixTimeInWrap.hidden = true;
+        if (fixTimeWrap) fixTimeWrap.hidden = true;
         if (locationWrap) locationWrap.hidden = true;
         if (otWrap) otWrap.hidden = true;
     }
@@ -685,7 +711,7 @@
     function resolveActiveFormMode() {
         const form = document.getElementById('attendanceTimeRecordsForm');
         const otWrap = document.getElementById('attendanceTimeRecordsOtWrap');
-        const fixWrap = document.getElementById('attendanceTimeRecordsFixTimeInWrap');
+        const fixWrap = document.getElementById('attendanceTimeRecordsFixTimeWrap');
         const title = document.getElementById('attendanceTimeRecordsFormTitle');
         const otTimes = readOtRequestTimes();
         if (isElementVisible(otWrap) || /overtime/i.test(String(title?.textContent || ''))) {
@@ -694,7 +720,7 @@
         if (otTimes.fromTime && otTimes.toTime && !isElementVisible(fixWrap)) {
             return 'request_ot';
         }
-        if (isElementVisible(fixWrap)) return 'adjust_time_in';
+        if (isElementVisible(fixWrap)) return 'adjust_time';
         const stored = String(form?.dataset.formMode || modalState.formMode || '').trim();
         if (stored) return stored;
         return '';
@@ -711,9 +737,10 @@
         const form = document.getElementById('attendanceTimeRecordsForm');
         const title = document.getElementById('attendanceTimeRecordsFormTitle');
         const dateLabel = document.getElementById('attendanceTimeRecordsFormDate');
-        const fixTimeInWrap = document.getElementById('attendanceTimeRecordsFixTimeInWrap');
+        const fixTimeWrap = document.getElementById('attendanceTimeRecordsFixTimeWrap');
         const locationWrap = document.getElementById('attendanceTimeRecordsLocationWrap');
         const timeInInput = document.getElementById('attendanceTimeRecordsTimeIn');
+        const timeOutInput = document.getElementById('attendanceTimeRecordsTimeOut');
         const locationInput = document.getElementById('attendanceTimeRecordsLocation');
         const otWrap = document.getElementById('attendanceTimeRecordsOtWrap');
         const otFromInput = document.getElementById('attendanceTimeRecordsOtFrom');
@@ -724,19 +751,21 @@
         form.dataset.formDate = dateKey;
         title.textContent = mode === 'delete_day'
             ? 'Request Delete'
-            : (mode === 'request_ot' ? 'Request Overtime' : 'Fix Time In');
+            : (mode === 'request_ot' ? 'Request Overtime' : 'Fix Time');
         dateLabel.textContent = `Attendance date: ${window.MargaPayrollCutoff.formatPayrollPeriodDate(dateKey)}`;
-        const isTimeInFix = mode === 'adjust_time_in';
+        const isTimeFix = mode === 'adjust_time';
         const isOtRequest = mode === 'request_ot';
-        if (fixTimeInWrap) fixTimeInWrap.hidden = !isTimeInFix;
-        if (locationWrap) locationWrap.hidden = !isTimeInFix;
+        if (fixTimeWrap) fixTimeWrap.hidden = !isTimeFix;
+        if (locationWrap) locationWrap.hidden = !isTimeFix;
         if (otWrap) otWrap.hidden = !isOtRequest;
-        if (timeInInput) timeInInput.required = isTimeInFix;
-        if (locationInput) locationInput.required = isTimeInFix;
+        if (timeInInput) timeInInput.required = false;
+        if (timeOutInput) timeOutInput.required = false;
+        if (locationInput) locationInput.required = false;
         if (otFromInput) otFromInput.required = isOtRequest;
         if (otToInput) otToInput.required = isOtRequest;
         document.getElementById('attendanceTimeRecordsReason').value = '';
         if (timeInInput) timeInInput.value = '';
+        if (timeOutInput) timeOutInput.value = '';
         if (locationInput) locationInput.value = '';
         if (otFromInput) otFromInput.value = '';
         if (otToInput) otToInput.value = '';
@@ -852,6 +881,7 @@
             request_type: body.request_type || 'adjust_time_in',
             reason: body.reason || '',
             requested_time_in: body.requested_time_in || '',
+            requested_time_out: body.requested_time_out || '',
             requested_location_type: body.requested_location_type || '',
             ot_from_time: body.ot_from_time || '',
             ot_to_time: body.ot_to_time || '',
@@ -902,21 +932,32 @@
         const formDate = resolveActiveFormDate();
         const reason = String(document.getElementById('attendanceTimeRecordsReason')?.value || '').trim();
         const requestedTimeIn = readTimeFieldValue(document.getElementById('attendanceTimeRecordsTimeIn'));
+        const requestedTimeOut = readTimeFieldValue(document.getElementById('attendanceTimeRecordsTimeOut'));
         const requestedLocationType = String(document.getElementById('attendanceTimeRecordsLocation')?.value || '').trim();
         const otTimes = readOtRequestTimes();
         const imageInput = document.getElementById('attendanceTimeRecordsImage');
         const isOtRequest = isOtSubmissionIntent(otTimes, formMode);
         const isDeleteDay = !isOtRequest && formMode === 'delete_day';
-        const isTimeInFix = !isOtRequest && !isDeleteDay && formMode === 'adjust_time_in';
+        const isTimeFix = !isOtRequest && !isDeleteDay && formMode === 'adjust_time';
         if (!reason) throw new Error('Reason is required.');
         if (!formDate) throw new Error('Attendance date is required.');
         if (isOtRequest) {
             if (!otTimes.fromTime) throw new Error('OT from time is required.');
             if (!otTimes.toTime) throw new Error('OT to time is required.');
             if (otTimes.hours <= 0) throw new Error('OT to time must be later than from time.');
-        } else if (isTimeInFix) {
-            if (!requestedTimeIn) throw new Error('Requested time-in is required.');
-            if (!requestedLocationType) throw new Error('Location is required.');
+        } else if (isTimeFix) {
+            if (!requestedTimeIn && !requestedTimeOut) throw new Error('Enter a requested time in, time out, or both.');
+            if (requestedTimeIn && !requestedLocationType) throw new Error('Location is required when adjusting time in.');
+            const requestedInDb = requestedTimeIn ? `${formDate} ${requestedTimeIn}:00` : '';
+            const requestedOutDb = requestedTimeOut ? `${formDate} ${requestedTimeOut}:00` : '';
+            if (requestedInDb && requestedOutDb && requestedOutDb <= requestedInDb) {
+                throw new Error('Requested time out must be later than requested time in.');
+            }
+            const sourceRow = modalState.rows.find((row) => String(row.attendance_date || '').trim() === formDate) || {};
+            const currentTimeIn = normalizeDateTime(sourceRow.time_in);
+            if (!requestedInDb && requestedOutDb && currentTimeIn && requestedOutDb <= currentTimeIn) {
+                throw new Error('Requested time out must be later than the current time in.');
+            }
         }
         const imageDataUrl = await readImageDataUrl(imageInput, { required: !isOtRequest && !isDeleteDay });
         const period = normalizePeriodState(modalState.period || getCurrentPeriod());
@@ -925,6 +966,9 @@
         const requestedBy = String(user.name || user.username || modalState.staffName || '').trim();
         const timeInDb = requestedTimeIn
             ? `${formDate} ${requestedTimeIn}:00`
+            : '';
+        const timeOutDb = requestedTimeOut
+            ? `${formDate} ${requestedTimeOut}:00`
             : '';
         const otHours = otTimes.hours;
         const submitBtn = document.getElementById('attendanceTimeRecordsSubmitBtn');
@@ -939,6 +983,7 @@
             request_type: requestType,
             reason,
             requested_time_in: isOtRequest ? '' : timeInDb,
+            requested_time_out: isOtRequest ? '' : timeOutDb,
             requested_location_type: isOtRequest ? '' : requestedLocationType,
             ot_from_time: otTimes.fromTime ? `${formDate} ${otTimes.fromTime}:00` : '',
             ot_to_time: otTimes.toTime ? `${formDate} ${otTimes.toTime}:00` : '',
@@ -1014,22 +1059,27 @@
         `;
     }
 
-    function renderTableBody(tbody, dateRows, pendingByDate, interactive = true, otByDate = new Map()) {
+    function renderTableBody(tbody, dateRows, pendingByDate, interactive = true, otByDate = new Map(), options = {}) {
         if (!tbody) return;
         tbody.innerHTML = dateRows.map(({ dateKey, row }) => {
             const pending = pendingByDate.get(dateKey);
             const otAdjustment = otByDate.get(dateKey);
             const pendingBadge = pending && !isOvertimeAdjustment(pending)
-                ? `<span class="attendance-time-records-badge">${pending.request_type === 'delete_day' ? 'Delete pending' : 'Time-in pending'}</span>`
+                ? `<span class="attendance-time-records-badge">${isDeleteDayAdjustment(pending) ? 'Delete pending' : 'Time adjustment pending'}</span>`
                 : '';
             const otBadge = otAdjustment ? renderOtAdjustmentBadge(otAdjustment) : '';
+            const hrRemoveOtAction = !interactive && options.allowOtRemoval && otAdjustment
+                ? `<div class="attendance-time-records-actions">
+                        <button type="button" class="btn btn-secondary btn-sm" data-remove-ot-adjustment="${escapeHtml(otAdjustment.id)}">Remove OT</button>
+                   </div>`
+                : '';
             const actions = interactive
                 ? `<div class="attendance-time-records-actions">
-                        <button type="button" class="btn btn-secondary btn-sm" data-attendance-adjust="${dateKey}">Fix Time In</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-attendance-adjust="${dateKey}">Fix Time</button>
                         <button type="button" class="btn btn-secondary btn-sm" data-attendance-ot="${dateKey}">Request OT</button>
                         <button type="button" class="btn btn-secondary btn-sm" data-attendance-delete="${dateKey}">Delete</button>
                    </div>`
-                : '<span class="attendance-time-records-status">Read only</span>';
+                : (hrRemoveOtAction || '<span class="attendance-time-records-status">Read only</span>');
             const hasAttendance = Boolean(normalizeDateTime(row.time_in));
             const absentClass = hasAttendance ? '' : ' is-absent-day';
             return `
@@ -1044,7 +1094,7 @@
         }).join('');
         if (interactive) {
             tbody.querySelectorAll('[data-attendance-adjust]').forEach((button) => {
-                button.addEventListener('click', () => showForm(button.dataset.attendanceAdjust, 'adjust_time_in'));
+                button.addEventListener('click', () => showForm(button.dataset.attendanceAdjust, 'adjust_time'));
             });
             tbody.querySelectorAll('[data-attendance-ot]').forEach((button) => {
                 button.addEventListener('click', () => showForm(button.dataset.attendanceOt, 'request_ot'));
@@ -1053,6 +1103,20 @@
                 button.addEventListener('click', () => {
                     if (!window.confirm('Send a delete request to HR for this attendance day?')) return;
                     showForm(button.dataset.attendanceDelete, 'delete_day');
+                });
+            });
+        } else if (options.allowOtRemoval) {
+            tbody.querySelectorAll('[data-remove-ot-adjustment]').forEach((button) => {
+                button.addEventListener('click', async () => {
+                    if (!window.confirm('Remove this OT from payroll and time records?')) return;
+                    try {
+                        await removeOtAdjustment(button.dataset.removeOtAdjustment);
+                        await refreshHrAdjustments();
+                        await refreshHrRecords();
+                        alert('OT removed.');
+                    } catch (error) {
+                        alert(error?.message || 'Unable to remove OT.');
+                    }
                 });
             });
         }
@@ -1298,7 +1362,8 @@
             buildDateRows(matchedRows.length ? matchedRows : rows, period),
             new Map(),
             false,
-            otByDate
+            otByDate,
+            { allowOtRemoval: true }
         );
         syncPayrollPeriodSelect('hrTimeRecordsPeriodSelect', period);
     }
@@ -1355,6 +1420,45 @@
         return payload;
     }
 
+    async function verifyCurrentAdminPassword(password) {
+        const auth = window.MargaAuth;
+        const sessionUser = auth?.getUser?.() || {};
+        const ident = String(sessionUser.email || sessionUser.username || '').trim();
+        if (!ident || typeof auth?.findUserByEmailOrUsername !== 'function' || typeof auth?.verifyPassword !== 'function') {
+            throw new Error('Current admin account could not be verified.');
+        }
+        const userRecord = await auth.findUserByEmailOrUsername(ident);
+        if (!userRecord) throw new Error('Current admin account could not be verified.');
+        const valid = await auth.verifyPassword(userRecord, password);
+        if (!valid) throw new Error('Admin password is incorrect.');
+        return userRecord;
+    }
+
+    async function removeOtAdjustment(adjustmentId) {
+        const password = await promptAdminPassword();
+        const userRecord = await verifyCurrentAdminPassword(password);
+        const user = window.MargaAuth?.getUser?.() || {};
+        const response = await fetch(getMargabaseAdminUrl('/admin/hr-attendance-adjustment/remove-ot'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id: adjustmentId,
+                password,
+                reviewed_by: String(user.name || user.username || 'hr-admin').trim(),
+                reviewed_by_email: String(userRecord?.email || user.email || '').trim()
+            })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.error) {
+            const message = payload?.error?.message || `Remove OT failed with HTTP ${response.status}`;
+            if (/unsupported margabase firestore compatibility path/i.test(message) || response.status === 404) {
+                throw new Error('Remove OT API is not available yet. Restart the Margabase API service, then try again.');
+            }
+            throw new Error(message);
+        }
+        return payload;
+    }
+
     function imageLink(row = {}) {
         const inline = String(row.supporting_image_data_url || '').trim();
         if (inline.startsWith('data:image/')) {
@@ -1394,7 +1498,7 @@
                 ? 'Delete day'
                 : (row.request_type === 'request_ot'
                     ? `OT ${formatTime(row.ot_from_time)} to ${formatTime(row.ot_to_time)} (${overtimeHoursFromAdjustment(row).toFixed(2)} hr)`
-                    : `Adjust to ${formatTime(row.requested_time_in)} (${row.requested_location_type || '--'})`);
+                    : buildTimeAdjustmentSummary(row));
             const detailLine = row.request_type === 'request_ot'
                 ? '<div class="attendance-time-records-status">Approved OT flows into payroll when approved</div>'
                 : `<div class="attendance-time-records-status">Current in ${formatTime(row.before_time_in)} · out ${formatTime(row.before_time_out)}</div>`;
@@ -1448,12 +1552,14 @@
         openModal,
         mountHrPane,
         getMargabaseAdminUrl,
+        buildTimeAdjustmentSummary,
         locationLabelFromRow,
         computeTotals,
         queryAttendanceRange,
         fetchAdjustments,
         approveAdjustment,
         rejectAdjustment,
+        removeOtAdjustment,
         formatTime,
         overtimeHoursFromAdjustment,
         summarizeRequestedOt,

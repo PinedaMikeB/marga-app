@@ -887,7 +887,7 @@ async function allocateNextNumericId(collection) {
     return nextId;
 }
 
-async function saveNewRequestReleaseItems({ scheduleId, branchId, items, nowIso, machineId, scheduleTechId }) {
+async function saveNewRequestReleaseItems({ scheduleId, branchId, items, nowIso, machineId, scheduleTechId, companyName = '', branchName = '', serialNumber = '', machineModel = '' }) {
     if (!Array.isArray(items) || !items.length) return 0;
     let nextItemId = await allocateNextNumericId('tbl_newfordr');
 
@@ -916,13 +916,16 @@ async function saveNewRequestReleaseItems({ scheduleId, branchId, items, nowIso,
             close_date: ZERO_DATETIME,
             description: itemRstd,
             remarks: summary,
+            company: companyName,
+            company_name: companyName,
+            branch_name: branchName,
             category,
             release_category: category,
             release_request_unit: unit,
             release_brand: '',
-            release_model: '',
+            release_model: machineModel,
             release_description: itemRstd,
-            release_serial: '',
+            release_serial: serialNumber,
             release_notes: summary,
             release_details_added: 0,
             releasing_finaldr_id: 0,
@@ -1684,8 +1687,8 @@ function getScheduleLookups(row) {
 
 function getAssignableStaffList() {
     const sourceEmployees = [...opsCache.employees.values()].filter(Boolean);
-    if (window.MargaUtils?.filterEmployeeAssignmentOptions) {
-        return MargaUtils.filterEmployeeAssignmentOptions(sourceEmployees, { positions: opsCache.positions })
+    if (window.MargaUtils?.getActiveAssignmentEmployees) {
+        return MargaUtils.getActiveAssignmentEmployees(sourceEmployees, { positions: opsCache.positions })
             .map((staff) => ({
                 id: Number(staff.id || 0),
                 role: staff.designation || staff.role || 'Staff',
@@ -2655,6 +2658,9 @@ async function saveNewServiceRequest() {
 
     const branch = opsCache.branches.get(String(branchId)) || null;
     const areaId = Number(branch?.area_id || 0);
+    const company = opsCache.companies.get(String(companyId)) || null;
+    const companyName = String(company?.companyname || company?.business_style || document.getElementById('newReqCompanySearch')?.value || '').trim();
+    const branchName = String(branch?.branchname || branch?.branch || branch?.departmentname || document.getElementById('newReqBranchSearch')?.value || '').trim();
     const bridgeUpdatedAt = new Date().toISOString();
     const bridgeUpdatedBy = Number(user?.staff_id || 0) || 0;
     const matchedMachine = opsState.newRequestMachine || null;
@@ -2672,17 +2678,24 @@ async function saveNewServiceRequest() {
 
     const base = {
         id: nextId,
+        source_module: 'service',
         company_id: companyId,
         branch_id: branchId,
+        company_name: companyName,
+        branch_name: branchName,
         area_id: areaId,
         serial: matchedMachineId || 0,
+        field_serial_selected: serialNumber,
+        machine_model: String(matchedMachine?.description || graphRow?.model || opsState.newRequestGraphRow?.model || '').trim(),
         caller: caller || '-',
         phone_number: phone || '',
         purpose_id: purposeId,
+        purpose: getPurposeLabel(purposeId),
         task_datetime: taskDatetime,
         original_sched: taskDatetime,
         tech_id: assigneeId || 0,
         trouble_id: troubleId,
+        trouble: String(opsCache.troubles.get(String(troubleId))?.trouble || '').trim(),
         remarks: remarks || '',
         status: Number.isFinite(statusValue) ? statusValue : 1,
         isongoing: 0,
@@ -2707,7 +2720,7 @@ async function saveNewServiceRequest() {
             release_request_unit: releaseUnit,
             release_request_summary: releaseSummary,
             release_request_qty: releaseQty,
-            releasing_pending_qty: 0,
+            releasing_pending_qty: releaseQty,
             releasing_dr_done: 0
         } : {})
     };
@@ -2760,7 +2773,11 @@ async function saveNewServiceRequest() {
                 items: releaseItems,
                 nowIso: bridgeUpdatedAt,
                 machineId: matchedMachineId,
-                scheduleTechId: assigneeId || 0
+                scheduleTechId: assigneeId || 0,
+                companyName,
+                branchName,
+                serialNumber,
+                machineModel: String(matchedMachine?.description || graphRow?.model || opsState.newRequestGraphRow?.model || '').trim()
             });
         }
         let contactMessage = '';

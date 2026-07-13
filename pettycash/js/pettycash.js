@@ -79,6 +79,8 @@ const FIELD_REQUEST_CATEGORIES = [
     'Toll',
     'Parking',
     'Transportation / fare',
+    'Motorcycle maintenance',
+    'Medical assistance',
     'Parts / supplies',
     'Delivery / courier',
     'Emergency purchase',
@@ -109,6 +111,8 @@ const EXPENSE_GROUPS = [
     { id: 'commute_fare', label: 'Commute Fare', accountId: 'commute_fare_expense' },
     { id: 'parking', label: 'Parking', accountId: 'parking_expense' },
     { id: 'meal_allowance', label: 'Meal Allowance', accountId: 'meal_allowance_expense_field_operations' },
+    { id: 'motorcycle_maintenance', label: 'Motorcycle Maintenance', accountId: 'repairs_maintenance_motorcycles' },
+    { id: 'medical_assistance', label: 'Medical Assistance', accountId: 'medical_assistance_expense' },
     { id: 'bible_study_snacks', label: 'Bible Study Snacks', accountId: 'staff_welfare_snacks_expense' },
     { id: 'owner_withdrawal', label: "Owner's Withdrawal", accountId: 'owners_drawings' },
     { id: 'office_supplies', label: 'Office Supplies', accountId: 'office_supplies_expense' },
@@ -235,6 +239,71 @@ const PETTY_CASH_STATE = {
     settings: normalizeSettings(DEFAULT_SETTINGS)
 };
 
+const PETTY_CASH_LOADING = {
+    percent: 8,
+    readyTimer: null
+};
+
+const FIELD_REQUEST_SUMMARY_FIELDS = [
+    'id',
+    'requestId',
+    'expenseId',
+    'sourceModule',
+    'requestType',
+    'staffId',
+    'staffName',
+    'requestedBy',
+    'departmentTeam',
+    'requestDate',
+    'reportDate',
+    'dateOfExpense',
+    'dateSubmitted',
+    'amount',
+    'approvedAmount',
+    'amountLiquidated',
+    'cashAdvanceAmountRequested',
+    'expenseCategory',
+    'description',
+    'notes',
+    'clientCompanyVisited',
+    'branchLocation',
+    'serviceTicketId',
+    'machineSerialNumber',
+    'jobOrderReferenceNumber',
+    'receiptNumber',
+    'orSiNumber',
+    'supplierStoreName',
+    'receiptDate',
+    'receiptAmount',
+    'status',
+    'paymentStatus',
+    'liquidationStatus',
+    'approvedAt',
+    'approvedBy',
+    'deletedAt',
+    'deletedBy',
+    'expectedLiquidationDate',
+    'handlerRemarks',
+    'approvalRemarks',
+    'rejectionReason',
+    'correctionReason',
+    'deletionReason',
+    'payoutBatchId',
+    'paymentMethodRequested',
+    'staffGcashNumber',
+    'staffBankName',
+    'staffBankAccountName',
+    'staffBankAccountNumber',
+    'backupPayoutMethod',
+    'originalReceiptSubmitted',
+    'originalReceiptSubmittedDate',
+    'receiptVerificationStatus',
+    'receiptVerifiedBy',
+    'proofOfTransferImageUrl',
+    'createdAt',
+    'updatedAt'
+];
+
 let pettyCashCloudSyncPromise = null;
 let pettyCashCloudSyncQueued = false;
 let lastFocusedSupplierInput = null;
@@ -246,6 +315,7 @@ let pettyCashHasSharedBaseline = false;
 let pettyCashTabSessionId = '';
 let pettyCashTabHeartbeatTimer = null;
 let pettyCashTabWarningShown = false;
+let pettyCashFieldRequestEnrichmentPromise = null;
 const fieldRequestScheduleContextCache = new Map();
 const fieldRequestBranchLookupCache = new Map();
 const fieldRequestCompanyLookupCache = new Map();
@@ -253,7 +323,19 @@ const fieldRequestCompanyLookupCache = new Map();
 document.addEventListener('DOMContentLoaded', async () => {
     initializePettyCashTabGuard();
     loadUserHeader();
+    updatePettyCashLoadingUi({
+        percent: 8,
+        note: "Preparing today's petty cash report.",
+        detail: 'Opening petty cash data.',
+        state: 'loading'
+    });
     await hydrateState();
+    updatePettyCashLoadingUi({
+        percent: 78,
+        note: "Preparing today's petty cash report.",
+        detail: 'Drawing vouchers, requests, and totals.',
+        state: 'loading'
+    });
     MargaAuth.applyModulePermissions({ hideUnauthorized: true });
     bindControls();
     populateSelects();
@@ -262,6 +344,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearEntryForm();
     clearRequestForm();
     renderAll();
+    completePettyCashLoadingUi(`Showing petty cash activity for ${formatLongDate(getSelectedDateValue())}.`);
+    void enrichFieldStaffRequestsInBackground();
     void bootstrapReferenceDataInBackground();
 });
 
@@ -358,13 +442,29 @@ function releasePettyCashTabGuard() {
 
 async function bootstrapReferenceDataInBackground() {
     try {
-        await loadEmployeeOptions();
-        await loadPayeeOptions();
-        await loadSupplierOptions();
-        await loadActualItemCatalog();
+        const tasks = [
+            { detail: 'Loading employee requesters.', run: loadEmployeeOptions },
+            { detail: 'Loading payee suggestions.', run: loadPayeeOptions },
+            { detail: 'Loading supplier suggestions.', run: loadSupplierOptions },
+            { detail: 'Loading item catalog.', run: loadActualItemCatalog }
+        ];
+
+        let completed = 0;
+        await Promise.all(tasks.map(async (task) => {
+            await task.run();
+            completed += 1;
+            updatePettyCashLoadingUi({
+                percent: 78 + Math.round((completed / tasks.length) * 18),
+                note: `Preparing petty cash activity for ${formatLongDate(getSelectedDateValue())}.`,
+                detail: task.detail,
+                state: 'loading'
+            });
+        }));
         refreshPettyCashBootstrapUi();
+        completePettyCashLoadingUi(`Showing petty cash activity for ${formatLongDate(getSelectedDateValue())}.`);
     } catch (error) {
         console.warn('Petty cash reference bootstrap failed after initial render:', error);
+        completePettyCashLoadingUi(`Showing petty cash activity for ${formatLongDate(getSelectedDateValue())}.`);
     }
 }
 
@@ -392,6 +492,12 @@ function refreshPettyCashBootstrapUi() {
 }
 
 async function hydrateState() {
+    updatePettyCashLoadingUi({
+        percent: 14,
+        note: "Preparing today's petty cash report.",
+        detail: 'Checking saved browser copy.',
+        state: 'loading'
+    });
     PETTY_CASH_STATE.accounts = MargaFinanceAccounts.getStoredAccounts().map(normalizeAccount);
     const localSnapshot = readLocalPettyCashSnapshot();
     let entries = localSnapshot.entries.map(normalizeEntry);
@@ -401,6 +507,12 @@ async function hydrateState() {
     pettyCashHasSharedBaseline = false;
 
     try {
+        updatePettyCashLoadingUi({
+            percent: 28,
+            note: "Preparing today's petty cash report.",
+            detail: 'Loading shared petty cash ledger.',
+            state: 'loading'
+        });
         const cloudSnapshot = await loadPettyCashCloudSnapshot();
         if (cloudSnapshot.hasSharedData) {
             entries = cloudSnapshot.entries.map(normalizeEntry);
@@ -423,10 +535,27 @@ async function hydrateState() {
         }
     }
 
+    updatePettyCashLoadingUi({
+        percent: 52,
+        note: "Preparing today's petty cash report.",
+        detail: 'Reconciling vouchers and replenishment history.',
+        state: 'loading'
+    });
     PETTY_CASH_STATE.entries = entries;
     PETTY_CASH_STATE.requests = requests;
     PETTY_CASH_STATE.settings = settings;
-    await enrichFieldStaffRequestsFromSchedules();
+    updatePettyCashLoadingUi({
+        percent: 62,
+        note: "Preparing today's petty cash report.",
+        detail: 'Preparing field request queue.',
+        state: 'loading'
+    });
+    updatePettyCashLoadingUi({
+        percent: 70,
+        note: "Preparing today's petty cash report.",
+        detail: 'Syncing APD-linked petty cash requests.',
+        state: 'loading'
+    });
     syncRequestsFromApd();
     reconcileFieldRequestEntries();
     dedupePettyCashEntries();
@@ -436,6 +565,65 @@ async function hydrateState() {
     if (migrateLocalToCloud) {
         queuePettyCashCloudSync({ deleteRemoved: true, silent: true });
     }
+}
+
+async function enrichFieldStaffRequestsInBackground() {
+    if (pettyCashFieldRequestEnrichmentPromise) {
+        return pettyCashFieldRequestEnrichmentPromise;
+    }
+
+    pettyCashFieldRequestEnrichmentPromise = (async () => {
+        try {
+            await enrichFieldStaffRequestsFromSchedules();
+            writeLocalPettyCashSnapshot();
+            renderFieldRequestsTable();
+            renderFieldRequestDetailPanel();
+        } catch (error) {
+            console.warn('Unable to finish petty cash field request schedule matching in background.', error);
+        } finally {
+            pettyCashFieldRequestEnrichmentPromise = null;
+        }
+    })();
+
+    return pettyCashFieldRequestEnrichmentPromise;
+}
+
+function updatePettyCashLoadingUi({ percent = PETTY_CASH_LOADING.percent, note = '', detail = '', state = 'loading' } = {}) {
+    const status = document.getElementById('pettyCashLoadStatus');
+    const noteNode = document.getElementById('workingDateNote');
+    const bar = document.getElementById('pettyCashLoadProgress');
+    const barFill = document.getElementById('pettyCashLoadProgressBar');
+    const meta = document.getElementById('pettyCashLoadMeta');
+
+    if (!status || !noteNode || !bar || !barFill || !meta) return;
+
+    if (PETTY_CASH_LOADING.readyTimer) {
+        window.clearTimeout(PETTY_CASH_LOADING.readyTimer);
+        PETTY_CASH_LOADING.readyTimer = null;
+    }
+
+    const safePercent = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+    PETTY_CASH_LOADING.percent = safePercent;
+
+    status.dataset.loadingState = state;
+    status.style.setProperty('--pettycash-load-progress', `${safePercent}%`);
+    noteNode.textContent = note || noteNode.textContent;
+    meta.textContent = detail || meta.textContent;
+    bar.setAttribute('aria-valuenow', String(safePercent));
+}
+
+function completePettyCashLoadingUi(note) {
+    updatePettyCashLoadingUi({
+        percent: 100,
+        note,
+        detail: 'Ready for voucher entry, review, and printing.',
+        state: 'ready'
+    });
+    PETTY_CASH_LOADING.readyTimer = window.setTimeout(() => {
+        const status = document.getElementById('pettyCashLoadStatus');
+        if (!status) return;
+        status.style.setProperty('--pettycash-load-progress', '100%');
+    }, 250);
 }
 
 function isPlaceholderFieldRequestClientLabel(value) {
@@ -625,6 +813,7 @@ function bindControls() {
     document.getElementById('requestBreakdownPanel').addEventListener('click', onRequestsTableAction);
     document.getElementById('fieldRequestsTableBody')?.addEventListener('click', onFieldRequestsTableAction);
     document.getElementById('fieldRequestDetailPanel')?.addEventListener('click', onFieldRequestsTableAction);
+    document.getElementById('fieldRequestDetailPanel')?.addEventListener('click', onFieldRequestImagePreviewClick);
     document.getElementById('fieldRequestStatusFilter')?.addEventListener('change', renderFieldRequestsTable);
     document.getElementById('fieldRequestTypeFilter')?.addEventListener('change', renderFieldRequestsTable);
     document.getElementById('fieldRequestStaffFilter')?.addEventListener('input', renderFieldRequestsTable);
@@ -638,6 +827,17 @@ function bindControls() {
     document.getElementById('quickSupplierCancelBtn').addEventListener('click', closeQuickSupplierPanel);
     document.getElementById('quickSupplierClearBtn').addEventListener('click', resetQuickSupplierForm);
     document.getElementById('quickSupplierSaveBtn').addEventListener('click', onQuickSupplierSave);
+}
+
+function onFieldRequestImagePreviewClick(event) {
+    const link = event.target.closest('.field-request-image-link');
+    if (!link) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const image = link.querySelector('img');
+    const imageUrl = String(image?.currentSrc || image?.src || '').trim();
+    const label = String(link.dataset.imageLabel || image?.alt || 'Receipt Image').trim();
+    openFieldRequestImagePreview(imageUrl, label);
 }
 
 function bindSectionToggleButtons() {
@@ -997,7 +1197,7 @@ function onEntryItemsTableInput() {
 
 function onWorkingDateChange() {
     const selectedDate = getSelectedDateValue();
-    document.getElementById('workingDateNote').textContent = `Preparing petty cash activity for ${formatLongDate(selectedDate)}.`;
+    completePettyCashLoadingUi(`Showing petty cash activity for ${formatLongDate(selectedDate)}.`);
     if (!document.getElementById('entryIdInput').value) {
         document.getElementById('entryDateInput').value = selectedDate;
     }
@@ -1823,7 +2023,7 @@ function renderFieldRequestLineItems(request) {
         <article class="field-request-image-card">
             <span>${escapeHtml(item.itemNote || item.expenseCategory || `Receipt ${index + 1}`)}</span>
             <small>${escapeHtml([item.supplierStoreName, item.receiptNumber, MargaUtils.formatCurrency(item.amount || 0)].filter(Boolean).join(' · '))}</small>
-            ${item.receiptImageUrl ? `<a href="${escapeHtml(item.receiptImageUrl)}" target="_blank" rel="noopener"><img src="${escapeHtml(item.receiptImageUrl)}" alt="Receipt ${index + 1}"></a>` : '<small>No receipt image uploaded</small>'}
+            ${item.receiptImageUrl ? `<a href="#" class="field-request-image-link" data-image-label="${escapeHtml(item.itemNote || item.expenseCategory || `Receipt ${index + 1}`)}"><img src="${escapeHtml(item.receiptImageUrl)}" alt="Receipt ${index + 1}"></a>` : '<small>No receipt image uploaded</small>'}
         </article>
     `).join('');
 }
@@ -1847,11 +2047,74 @@ function renderFieldRequestImage(url, label) {
         `;
     }
     return `
-        <a class="field-request-image-card" href="${escapeHtml(url)}" target="_blank" rel="noopener">
+        <a class="field-request-image-card field-request-image-link" href="#" data-image-label="${escapeHtml(label)}">
             <span>${escapeHtml(label)}</span>
             <img src="${escapeHtml(url)}" alt="${escapeHtml(label)}">
         </a>
     `;
+}
+
+function openFieldRequestImagePreview(imageUrl, label = 'Receipt Image') {
+    const normalizedUrl = String(imageUrl || '').trim();
+    if (!normalizedUrl) {
+        MargaUtils.showToast('No image is available for preview.', 'error');
+        return;
+    }
+
+    const preview = window.open('', '_blank');
+    if (!preview) {
+        MargaUtils.showToast('Popup blocked. Please allow popups and try again.', 'error');
+        return;
+    }
+
+    preview.document.open();
+    preview.document.write(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml(label)} - Petty Cash</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: #111;
+            color: #f5f5f5;
+            font-family: Arial, sans-serif;
+        }
+        main {
+            width: min(96vw, 1400px);
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+        h1 {
+            margin: 0 0 1rem;
+            font-size: 1rem;
+            font-weight: 600;
+            text-align: center;
+        }
+        img {
+            display: block;
+            width: 100%;
+            height: auto;
+            max-height: calc(100vh - 5rem);
+            object-fit: contain;
+            border-radius: 12px;
+            background: #222;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>${escapeHtml(label)}</h1>
+        <img src="${escapeHtml(normalizedUrl)}" alt="${escapeHtml(label)}">
+    </main>
+</body>
+</html>`);
+    preview.document.close();
 }
 
 async function onFieldRequestsTableAction(event) {
@@ -1867,19 +2130,24 @@ async function onFieldRequestsTableAction(event) {
 
     const action = button.dataset.action;
     if (action === 'view-field-request') {
+        if (selectedFieldRequestId !== request.id) {
+            await ensureFieldRequestFullDetail(request.id);
+        }
         selectedFieldRequestId = selectedFieldRequestId === request.id ? '' : request.id;
         renderFieldRequestsTable();
         renderFieldRequestDetailPanel();
         return;
     }
     if (action === 'field-complete') {
-        await updateFieldRequestStatus(request, {
+        const liveRequest = await ensureFieldRequestReadyForMutation(request.id, 'verify');
+        if (!liveRequest) return;
+        await updateFieldRequestStatus(liveRequest, {
             status: 'Verified by Petty Cash Handler',
-            approvedAmount: Number(request.approvedAmount || request.amount || 0),
+            approvedAmount: Number(liveRequest.approvedAmount || liveRequest.amount || 0),
             completenessStatus: 'Complete',
             receiptVerificationStatus: 'Verified',
             receiptVerifiedBy: MargaAuth.getUser()?.name || '',
-            handlerRemarks: prompt('Completeness remarks (optional):', request.handlerRemarks || '') || request.handlerRemarks || ''
+            handlerRemarks: prompt('Completeness remarks (optional):', liveRequest.handlerRemarks || '') || liveRequest.handlerRemarks || ''
         }, 'Verified complete');
         return;
     }
@@ -1899,12 +2167,14 @@ async function onFieldRequestsTableAction(event) {
         return;
     }
     if (action === 'field-incomplete') {
+        const liveRequest = await ensureFieldRequestReadyForMutation(request.id, 'mark for correction');
+        if (!liveRequest) return;
         const reason = prompt('Reason / correction needed:');
         if (!reason) {
             MargaUtils.showToast('Correction reason is required.', 'error');
             return;
         }
-        await updateFieldRequestStatus(request, {
+        await updateFieldRequestStatus(liveRequest, {
             status: 'Incomplete / Needs Correction',
             completenessStatus: 'Incomplete',
             correctionReason: reason,
@@ -1917,23 +2187,25 @@ async function onFieldRequestsTableAction(event) {
             MargaUtils.showToast('Only Owner/Admin can approve Field Staff requests.', 'error');
             return;
         }
-        const approvedAmountRaw = prompt('Approved amount:', String(request.approvedAmount || request.amount || 0));
+        const liveRequest = await ensureFieldRequestReadyForMutation(request.id, 'approve', { requireEntryDetail: true });
+        if (!liveRequest) return;
+        const approvedAmountRaw = prompt('Approved amount:', String(liveRequest.approvedAmount || liveRequest.amount || 0));
         if (approvedAmountRaw === null) return;
         const approvedAmount = Number(approvedAmountRaw || 0);
         if (approvedAmount <= 0) {
             MargaUtils.showToast('Approved amount is required.', 'error');
             return;
         }
-        let adjustmentReason = request.approvalRemarks || '';
-        if (Math.abs(approvedAmount - Number(request.amount || 0)) > 0.005) {
+        let adjustmentReason = liveRequest.approvalRemarks || '';
+        if (Math.abs(approvedAmount - Number(liveRequest.amount || 0)) > 0.005) {
             adjustmentReason = prompt('Reason for approved amount adjustment:') || '';
             if (!adjustmentReason) {
                 MargaUtils.showToast('Adjustment reason is required.', 'error');
                 return;
             }
         }
-        await updateFieldRequestStatus(request, {
-            status: request.requestType === 'Cash Advance' ? 'Approved' : 'Approved',
+        await updateFieldRequestStatus(liveRequest, {
+            status: liveRequest.requestType === 'Cash Advance' ? 'Approved' : 'Approved',
             approvedAmount,
             approvalRemarks: adjustmentReason,
             approvedBy: MargaAuth.getUser()?.name || '',
@@ -1962,17 +2234,19 @@ async function onFieldRequestsTableAction(event) {
         return;
     }
     if (action === 'field-paid') {
-        const reference = prompt('Payment reference number:', request.paymentReferenceNumber || '');
+        const liveRequest = await ensureFieldRequestReadyForMutation(request.id, 'mark as paid', { requireEntryDetail: true });
+        if (!liveRequest) return;
+        const reference = prompt('Payment reference number:', liveRequest.paymentReferenceNumber || '');
         if (!reference) {
             MargaUtils.showToast('Payment reference is required before marking paid.', 'error');
             return;
         }
-        if (request.status !== 'Approved' && request.status !== 'Funded' && request.status !== 'Included in Payout Batch') {
+        if (liveRequest.status !== 'Approved' && liveRequest.status !== 'Funded' && liveRequest.status !== 'Included in Payout Batch') {
             MargaUtils.showToast('Only approved/funded requests can be marked paid.', 'error');
             return;
         }
-        await updateFieldRequestStatus(request, {
-            status: request.requestType === 'Cash Advance' ? 'For Liquidation' : 'Paid / Released',
+        await updateFieldRequestStatus(liveRequest, {
+            status: liveRequest.requestType === 'Cash Advance' ? 'For Liquidation' : 'Paid / Released',
             paymentStatus: 'Paid / Released',
             paymentReferenceNumber: reference,
             paidBy: MargaAuth.getUser()?.name || '',
@@ -1981,13 +2255,15 @@ async function onFieldRequestsTableAction(event) {
         return;
     }
     if (action === 'field-liquidated') {
-        if (!['Partially Liquidated', 'For Liquidation'].includes(request.status)) {
+        const liveRequest = await ensureFieldRequestReadyForMutation(request.id, 'mark as liquidated', { requireEntryDetail: true });
+        if (!liveRequest) return;
+        if (!['Partially Liquidated', 'For Liquidation'].includes(liveRequest.status)) {
             MargaUtils.showToast('Only cash advances for liquidation can be marked liquidated.', 'error');
             return;
         }
-        const remarks = prompt('Liquidation approval / closing remarks:', request.approvalRemarks || request.handlerRemarks || '');
+        const remarks = prompt('Liquidation approval / closing remarks:', liveRequest.approvalRemarks || liveRequest.handlerRemarks || '');
         if (remarks === null) return;
-        await updateFieldRequestStatus(request, {
+        await updateFieldRequestStatus(liveRequest, {
             status: 'Liquidated',
             liquidationStatus: 'Liquidated',
             approvalRemarks: remarks,
@@ -2009,9 +2285,11 @@ async function onFieldRequestGroupAction(button) {
         if (!ok) return;
         const remarks = prompt('Verification remarks (optional):', '') || '';
         for (const request of eligible) {
-            await updateFieldRequestStatus(request, {
+            const liveRequest = await ensureFieldRequestReadyForMutation(request.id, 'verify');
+            if (!liveRequest) continue;
+            await updateFieldRequestStatus(liveRequest, {
                 status: 'Verified by Petty Cash Handler',
-                approvedAmount: Number(request.approvedAmount || request.amount || 0),
+                approvedAmount: Number(liveRequest.approvedAmount || liveRequest.amount || 0),
                 completenessStatus: 'Complete',
                 receiptVerificationStatus: 'Verified',
                 receiptVerifiedBy: MargaAuth.getUser()?.name || '',
@@ -2034,9 +2312,11 @@ async function onFieldRequestGroupAction(button) {
         if (!ok) return;
         const remarks = prompt('Approval remarks (optional):', '') || '';
         for (const request of eligible) {
-            await updateFieldRequestStatus(request, {
+            const liveRequest = await ensureFieldRequestReadyForMutation(request.id, 'approve', { requireEntryDetail: true });
+            if (!liveRequest) continue;
+            await updateFieldRequestStatus(liveRequest, {
                 status: 'Approved',
-                approvedAmount: Number(request.approvedAmount || request.amount || 0),
+                approvedAmount: Number(liveRequest.approvedAmount || liveRequest.amount || 0),
                 approvalRemarks: remarks,
                 approvedBy: MargaAuth.getUser()?.name || '',
                 approvedAt: isoNow(),
@@ -3063,6 +3343,7 @@ async function onExternalPettyCashStateChange(event) {
     populateSelects();
     fillSettingsForm();
     renderAll();
+    completePettyCashLoadingUi(`Showing petty cash activity for ${formatLongDate(getSelectedDateValue())}.`);
 
     if (!preserveEntryEdit && !document.getElementById('entryIdInput')?.value) {
         clearEntryForm();
@@ -3568,6 +3849,8 @@ function inferFieldRequestEntryGroup(item, request) {
         'toll': 'commute_fare',
         'parking': 'parking',
         'transportation / fare': 'commute_fare',
+        'motorcycle maintenance': 'motorcycle_maintenance',
+        'medical assistance': 'medical_assistance',
         'parts / supplies': 'field_parts',
         'delivery / courier': 'commute_fare',
         'emergency purchase': 'other_materials',
@@ -3741,6 +4024,8 @@ function inferExpenseGroupFromAccount(accountId) {
     if (normalized === 'fuel_expense_delivery_van' || normalized === 'fuel_expense_motorcycle' || normalized === 'fuel_delivery_expense' || normalized === 'gasoline_expense') return 'gasoline';
     if (normalized === 'diesel_expense') return 'diesel';
     if (normalized === 'parking_expense') return 'parking';
+    if (normalized === 'repairs_maintenance_motorcycles') return 'motorcycle_maintenance';
+    if (normalized === 'medical_assistance_expense') return 'medical_assistance';
     if (normalized === 'owners_drawings') return 'owner_withdrawal';
     return '';
 }
@@ -4470,6 +4755,11 @@ async function runQuery(structuredQuery) {
     return payload.map((row) => row.document).filter(Boolean);
 }
 
+async function runQueryRows(structuredQuery) {
+    const docs = await runQuery(structuredQuery);
+    return docs.map((doc) => MargaAuth.parseFirestoreDoc(doc)).filter(Boolean);
+}
+
 function toFirestoreFieldValue(value) {
     if (value === null) return { nullValue: null };
     if (Array.isArray(value)) {
@@ -4642,6 +4932,10 @@ async function loadPettyCashCloudSnapshot() {
 }
 
 async function loadPettyCashCloudCollection(collection) {
+    if (collection === PETTY_CASH_FIRESTORE.requests) {
+        return loadPettyCashRequestRows();
+    }
+
     let listRows = [];
     let listError = null;
 
@@ -4674,6 +4968,115 @@ async function loadPettyCashCloudCollection(collection) {
         }
         throw queryError;
     }
+}
+
+async function loadPettyCashRequestRows() {
+    const [manualRequests, fieldRequestSummaries] = await Promise.all([
+        loadManualPettyCashRequestRows(),
+        loadFieldRequestSummaryRows()
+    ]);
+    const merged = new Map();
+    [...manualRequests, ...fieldRequestSummaries].forEach((row) => {
+        const key = String(row?._docId || row?.id || row?.requestId || '').trim();
+        if (key) merged.set(key, row);
+    });
+    return [...merged.values()];
+}
+
+async function loadManualPettyCashRequestRows() {
+    return runQueryRows({
+        from: [{ collectionId: PETTY_CASH_FIRESTORE.requests }],
+        where: {
+            fieldFilter: {
+                field: { fieldPath: 'id' },
+                op: 'GREATER_THAN_OR_EQUAL',
+                value: { stringValue: 'REQ-' }
+            }
+        },
+        orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
+        limit: 5000
+    }).catch((error) => {
+        console.warn('Unable to load manual petty cash requests via targeted query.', error);
+        return [];
+    });
+}
+
+async function loadFieldRequestSummaryRows() {
+    return runQueryRows({
+        select: {
+            fields: FIELD_REQUEST_SUMMARY_FIELDS.map((fieldPath) => ({ fieldPath }))
+        },
+        from: [{ collectionId: PETTY_CASH_FIRESTORE.requests }],
+        where: {
+            compositeFilter: {
+                op: 'AND',
+                filters: [
+                    {
+                        fieldFilter: {
+                            field: { fieldPath: 'id' },
+                            op: 'GREATER_THAN_OR_EQUAL',
+                            value: { stringValue: 'FR-' }
+                        }
+                    },
+                    {
+                        fieldFilter: {
+                            field: { fieldPath: 'id' },
+                            op: 'LESS_THAN',
+                            value: { stringValue: 'FS' }
+                        }
+                    }
+                ]
+            }
+        },
+        orderBy: [{ field: { fieldPath: 'id' }, direction: 'ASCENDING' }],
+        limit: 5000
+    }).catch((error) => {
+        console.warn('Unable to load field request summaries via targeted query.', error);
+        return [];
+    });
+}
+
+async function ensureFieldRequestFullDetail(requestId) {
+    const normalizedId = String(requestId || '').trim();
+    if (!normalizedId) return null;
+    const request = getRequestById(normalizedId);
+    if (!request || !isFieldStaffRequest(request)) return request || null;
+    const hasFullLineItems = Array.isArray(request.lineItems) && request.lineItems.length > 0;
+    const hasReceiptImage = Boolean(request.receiptImageUrl || request.proofOfTransferImageUrl);
+    if (hasFullLineItems || hasReceiptImage) return request;
+
+    try {
+        const fullDoc = await MargaUtils.fetchDoc(PETTY_CASH_FIRESTORE.requests, normalizedId);
+        if (!fullDoc) return request;
+        const next = normalizeRequest({ ...request, ...fullDoc });
+        const index = PETTY_CASH_STATE.requests.findIndex((item) => String(item.id || '').trim() === normalizedId);
+        if (index >= 0) {
+            PETTY_CASH_STATE.requests[index] = next;
+        }
+        return next;
+    } catch (error) {
+        console.warn(`Unable to load full petty cash field request ${normalizedId}.`, error);
+        return request;
+    }
+}
+
+function hasFieldRequestEntryDetail(request) {
+    if (!request || !isFieldStaffRequest(request)) return false;
+    if (Array.isArray(request.lineItems) && request.lineItems.length) return true;
+    return Boolean(String(request.accountId || '').trim());
+}
+
+async function ensureFieldRequestReadyForMutation(requestId, actionLabel = 'update', options = {}) {
+    const request = await ensureFieldRequestFullDetail(requestId);
+    if (!request) {
+        MargaUtils.showToast(`Unable to load this field request for ${actionLabel}. Please try again.`, 'error');
+        return null;
+    }
+    if (options.requireEntryDetail && !hasFieldRequestEntryDetail(request)) {
+        MargaUtils.showToast(`This field request is still loading its expense details. Please wait, then try ${actionLabel} again.`, 'error');
+        return null;
+    }
+    return getRequestById(request.id) || request;
 }
 
 function queuePettyCashCloudSync(options = {}) {
