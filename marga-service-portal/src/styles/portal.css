@@ -802,3 +802,79 @@
   background: #f1f5f9;
   color: #64748b;
 }
+
+/* ── Device Detail — Billing Summary ─────────────────────────────── */
+.care-billing-summary {
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 10px 0 14px;
+  font-size: 0.8rem;
+}
+.care-billing-ok {
+  background: #f0fdf4;
+  color: #166534;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.care-billing-unpaid {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+.care-billing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.care-billing-label {
+  font-weight: 600;
+  color: #9a3412;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.care-billing-total {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #c2410c;
+}
+.care-invoice-list {
+  display: grid;
+  gap: 4px;
+}
+.care-invoice-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.78rem;
+  padding: 4px 0;
+  border-top: 1px solid #fed7aa;
+}
+.care-invoice-period { color: #7c3a2a; flex: 1; }
+.care-invoice-amount { font-weight: 600; color: #c2410c; }
+.care-invoice-due { color: #9a3412; font-size: 0.72rem; }
+.care-billing-more { color: #9a3412; font-size: 0.72rem; margin-top: 6px; }
+
+/* ── Device Detail — Timeline redesign ───────────────────────────── */
+.care-timeline-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 2px 0 8px;
+}
+.timeline-item-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.timeline-icon { font-size: 1rem; line-height: 1; }
+.timeline-details { color: var(--muted); font-size: 0.74rem; margin-top: 2px; }
+.timeline-date { color: var(--muted); font-size: 0.72rem; }
+.tag-sm { font-size: 0.66rem; padding: 2px 7px; }
+.tag-success { background: #f0fdf4; color: #166534; }
+.tag-muted { background: #f1f5f9; color: #64748b; }
+.tag-pending { background: #eff6ff; color: #1d4ed8; }

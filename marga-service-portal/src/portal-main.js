@@ -1033,22 +1033,47 @@ async function renderDevices() {
                    <span class="tag ${statusClass(detail.device?.status || selectedDevice.status)}">${escapeHtml(detail.device?.status || selectedDevice.status || '')}</span>
                  </div>
                  ${detail.device?.notes ? `<div class="care-device-note"><span class="care-device-note-icon">ℹ</span> ${escapeHtml(detail.device.notes)}</div>` : ''}
+                 ${(() => {
+                   const b = detail.billing;
+                   if (!b) return '';
+                   if (b.unpaidCount === 0) return `<div class="care-billing-summary care-billing-ok"><span class="care-billing-icon">✓</span> Account is up to date — no outstanding balance.</div>`;
+                   const rows = (b.unpaidInvoices || []).map(inv =>
+                     `<div class="care-invoice-row">
+                       <span class="care-invoice-period">${escapeHtml(inv.period || inv.invoiceNo || 'Invoice')}</span>
+                       <span class="care-invoice-amount">₱${Number(inv.amount || 0).toLocaleString('en-PH', {minimumFractionDigits:2})}</span>
+                       ${inv.dueDate ? `<span class="care-invoice-due">Due ${escapeHtml(inv.dueDate)}</span>` : ''}
+                     </div>`
+                   ).join('');
+                   return `<div class="care-billing-summary care-billing-unpaid">
+                     <div class="care-billing-header">
+                       <span class="care-billing-label">Outstanding Balance</span>
+                       <span class="care-billing-total">₱${Number(b.unpaidAmount||0).toLocaleString('en-PH',{minimumFractionDigits:2})}</span>
+                     </div>
+                     <div class="care-invoice-list">${rows}</div>
+                     ${b.unpaidCount > (b.unpaidInvoices||[]).length ? `<p class="care-billing-more">+ ${b.unpaidCount - (b.unpaidInvoices||[]).length} more invoice(s)</p>` : ''}
+                   </div>`;
+                 })()}
                  <div class="timeline care-device-timeline">
+                   <p class="care-timeline-label">Service &amp; Delivery History</p>
                    ${
                      Array.isArray(detail.timeline) && detail.timeline.length
-                       ? detail.timeline
-                           .map(
-                             (item) => `<article class="timeline-item">
-                              <strong>${escapeHtml(item.label || '')}</strong>
-                              <div class="tag ${statusClass(item.status)}">${escapeHtml(item.status || '')}</div>
-                              <p>${escapeHtml(item.details || '')}</p>
-                              <p>${formatDate(item.at)}</p>
-                            </article>`
-                           )
-                           .join('')
+                       ? detail.timeline.map((item) => {
+                           const icon = item.type === 'delivery' ? '📦'
+                             : item.type === 'service' ? '🔧'
+                             : item.type === 'visit' ? '📋' : '•';
+                           return `<article class="timeline-item timeline-item-${escapeHtml(item.type || 'visit')}">
+                             <div class="timeline-item-head">
+                               <span class="timeline-icon" aria-hidden="true">${icon}</span>
+                               <strong>${escapeHtml(item.label || '')}</strong>
+                               <span class="tag tag-sm ${item.status === 'Completed' ? 'tag-success' : item.status === 'Cancelled' ? 'tag-muted' : 'tag-pending'}">${escapeHtml(item.status || '')}</span>
+                             </div>
+                             ${item.details ? `<p class="timeline-details">${escapeHtml(item.details)}</p>` : ''}
+                             <p class="timeline-date">${formatDate(item.at)}</p>
+                           </article>`;
+                         }).join('')
                        : `<div class="empty-state">
                             <p>No service history recorded yet for this machine.</p>
-                            <p style="margin-top:.5rem;font-size:.8rem;color:#94a3b8">History will appear here after the first service or delivery visit.</p>
+                            <p style="margin-top:.5rem;font-size:.8rem;color:var(--text-muted)">History appears here after your first service or delivery visit.</p>
                           </div>`
                    }
                  </div>`

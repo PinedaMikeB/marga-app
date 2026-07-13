@@ -1577,9 +1577,8 @@ async function getDeviceDetail(user, requestedDeviceId) {
     error.statusCode = 400;
     throw error;
   }
-  const [devices, statusMap, purposeMap] = await Promise.all([
+  const [devices, purposeMap] = await Promise.all([
     listDevices(user),
-    loadMachineStatuses(),
     loadPurposeLabels()
   ]);
   const device = devices.find((entry) => String(entry.id) === deviceId);
@@ -1589,127 +1588,125 @@ async function getDeviceDetail(user, requestedDeviceId) {
     throw error;
   }
 
-  const machineLegacyId = String(device.legacyId || '').trim();
-  const branchId = Number(device.branchId || 0) || null;
   const branchLegacyId = String(device.branchLegacyId || '').trim();
+  const displaySerial = cleanText(device.serial !== 'N/A' ? device.serial : '');
   const timeline = [];
 
-  // displaySerial is the actual serial string (e.g. E74075B8N980383); used for tbl_schedule lookup.
-  // machineLegacyId is the numeric tbl_machine id; used for tbl_newmachinehistory / repair.
-  const displaySerial = cleanText(device.serial !== 'N/A' ? device.serial : '');
+  // Customer-visible purpose IDs only — what happens AT their location
+  // 3=Deliver Ink/Toner, 4=Deliver Cartridge, 5=Service, 8=Reading, 9=Others
+  // Excluded: 1=Billing, 2=Collection, 6=Sales, 7=Purchasing (internal Marga ops)
+  const CUSTOMER_PURPOSE_IDS = new Set(['3', '4', '5', '8', '9']);
+  const PURPOSE_LABELS = new Map([
+    ['3', 'Toner / Ink Delivery'],
+    ['4', 'Cartridge Delivery'],
+    ['5', 'Maintenance Visit'],
+    ['8', 'Meter Reading'],
+    ['9', 'Service Visit'],
+  ]);
 
-  if (displaySerial || machineLegacyId) {
+  if (displaySerial || branchLegacyId) {
+    // Filter by serial (preferred) then scope to branch
     const scheduleFilter = displaySerial
-      ? `and coalesce(data->>'serial', '') = $1`
-      : `and coalesce(data->>'mach_id', '') = $1`;
-    const scheduleParam = displaySerial || String(machineLegacyId);
+      ? `and (coalesce(data->>'field_serial_selected', '') = $1 or coalesce(data->>'serial', '') = $1)`
+      : `and coalesce(data->>'branch_id', '') = $1`;
+    const scheduleParam = displaySerial || branchLegacyId;
+
     const { rows: scheduleRows } = await pool.query(
       `select doc_id,
-              data->>'purpose_id' as purpose_id,
-              data->>'remarks' as remarks,
-              data->>'customer_request' as customer_request,
-              data->>'scheduled' as scheduled,
-              data->>'task_datetime' as task_datetime,
-              data->>'timestmp' as timestmp,
-              data->>'date_finished' as date_finished,
-              data->>'closedby' as closedby,
-              data->>'iscancel' as iscancel,
-              data->>'branch_id' as branch_id,
-              data->>'company_id' as company_legacy_id
+              data->>'purpose_id'         as purpose_id,
+              data->>'purpose'            as purpose,
+              data->>'schedule_purpose'   as schedule_purpose,
+              data->>'customer_request'   as customer_request,
+              data->>'dev_remarks'        as dev_remarks,
+              data->>'remarks'            as remarks,
+              data->>'task_datetime'      as task_datetime,
+              data->>'created_at'         as created_at,
+              data->>'date_finished'      as date_finished,
+              data->>'closedby'           as closedby,
+              data->>'iscancel'           as iscancel,
+              data->>'branch_id'          as branch_id,
+              data->>'field_serial_selected' as field_serial
        from app_meta.firestore_documents
        where collection = 'tbl_schedule'
          ${scheduleFilter}
-       order by cast(doc_id as bigint) desc
-       limit 24`,
+       order by coalesce(data->>'task_datetime', data->>'created_at') desc
+       limit 40`,
       [scheduleParam]
     );
+
     scheduleRows.forEach((row) => {
-      const rowBranchId = String(row.branch_id || '').trim();
-      if (branchLegacyId && rowBranchId && rowBranchId !== branchLegacyId) return;
-      const purposeLabel = cleanText(purposeMap.get(String(row.purpose_id || '').trim()) || 'Request');
+      // If we searched by serial, scope-check branch to avoid other customers' history
+      if (displaySerial && branchLegacyId) {
+        const rowBranch = String(row.branch_id || '').trim();
+        if (rowBranch && rowBranch !== branchLegacyId) return;
+      }
+      const purposeId = String(row.purpose_id || '').trim();
+      if (!CUSTOMER_PURPOSE_IDS.has(purposeId)) return;
+
       const cancelled = String(row.iscancel || '').trim() === '1';
-      const completed = String(row.closedby || '').trim() !== '0' || cleanText(row.date_finished);
+      const closedBy = String(row.closedby || '').trim();
+      const dateFinished = cleanText(row.date_finished || '');
+      const completed = (closedBy && closedBy !== '0') || (dateFinished && dateFinished !== '0000-00-00 00:00:00');
+      const status = cancelled ? 'Cancelled' : completed ? 'Completed' : 'Scheduled';
+
+      // Use purpose label from map, fall back to schedule_purpose field, then generic
+      const label = PURPOSE_LABELS.get(purposeId)
+        || cleanText(row.schedule_purpose || row.purpose)
+        || 'Service Visit';
+
+      // Customer-visible notes: prefer customer_request, then dev_remarks summary, skip internal remarks
+      const notes = cleanText(row.customer_request || '');
+
+      const at = cleanText(dateFinished && dateFinished !== '0000-00-00 00:00:00'
+        ? dateFinished
+        : (row.task_datetime || row.created_at || ''));
+
       timeline.push({
         id: `schedule:${row.doc_id}`,
-        type: 'request',
-        label: purposeLabel,
-        status: cancelled ? 'Cancelled' : (completed ? 'Completed' : 'Requested'),
-        details: cleanText(row.customer_request || row.remarks) || `${purposeLabel} request`,
-        at: cleanText(row.date_finished || row.task_datetime || row.timestmp || row.scheduled)
-      });
-    });
-
-    const { rows: historyRows } = await pool.query(
-      `select doc_id,
-              data->>'status_id' as status_id,
-              data->>'remarks' as remarks,
-              data->>'datex' as datex,
-              data->>'tmstmp' as tmstmp,
-              data->>'branch_id' as branch_id
-       from app_meta.firestore_documents
-       where collection = 'tbl_newmachinehistory'
-         and coalesce(data->>'mach_id', '') = $1
-       order by cast(doc_id as bigint) desc
-       limit 16`,
-      [machineLegacyId]
-    );
-    historyRows.forEach((row) => {
-      const rowBranchId = String(row.branch_id || '').trim();
-      if (branchLegacyId && rowBranchId && rowBranchId !== branchLegacyId) return;
-      const statusLabel = cleanText(statusMap.get(Number(row.status_id || 0)) || '');
-      timeline.push({
-        id: `history:${row.doc_id}`,
-        type: 'movement',
-        label: 'Machine Movement',
-        status: statusLabel || 'Updated',
-        details: cleanText(row.remarks) || statusLabel || 'Machine record updated',
-        at: cleanText(row.tmstmp || row.datex)
-      });
-    });
-
-    const { rows: repairRows } = await pool.query(
-      `select doc_id,
-              data->>'remarks' as remarks,
-              data->>'action_taken' as action_taken,
-              data->>'tech_remarks' as tech_remarks,
-              data->>'parts_repaired' as parts_repaired,
-              data->>'parts_replaced' as parts_replaced,
-              data->>'start_date' as start_date,
-              data->>'finish_date' as finish_date,
-              data->>'status_id' as status_id
-       from app_meta.firestore_documents
-       where collection = 'tbl_newmachinerepair'
-         and coalesce(data->>'mach_id', '') = $1
-       order by cast(doc_id as bigint) desc
-       limit 12`,
-      [machineLegacyId]
-    );
-    repairRows.forEach((row) => {
-      const details = [
-        cleanText(row.action_taken),
-        cleanText(row.tech_remarks),
-        cleanText(row.parts_repaired),
-        cleanText(row.parts_replaced),
-        cleanText(row.remarks)
-      ].filter(Boolean).join(' • ');
-      timeline.push({
-        id: `repair:${row.doc_id}`,
-        type: 'repair',
-        label: 'Repair Bench',
-        status: cleanText(statusMap.get(Number(row.status_id || 0)) || 'Repair'),
-        details: details || 'Repair activity recorded',
-        at: cleanText(row.finish_date || row.start_date)
+        type: purposeId === '5' || purposeId === '9' ? 'service' : purposeId === '3' || purposeId === '4' ? 'delivery' : 'visit',
+        label,
+        status,
+        details: notes,
+        at
       });
     });
   }
 
-  timeline.sort((left, right) => {
-    const a = Date.parse(left.at || '') || 0;
-    const b = Date.parse(right.at || '') || 0;
-    return b - a;
-  });
-
+  // Sort by date desc, filter to recent records only
+  timeline.sort((a, b) => (Date.parse(b.at || '') || 0) - (Date.parse(a.at || '') || 0));
   const filteredTimeline = timeline.filter((item) => keepPortalTimelineRecord(item.at));
+
+  // Billing summary for this branch — unpaid invoices
+  let billingSummary = null;
+  if (device.branchId) {
+    try {
+      const { rows: invoiceRows } = await pool.query(
+        `select bi.id, bi.invoice_no, bi.invoice_date, bi.due_date, bi.total_amount, bi.status,
+                bi.month_label, bi.year_label
+         from marga.billing_invoices bi
+         where bi.branch_id = $1
+           and coalesce(bi.status, '') !~* 'cancel'
+         order by bi.invoice_date desc
+         limit 24`,
+        [device.branchId]
+      );
+      const unpaid = invoiceRows.filter((r) => !/paid/i.test(String(r.status || '')));
+      const totalUnpaid = unpaid.reduce((sum, r) => sum + Number(r.total_amount || 0), 0);
+      billingSummary = {
+        unpaidCount: unpaid.length,
+        unpaidAmount: Math.round(totalUnpaid * 100) / 100,
+        unpaidInvoices: unpaid.slice(0, 6).map((r) => ({
+          invoiceNo: cleanText(r.invoice_no || ''),
+          period: cleanText(r.month_label || r.year_label || ''),
+          amount: Number(r.total_amount || 0),
+          dueDate: cleanText(r.due_date ? String(r.due_date).slice(0, 10) : ''),
+          status: cleanText(r.status || 'Pending')
+        }))
+      };
+    } catch (_) {
+      billingSummary = null;
+    }
+  }
 
   return {
     device: {
@@ -1723,7 +1720,8 @@ async function getDeviceDetail(user, requestedDeviceId) {
       status: device.status,
       notes: device.notes || ''
     },
-    timeline: filteredTimeline.slice(0, 40)
+    billing: billingSummary,
+    timeline: filteredTimeline.slice(0, 30)
   };
 }
 
