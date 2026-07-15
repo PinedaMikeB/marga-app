@@ -3304,9 +3304,9 @@ const RTP_PRINT_CALIBRATION = {
     }
 };
 
-const RTP_PRINT_CALIBRATION_STORAGE_KEY = 'marga_rtp_print_calibration_v1';
-const RTP_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY = 'marga_rtp_print_templates_v1';
-const RTP_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY = 'marga_rtp_print_active_template_v1';
+const RTP_PRINT_CALIBRATION_STORAGE_KEY = 'marga_rtp_print_calibration_v2';
+const RTP_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY = 'marga_rtp_print_templates_v2';
+const RTP_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY = 'marga_rtp_print_active_template_v2';
 const RTP_PRINT_RECOVERED_TEMPLATE_NAME = 'Saved Invoice Layout';
 const RTP_PRINT_TEMPLATE_FIRESTORE_COLLECTION = 'tbl_app_settings';
 const RTP_PRINT_TEMPLATE_FIRESTORE_DOC_ID = 'billing_invoice_print_templates_v1';
@@ -3314,7 +3314,7 @@ const RTP_PRINT_TEMPLATE_SETTING_KEY = 'billing_invoice_print_templates';
 const BILLING_PRINT_POLICY_FIRESTORE_DOC_ID = 'billing_printing_policy_v1';
 let currentRtpPrintCalibration = normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
 let currentRtpPrintTemplates = {};
-let currentRtpPrintTemplateName = 'Default';
+let currentRtpPrintTemplateName = 'Invoice RTP 3';
 let rtpPrintTemplatesFirebasePromise = null;
 let rtpPrintTemplatesLoadedFromFirebase = false;
 let billingPrintPolicyPromise = null;
