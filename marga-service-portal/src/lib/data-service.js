@@ -361,6 +361,16 @@ export class DataService {
     return payload.summary;
   }
 
+  async getServiceHistory() {
+    const user = arguments[0];
+    const payload = await api(this.queryWithCompany('/service-history', user));
+    return {
+      byBranch: payload.byBranch || {},
+      recentEvents: payload.recentEvents || [],
+      summary: payload.summary || null
+    };
+  }
+
   async getBranchTicketReport() {
     const branches = await this.listBranches();
     const tickets = await this.listTickets();

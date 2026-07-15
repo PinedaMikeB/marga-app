@@ -1963,12 +1963,133 @@ async function createTicket(user, body, photoFile = null) {
   return result;
 }
 
+// Get per-branch service history from marga.service_schedules (relational, clean typed dates).
+// Returns lastService, lastToner, lastReading per branch + recent activity feed.
+async function listServiceHistory(user) {
+  const graphScope = portalScopeWhere(user, 'g');
+
+  // Single query: join active_customer_graph → service_schedules via branch_legacy_id
+  // Use DISTINCT ON per (branch_legacy_id, purpose_group) to get the latest event per branch per type
+  const { rows } = await pool.query(
+    `with scoped_branches as (
+       select distinct
+              g.branch_id,
+              g.branch_legacy_id::text as branch_legacy_id,
+              regexp_replace(coalesce(g.branch_name, ''), '^~x+\\s*', '', 'i') as branch_name
+       from api.active_customer_graph g
+       where g.branch_legacy_id is not null ${graphScope.sql}
+     ),
+     schedule_events as (
+       select
+         s.branch_legacy_id,
+         sb.branch_id,
+         sb.branch_name,
+         s.purpose_id,
+         case
+           when s.purpose_id in ('5','9') then 'service'
+           when s.purpose_id in ('3','4') then 'toner'
+           when s.purpose_id = '8'        then 'reading'
+           else 'other'
+         end as event_type,
+         case
+           when s.purpose_id = '3' then 'Toner / Ink Delivery'
+           when s.purpose_id = '4' then 'Cartridge Delivery'
+           when s.purpose_id = '5' then 'Maintenance Visit'
+           when s.purpose_id = '8' then 'Meter Reading'
+           when s.purpose_id = '9' then 'Service Visit'
+           else 'Service Visit'
+         end as event_label,
+         s.date_finished,
+         coalesce(nullif(s.customer_request,''), nullif(s.remarks,''), '') as notes,
+         s.id
+       from marga.service_schedules s
+       join scoped_branches sb on sb.branch_legacy_id = s.branch_legacy_id
+       where s.purpose_id in ('3','4','5','8','9')
+         and s.date_finished is not null
+         and s.date_finished >= now() - interval '3 years'
+         and s.date_finished <= now() + interval '1 day'
+     ),
+     latest_per_branch_type as (
+       select distinct on (branch_legacy_id, event_type)
+              branch_legacy_id, branch_id, branch_name,
+              event_type, event_label, purpose_id,
+              date_finished, notes, id
+       from schedule_events
+       order by branch_legacy_id, event_type, date_finished desc
+     )
+     select * from latest_per_branch_type
+     order by date_finished desc`,
+    graphScope.params
+  );
+
+  // Build byBranch map and recentEvents feed
+  const byBranch = {};
+  rows.forEach((row) => {
+    const key = String(row.branch_legacy_id || '').trim();
+    if (!byBranch[key]) {
+      byBranch[key] = {
+        branchId: row.branch_id,
+        branchName: row.branch_name || key,
+        lastService: null,
+        lastToner: null,
+        lastReading: null
+      };
+    }
+    const entry = {
+      date: row.date_finished ? new Date(row.date_finished).toISOString() : null,
+      notes: cleanText(row.notes),
+      label: row.event_label
+    };
+    if (row.event_type === 'service')  byBranch[key].lastService  = entry;
+    if (row.event_type === 'toner')    byBranch[key].lastToner    = entry;
+    if (row.event_type === 'reading')  byBranch[key].lastReading  = entry;
+  });
+
+  // recentEvents: top 20 service/toner events sorted by date desc
+  const recentEvents = rows
+    .filter((r) => r.event_type === 'service' || r.event_type === 'toner')
+    .slice(0, 20)
+    .map((row) => ({
+      type: row.event_type,
+      label: row.event_label,
+      branchLegacyId: String(row.branch_legacy_id),
+      branchId: row.branch_id,
+      branchName: row.branch_name || String(row.branch_legacy_id),
+      date: row.date_finished ? new Date(row.date_finished).toISOString() : null,
+      notes: cleanText(row.notes)
+    }));
+
+  // Global most-recent service and toner across all branches
+  const allService = rows.filter((r) => r.event_type === 'service').sort((a, b) => new Date(b.date_finished) - new Date(a.date_finished))[0];
+  const allToner   = rows.filter((r) => r.event_type === 'toner').sort((a, b) => new Date(b.date_finished) - new Date(a.date_finished))[0];
+
+  return {
+    byBranch,
+    recentEvents,
+    summary: {
+      lastService: allService ? {
+        date: new Date(allService.date_finished).toISOString(),
+        branchName: allService.branch_name || String(allService.branch_legacy_id),
+        branchId: allService.branch_id,
+        notes: cleanText(allService.notes)
+      } : null,
+      lastToner: allToner ? {
+        date: new Date(allToner.date_finished).toISOString(),
+        branchName: allToner.branch_name || String(allToner.branch_legacy_id),
+        branchId: allToner.branch_id,
+        notes: cleanText(allToner.notes)
+      } : null
+    }
+  };
+}
+
 async function summary(user) {
-  const [devices, tickets, toner, invoices] = await Promise.all([
+  const [devices, tickets, toner, invoices, serviceHistory] = await Promise.all([
     listDevices(user),
     listTickets(user),
     listTonerRequests(user),
-    listInvoices(user)
+    listInvoices(user),
+    listServiceHistory(user).catch(() => ({ summary: null }))
   ]);
   const unpaid = invoices.filter((invoice) => String(invoice.status || '').toLowerCase() !== 'paid');
   const openTickets = tickets.filter((ticket) => {
@@ -1979,12 +2100,19 @@ async function summary(user) {
     const status = String(request.status || '').toLowerCase();
     return ['pending', 'requested', 'open', 'assigned'].includes(status);
   }).length;
+  const nextBillingDue = unpaid
+    .map((i) => cleanText(i.dueDate || ''))
+    .filter((d) => d && d > '2020-01-01')
+    .sort()[0] || null;
   return {
     activeDevices: devices.length,
     openTickets,
     pendingToner,
     unpaidInvoices: unpaid.length,
-    unpaidAmount: unpaid.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0)
+    unpaidAmount: unpaid.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0),
+    nextBillingDue,
+    lastService: serviceHistory?.summary?.lastService || null,
+    lastToner: serviceHistory?.summary?.lastToner || null
   };
 }
 
@@ -2722,6 +2850,9 @@ async function handlePortalApi(req, res, url) {
   }
   if (url.pathname === '/portal-api/summary') {
     return json(res, 200, { ok: true, summary: await summary(previewScopedUser(user, url.searchParams.get('companyId'), url.searchParams.get('branchId'), url.searchParams.get('companyIds'))) });
+  }
+  if (url.pathname === '/portal-api/service-history') {
+    return json(res, 200, { ok: true, ...(await listServiceHistory(previewScopedUser(user, url.searchParams.get('companyId'), url.searchParams.get('branchId'), url.searchParams.get('companyIds')))) });
   }
   if (url.pathname === '/health') return json(res, 200, { ok: true, app: 'marga-service-portal' });
 

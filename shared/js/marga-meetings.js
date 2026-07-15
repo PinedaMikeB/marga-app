@@ -4,6 +4,8 @@
 (function () {
     const COLLECTION = 'tbl_field_call_requests';
     const DOMAIN = 'call.wotgonline.com';
+    const PUBLIC_DOMAIN = 'meet.jit.si';
+    const ALLOW_PUBLIC_FALLBACK = true;
     const POLL_MS = 10000;
     const SCRIPT_TIMEOUT_MS = 4500;
 
@@ -34,6 +36,10 @@
 
     function companyRoomName(date = localDateYmd()) {
         return `MargaCompanyMeeting${String(date).replace(/[^0-9]/g, '')}`;
+    }
+
+    function roomUrl(domain, roomName) {
+        return `https://${domain}/${roomName}`;
     }
 
     function currentUser() {
@@ -193,6 +199,29 @@
         existing?.remove();
     }
 
+    async function checkReachable(url, timeoutMs = 2500) {
+        try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            await fetch(url, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+            clearTimeout(timer);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    async function resolveMeetingDomain(preferredDomain = DOMAIN) {
+        const desiredDomain = String(preferredDomain || DOMAIN).trim() || DOMAIN;
+        const reachable = await checkReachable(`https://${desiredDomain}/`, 2500);
+        if (reachable) return desiredDomain;
+        if (ALLOW_PUBLIC_FALLBACK && desiredDomain !== PUBLIC_DOMAIN) {
+            const backupReachable = await checkReachable(`https://${PUBLIC_DOMAIN}/`, 2500);
+            if (backupReachable) return PUBLIC_DOMAIN;
+        }
+        return null;
+    }
+
     async function refreshCompanyMeeting() {
         try {
             const doc = await fetchDoc(COLLECTION, companyMeetingId());
@@ -209,7 +238,12 @@
     function loadJitsiScript(domain = DOMAIN) {
         if (window.JitsiMeetExternalAPI) return Promise.resolve();
         if (state.scriptPromise) return state.scriptPromise;
-        const urls = [`https://${domain}/external_api.js`, `https://${domain}/libs/external_api.min.js`];
+        const domains = (ALLOW_PUBLIC_FALLBACK ? [domain, PUBLIC_DOMAIN] : [domain])
+            .filter((item, index, arr) => item && arr.indexOf(item) === index);
+        const urls = domains.flatMap((item) => [
+            `https://${item}/external_api.js`,
+            `https://${item}/libs/external_api.min.js`
+        ]);
         state.scriptPromise = new Promise((resolve, reject) => {
             const loadAt = (index) => {
                 if (window.JitsiMeetExternalAPI) {
@@ -217,7 +251,7 @@
                     return;
                 }
                 if (index >= urls.length) {
-                    reject(new Error('Unable to load meeting tools.'));
+                    reject(new Error('Unable to load meeting tools from the call server.'));
                     return;
                 }
                 const script = document.createElement('script');
@@ -293,9 +327,13 @@
     }
 
     async function openCompanyMeeting(doc) {
-        const domain = String(doc.room_domain || DOMAIN).trim() || DOMAIN;
+        const preferredDomain = String(doc.room_domain || DOMAIN).trim() || DOMAIN;
         const roomName = cleanRoomName(doc.room_name, companyRoomName());
-        state.activeRoomUrl = `https://${domain}/${roomName}`;
+        const domain = await resolveMeetingDomain(preferredDomain);
+        if (!domain) {
+            throw new Error(`The call server is not responding right now. Please try again in a moment.`);
+        }
+        state.activeRoomUrl = roomUrl(domain, roomName);
         try {
             state.activeApi?.dispose?.();
         } catch (_) {}
@@ -352,6 +390,8 @@
             setModalStatus('');
             patchDoc(COLLECTION, companyMeetingId(), {
                 status: 'active',
+                room_domain: domain,
+                room_url: roomUrl(domain, roomName),
                 last_joined_by_staff_id: staffId(),
                 last_joined_by_name: displayName(),
                 last_joined_at: new Date().toISOString(),
@@ -370,6 +410,10 @@
         const roomName = companyRoomName(date);
         const nowIso = new Date().toISOString();
         const existing = await fetchDoc(COLLECTION, docId);
+        const resolvedDomain = await resolveMeetingDomain(String(existing?.room_domain || DOMAIN).trim() || DOMAIN);
+        if (!resolvedDomain) {
+            throw new Error('The call server is not responding right now. Please try again in a moment.');
+        }
         const payload = activeCompanyMeeting(existing) ? existing : {
             id: docId,
             type: 'meeting',
@@ -377,8 +421,8 @@
             audience: 'all',
             mode: 'video',
             room_name: roomName,
-            room_domain: DOMAIN,
-            room_url: `https://${DOMAIN}/${roomName}`,
+            room_domain: resolvedDomain,
+            room_url: roomUrl(resolvedDomain, roomName),
             title: `MARGA Company Meeting ${date}`,
             status: 'active',
             caller_staff_id: staffId(),
@@ -389,8 +433,18 @@
             created_at: nowIso,
             updated_at: nowIso
         };
+        if (activeCompanyMeeting(existing)) {
+            payload.room_domain = resolvedDomain;
+            payload.room_url = roomUrl(resolvedDomain, roomName);
+        }
         if (!activeCompanyMeeting(existing)) {
             await setDoc(COLLECTION, docId, payload);
+        } else if (existing?.room_domain !== resolvedDomain || existing?.room_url !== payload.room_url) {
+            await patchDoc(COLLECTION, docId, {
+                room_domain: resolvedDomain,
+                room_url: payload.room_url,
+                updated_at: nowIso
+            });
         }
         state.activeDoc = { ...payload, _docId: docId };
         setLiveState(true);

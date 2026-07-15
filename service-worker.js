@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v206-time-record-fix-time-1';
+const CACHE_NAME = 'marga-app-shell-v207-company-meeting-fallback-1';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -91,6 +91,7 @@ const SHELL_ASSETS = [
     '/shared/js/expense-line-item-ui.js?v=20260609-item-group-catalog-1',
     '/shared/js/expense-supplier-options.js?v=20260609-supplier-datalist-1',
     '/shared/js/offline-sync.js?v=20260703-offline-queue-self-heal-1',
+    '/shared/js/marga-meetings.js?v=20260714-company-meeting-fallback-1',
     '/shared/js/pwa-install.js?v=20260520-update-waits-1'
 ];
 

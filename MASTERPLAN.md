@@ -697,3 +697,205 @@ From the latest confirmed module checks:
 - Root `HANDOFF.md` and root `MASTERPLAN.md` are now the only canonical planning documents.
 - `docs/HANDOFF.md` and `docs/MASTERPLAN.md` have been retired to avoid split truth.
 - Historical release notes remain in `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/CHANGELOG.md`.
+
+---
+
+## Marga Care Portal — Product Vision & Improvement Roadmap
+*Added 2026-07-14 — Based on live portal assessment. Phase 1 items 1–3 completed 2026-07-14.*
+
+### The Goal (Non-Negotiable)
+The portal succeeds when customers never need to call the Marga office for routine matters. Every inbound call that can be replaced by the portal is a win. Target: CBS (China Bank Savings, 370+ branches, 294 machines) should generate zero routine inbound calls within 3 months of portal adoption.
+
+### Current State (Honest Assessment as of 2026-07-14)
+- Portal is live at `care.marga.biz` ✅
+- 2,319 accounts in DB, Argon2id hashed, zero plaintext ✅
+- Multi-company overseer with group switcher ✅
+- Self-registration flow ✅
+- Machine list with status filter chips ✅
+- Billing grouped view ✅
+- AI chat (Claude Sonnet 4.6) ✅
+- Admin Credentials & Access tab ✅
+- **Zero self-registered users** ❌
+- **Zero portal tickets submitted** ❌
+- **Real service history not connected** ❌
+- **No request confirmation or notification system** ❌
+- **Mobile experience insufficient** ❌
+
+### Critical Gap: The Portal Feels Empty
+The root cause: portal only shows portal-originated data. But `tbl_schedule` has 44,000+ CBS service and delivery records. Customers logging in for the first time see zeros everywhere and lose trust immediately. **The portal must surface real operational history from day one.**
+
+---
+
+### Improvement Roadmap — Prioritized
+
+#### Phase 1 — Make It Feel Alive ✅ COMPLETED 2026-07-14
+*Goal: First-time login should feel like the portal already knows them.*
+
+1. **✅ Wire `tbl_schedule` into portal service history**
+   - New `listServiceHistory(user)` + `/portal-api/service-history` endpoint.
+   - Returns `byBranch` (lastService/lastToner/lastReading per branch), `recentEvents`, `summary`.
+   - Purpose IDs: 3=Toner/Ink, 4=Cartridge, 5=Service, 8=Reading, 9=Others.
+
+2. **✅ Dashboard — Actionable Intelligence, Not Just Numbers**
+   - KPI cards replaced: Last Service (days ago + branch name), Last Toner/Ink, Next Billing Due.
+   - Activity feed: top 5 recent service/toner events with branch + relative date.
+   - `summary()` now returns `lastService`, `lastToner`, `nextBillingDue`.
+
+3. **✅ Machine Card — Last Service Date**
+   - Devices table has 2 new columns: Last Service, Last Toner (relative dates, green when present).
+   - Hidden on mobile ≤700px. Uses `branchLegacyId` to join `histByBranch` from service history.
+   - `daysAgoShort()` helper for compact labels (Today / Yesterday / 3d ago / 2mo ago).
+
+#### Phase 2 — Close the Loop on Requests
+*Goal: Submit a request → customer knows what happens next.*
+
+4. **Email confirmation on request submit**
+   - When customer submits service/toner request: send email via Hostinger SMTP to `contact_email`
+   - Email includes: ticket number, branch, description, "We will respond within 4 business hours"
+   - Use `solutions@marga.biz` as sender
+
+5. **Service team notification**
+   - When portal request comes in: send email to `solutions@marga.biz` with full details
+   - Future: trigger a schedule entry in `tbl_schedule` so it appears in Field App
+
+6. **Status feedback from Field App → portal**
+   - When tech closes a job in Field App (sets `date_finished`): portal ticket status updates
+   - Mechanism: portal `/portal-api/tickets` queries both `portal_service_tickets` AND `tbl_schedule` matched by branch + date range
+   - Show statuses: Pending → Dispatched → Completed
+   - Add "Completed by [tech name] on [date]" to closed ticket view
+
+#### Phase 3 — Mobile-First Redesign
+*Goal: Branch user can request service in under 30 seconds on their phone.*
+
+7. **Floating Action Button (FAB)**
+   - Persistent "Request Help" button (bottom-right, always visible on mobile)
+   - Tap → Sheet slides up: "Service Issue" or "Need Toner"
+   - Service: select machine (auto-detects if branch user has only one) → describe → photo → submit
+   - Toner: select machine → notes → submit
+   - Maximum 3 taps from any screen to submitted request
+
+8. **Mobile machine list**
+   - Replace horizontal-scroll table with card grid on mobile
+   - Each card: machine model + branch + status badge + "Request Service" button
+   - No horizontal scroll on any screen ≤ 480px
+
+9. **PWA push notifications**
+   - Implement Web Push (VAPID) for: request received confirmation, tech dispatched, job completed
+   - Graceful fallback to email if push not granted
+
+#### Phase 4 — Billing & Trust
+*Goal: Customer never needs to ask "what do I owe?" or send payment manually.*
+
+10. **SOA PDF generation**
+    - Generate Statement of Account PDF per company per period
+    - Use existing Margabase invoice data
+    - Download button on billing page
+    - Recommend `pdfkit` or `puppeteer` for generation
+
+11. **Payment proof upload**
+    - Customer uploads deposit slip / GCash screenshot against an invoice
+    - Stored in `portal_account_payments` table with `status: pending_verification`
+    - Marga accounting team receives email notification
+    - Marks invoice as "Payment Submitted — Under Verification"
+
+12. **Invoice line item breakdown**
+    - Expand grouped invoice to show: per-branch amount, machine model, meter reading, rate
+    - Currently shows total only — overseer needs per-branch breakdown for internal allocation
+
+#### Phase 5 — Differentiation
+*Goal: No competitor in Philippine copier rental offers these. This becomes a sales tool.*
+
+13. **Assigned tech profile**
+    - Per machine: show assigned technician name, photo (if available), contact number
+    - "Call Tech" button → `tel:` link
+    - "Rate this visit" → 1-5 stars + comment after job completion
+    - Tech performance ratings aggregate to admin dashboard
+
+14. **Machine uptime report**
+    - Monthly per-branch: % uptime, number of service calls, avg response time, avg resolution time
+    - Company-level rollup for overseer
+    - Exportable as PDF or CSV
+
+15. **Predictive toner alerts**
+    - Based on toner delivery history + machine reading trends
+    - "Based on your Alabang Hills branch usage, you'll need toner in approximately 15 days"
+    - Trigger: reading velocity from `tbl_schedule` purpose_id=8 records
+
+16. **Sister company linking via admin**
+    - Overseer can request to link another company code through the portal
+    - Admin approves via Credentials & Access tab
+    - Removes need for Marga to manually add scopes
+
+---
+
+### Portal Architecture Rules (Permanent)
+
+#### Data Sources
+| Portal Feature | Data Source | Notes |
+|---|---|---|
+| Machine list | `api.active_customer_graph` | Never raw `marga.machines` |
+| Machine status | `deriveCustomerStatus(hasSerial, statusId)` | Server function |
+| Service history | `tbl_schedule` via `app_meta.firestore_documents` | 44K+ records for CBS |
+| Billing/invoices | `marga.billing_invoices` | Period from `invoice_date` when `billing_month` NULL |
+| Payments | `marga.payments` JOIN `billing_invoices` | Scope by `company_id` for grouped accounts |
+| Portal tickets | `marga.portal_service_tickets` | Portal-originated only |
+| Portal toner | `marga.portal_toner_requests` | Portal-originated only |
+| Change unit | `tbl_newmachinehistory` WHERE remarks ILIKE '%CHANGE UNIT%' | Drives "For Replacement" status |
+| Tech assignment | `tbl_schedule.tech_id` → `tbl_employee` | For assigned tech card |
+
+#### Status Hierarchy (Customer-Facing Only)
+- `Active` (green) — has serial number
+- `Needs Attention` (red) — no serial, no status → ops needs to investigate
+- `For Replacement` (amber) — CHANGE UNIT in machine history within 2 years
+- `Inactive` (grey) — status_id 14, 17 (old/N/A machines)
+- `Under Repair` — REMOVED from customer view (still Active from their perspective)
+- `Incoming` — REMOVED from customer view (still Active from their perspective)
+
+#### The 330 "Needs Attention" Devices
+- Query: `WHERE machine_id IS NULL OR machine_status_id IS NULL OR display_serial = ''`
+- Admin route: `GET /portal-api/admin/pending-devices`
+- These are: active contracts where machine was never linked in VB system
+- Action needed: field team identifies machine at location → updates in `app.marga.biz` General Production
+- Priority: devices WITH billing history first (paying customers with unlinked machines)
+
+#### Email System
+- SMTP: Hostinger, `smtp.hostinger.com:465` TLS
+- From: `accounting@marga.biz` (working, confirmed) / `solutions@marga.biz` (future — set password in `.env`)
+- Add to `margabase.env`: `MARGA_CARE_SMTP_USER=solutions@marga.biz`, `MARGA_CARE_SMTP_PASSWORD=<password>`
+- All portal emails should come from `solutions@marga.biz` — accounting should stay for billing
+
+#### Credential Management Rules
+- DB (`marga.portal_accounts`) is the permanent truth. Always.
+- CSV at `~/Documents/Marga-Exports/` is a one-time delivery record. Delete once all overseers have logged in.
+- Never regenerate all accounts unless `--apply` is explicitly confirmed. Dry run first always.
+- Future credential generation goes to `~/Documents/Marga-Exports/` (not Desktop).
+- Admin can generate individual PINs from Credentials & Access tab — no need for batch CSV again.
+
+---
+
+### Comparison: Current vs Target Customer Experience
+
+| Scenario | Today (portal v1) | Target (portal v2+) |
+|---|---|---|
+| Branch machine jams 9am | Call Marga office | FAB → 3 taps → submitted |
+| Want to know tech ETA | Call Marga office | Check portal ticket status |
+| Want to know balance | Call Marga office | Check billing tab instantly |
+| Toner running low | Call Marga office | Request via portal + get confirmation |
+| Want service history | Ask Marga for records | View full timeline in portal |
+| Overseer checks all branches | Call Marga account manager | Dashboard summary + filter by branch |
+| Payment made | Email/call accounting | Upload deposit slip in portal |
+| Machine needs replacement | Chase Marga via calls | See "For Replacement" status, request via portal |
+
+### Safe Next Work Sequence — Care Portal
+1. Start next session: read `HANDOFF.md` section `2026-07-14` and this MASTERPLAN section.
+2. **First priority: wire `tbl_schedule` real history into portal.** This is the highest-impact single change.
+3. Wire service history into: device detail modal timeline, machine list card (last service date), Proof & History page.
+4. Fix device detail history join — currently queries by `serial` string but `machine_legacy_id` is the more reliable key for older records. Query by BOTH: `serial = display_serial OR mach_id = machine_legacy_id`.
+5. Add email confirmation on portal ticket/toner submit.
+6. Add notification email to `solutions@marga.biz` on new portal request.
+7. Build admin "Pending Devices" UI panel — list the 330 devices with ops action notes.
+8. Mobile FAB for quick service request.
+9. SOA PDF generation.
+10. PWA push notifications.
+11. Assigned tech card.
+12. Machine uptime report.

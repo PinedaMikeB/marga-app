@@ -162,7 +162,7 @@ function nowStamp() {
 
 function findLatestSeedFile(explicitPath = '') {
   if (explicitPath && fs.existsSync(explicitPath)) return explicitPath;
-  const desktopDir = '/Users/mike/Desktop';
+  const desktopDir = '/Users/mike/Documents/Marga-Exports';
   if (!fs.existsSync(desktopDir)) return '';
   const candidates = fs.readdirSync(desktopDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && /^marga-care-credentials-\d{8}-\d{6}$/.test(entry.name))
@@ -959,7 +959,8 @@ async function main() {
       }
     }
 
-    const outputDir = path.resolve(args.outDir || `/Users/mike/Desktop/marga-care-credentials-${nowStamp()}`);
+    // Store exports in Documents/Marga-Exports instead of Desktop to avoid clutter
+    const outputDir = path.resolve(args.outDir || `/Users/mike/Documents/Marga-Exports/marga-care-credentials-${nowStamp()}`);
     fs.mkdirSync(outputDir, { recursive: true });
     const jsonPath = path.join(outputDir, 'credentials.json');
     const csvPath = path.join(outputDir, 'credentials.csv');

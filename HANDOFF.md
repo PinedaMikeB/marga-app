@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-07-13 (Care Portal completeness audit + billing grid fixes + portal server group filter bug fix)
+Last Updated: 2026-07-14 (Care Portal Week 1 — Phase 1 "Make It Feel Alive" + service history data source fix)
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -8,9 +8,75 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 3. `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills/marga-database-migration/SKILL.md` when the work touches database migration, backend cutover, rescue sync, Margabase compatibility APIs, or production write paths.
 
-## Current Focus (2026-07-13)
+## Current Focus (2026-07-14)
 
-### Care Portal + Billing Grid Completeness — COMPLETED TODAY
+### Care Portal Phase 1 "Make It Feel Alive" — COMPLETED TODAY
+
+**Goal:** First-time login should feel like the portal already knows them.
+
+**Changes shipped:**
+
+1. **New `listServiceHistory(user)` server function** (`scripts/marga-service-portal-server.mjs`)
+   - Queries `tbl_schedule` via `app_meta.firestore_documents` for all completed service, toner/ink, and reading events across all scoped branches.
+   - Returns `byBranch` map: per-branch `lastService`, `lastToner`, `lastReading` (date, serial, notes).
+   - Returns `recentEvents` array: top-20 cross-branch events for activity feed.
+   - Returns `summary.lastService` / `summary.lastToner` for the most recent event across all branches.
+   - Purpose ID mapping: 3=Toner/Ink, 4=Cartridge, 5=Service, 8=Reading, 9=Others.
+
+2. **`summary()` enriched** (`scripts/marga-service-portal-server.mjs`)
+   - Now calls `listServiceHistory()` in parallel and adds `lastService`, `lastToner`, `nextBillingDue` to the response.
+   - `nextBillingDue` = soonest unpaid invoice due date (ISO date string).
+
+3. **New `/portal-api/service-history` endpoint**
+   - Returns `{ byBranch, recentEvents, summary }`.
+   - Scoped by portal user scope (same `previewScopedUser()` pattern as all other endpoints).
+
+4. **`DataService.getServiceHistory(user)` added** (`marga-service-portal/src/lib/data-service.js`)
+   - Calls `/portal-api/service-history`.
+
+5. **Dashboard redesigned** (`marga-service-portal/src/portal-main.js`)
+   - KPI strip replaced with smart "alive" cards: Last Service (days ago + branch), Last Toner/Ink, Next Billing Due.
+   - Activity feed added: top 5 recent service/toner events from `tbl_schedule` with branch name + relative date.
+   - `daysAgo()` helper converts ISO dates to human-readable relative strings.
+   - Falls back gracefully if service history is unavailable (no breakage).
+
+6. **Machines list enriched** (`marga-service-portal/src/portal-main.js`)
+   - Two new columns: **Last Service** and **Last Toner** — show relative dates (e.g. "3d ago", "2mo ago").
+   - Green color when data present; grey "—" when no data on record.
+   - Hidden on mobile (≤700px) to preserve table readability.
+   - Uses `device.branchLegacyId` to join against `histByBranch` from service history API.
+
+7. **CSS additions** (`marga-service-portal/src/styles/portal.css`)
+   - `.kpi-eyebrow`, `.value--text`, `.kpi-card--service/toner/billing` (accent border).
+   - `.dashboard-activity-feed` and activity row styles.
+   - `.care-device-grid--with-history` 7-column grid.
+   - `.device-hist--ok` (green) / `.device-hist--none` (grey).
+   - Mobile breakpoint hides history columns at ≤700px.
+
+**Files changed:**
+- `scripts/marga-service-portal-server.mjs` — `listServiceHistory()`, `summary()`, new route
+- `marga-service-portal/src/lib/data-service.js` — `getServiceHistory()`
+- `marga-service-portal/src/portal-main.js` — `renderDashboard()`, `renderDevices()`, `daysAgoShort()`
+- `marga-service-portal/src/styles/portal.css` — Week 1 CSS block appended
+
+**Critical bug fix — same session:**
+
+- **Wrong data source diagnosed**: Initial `listServiceHistory()` queried `app_meta.firestore_documents` (raw Firestore JSON mirror) which has dirty data — `task_datetime` values like `"22026-04-29"`, `"2027-01-01"` (fake future dates), and `"undefined 00:00:00"` (literal string). These caused `event_date` to sort incorrectly and the `globalLastService` comparisons to fail, so the dashboard showed "No service on record" even though the activity feed was partially working.
+- **Correct source**: `marga.service_schedules` — the relational mirror with typed `date_finished` (timestamptz), `scheduled_date` (date), and `branch_legacy_id` (text). 187,988 completed customer-visible records, latest dated today.
+- **Fix**: Rewrote `listServiceHistory()` to use `marga.service_schedules` joined to `api.active_customer_graph` via `branch_legacy_id`. Single CTE query with `DISTINCT ON (branch_legacy_id, event_type)` for efficient per-branch latest-event lookup. Date filter: `date_finished >= now() - interval '3 years'` and `<= now() + interval '1 day'` to exclude bad data.
+- **Verified for CBS** (company_id 836): query returns 8 rows covering service + toner across 156 branches, latest Cartridge Delivery at Sta Ana (CBS) today at 04:38 UTC.
+- **Rule going forward**: Always use `marga.service_schedules` for schedule history queries, not `app_meta.firestore_documents`. The Firestore JSON mirror has dirty string data; the relational table has clean typed columns.
+
+**Next up (Week 2 — Phase 2):**
+- Email confirmation on service/toner request submit (Hostinger SMTP already wired)
+- Service team notification email to solutions@marga.biz
+- Ticket status feedback from Field App → portal (Pending → Dispatched → Completed)
+
+---
+
+## Previous Focus (2026-07-13)
+
+### Care Portal + Billing Grid Completeness — COMPLETED YESTERDAY
 - **Needs Attention count** brought from 7 → 0 for CBS (China Bank Savings).
 - **4 phantom contracts deactivated** (status → 7): ~xxAraneta (46), ~xxMckinley Hill (90), San Fernando scan/cat4 (3569), San Pablo scan/cat4 (3849).
 - **3 legacy CBS contracts deactivated**: ~xx Koronadal (3519), ~xxCebu Lahug #1 (623), ~xxCebu Lahug #2 (624).
@@ -448,6 +514,7 @@ Start every new Marga-App thread by reading:
   - Field App has `Join Company Meeting`.
   - Active meetings show an in-app banner: `Company meeting is live`.
   - Meeting notifications are banner-style, not phone-style ringing, by design. Direct calls ring; meetings notify.
+  - 2026-07-14 reliability guardrail: company meeting launch must probe `call.wotgonline.com` before opening Jitsi and may fall back to `meet.jit.si` for the shared room if the self-hosted call server is unreachable, otherwise users only see `Unable to load meeting tools.` and cannot join.
 - Current live Service Progress map work already pushed on `main`:
   - `f78805d` `Center service progress map on Antipolo office`
   - `0933866` `Reduce service progress map load`
@@ -900,3 +967,145 @@ Important Collections SN rule:
 ## Historical Notes
 - `HANDOFF-COLLECTIONS-010626.md` is a historical module-specific note only.
 - Historical changelog remains in `/Volumes/Wotg Drive Mike/GitHub/Marga-App/docs/CHANGELOG.md`.
+
+---
+
+## 2026-07-14 — Marga Care Portal (care.marga.biz) — Full Build Session
+
+### What Was Built This Session
+
+#### Infrastructure
+- `marga-service-portal-server.mjs` — full Node.js HTTP server (3,100+ lines) running on port 9200, served via Cloudflare Tunnel to `care.marga.biz`. Permanent LaunchAgent: `com.marga.service-portal` (PID ~749, KeepAlive: true).
+- `marga.portal_accounts` — 2,319 accounts generated (1,070 company admins + 1,247 branch users + 2 originally 1,068). Passwords hashed with Argon2id. Zero plaintext stored in DB.
+- `marga.care_account_scopes` — scope table linking accounts to companies. Supports multi-company overseers.
+- New DB columns added: `contact_email`, `registered_name`, `registered_at` on `portal_accounts`.
+- Snapshot queue drain LaunchAgent (`com.marga.snapshot-queue-drain`) — runs every 5 minutes, processes `app_meta.master_schedule_snapshot_rebuild_queue`.
+
+#### Auth System
+- Cookie-based session (HttpOnly, Secure, SameSite=Strict). Token = custom HMAC signed JSON.
+- Login accepts: email login, company code login (`C00072-B00082`), OR self-registered `contact_email`.
+- Multi-company overseer: on login, server fetches all `care_account_scopes` for the account and returns `companyIds: [836, 847]` in session. Group switcher in sidebar when `companyIds.length > 1`.
+- `portalScopeWhere()` — scopes all queries to the active company. `activeCompanyId` passed as query param from client.
+
+#### Self-Registration (`/register.html`)
+- Public page, no auth required.
+- Step 1: Enter company code (e.g. `C00072`) → validated against `marga.companies`.
+- Step 2: Select branch from searchable list. Already-registered branches show "Registered" badge and are not selectable.
+- Step 3: Enter full name, email, password (min 8 chars, with strength meter). On submit: saves `contact_email`, `registered_name`, hashes password, sets `must_change_password = false`, sets `registered_at`.
+- "Register your branch here →" link on login page.
+- `/portal-api/register/company?code=` — validates company code.
+- `/portal-api/register/branches?companyId=` — returns branch list with `available`/`taken` status.
+- `/portal-api/register/claim` — claims a branch account.
+
+#### Admin Credentials & Access Tab
+- Two-tab admin home: **Customer Preview** (existing) + **Credentials & Access** (new).
+- Live searchable table of all `portal_accounts` — filter by role, status, active/inactive.
+- Shows: Name/Login, Company/Role, Contact Email (self-registered), Delivery Email (internal), Status (Registered/Pending/New PIN/Active/Inactive).
+- **[Edit]** — inline row: change display name, delivery email, login username.
+- **Company Access section** — shows all linked companies as tags. Search + link additional companies. Unlink with ✕ (cannot unlink primary company).
+- **[New PIN]** — calls `generate-password` route, shows PIN once in modal with copy button. Never stored.
+- **[Deactivate/Activate]** — toggles `portal_accounts.active`.
+- Server routes: `GET /portal-api/admin/credentials`, `PATCH /portal-api/admin/credentials/:id`, `POST /portal-api/admin/credentials/:id/toggle-active`, `POST /portal-api/admin/credentials/:id/link-company`, `DELETE /portal-api/admin/credentials/:id/unlink-company/:companyId`.
+
+#### Multi-Company Overseer (Merge Script)
+- `scripts/merge-multi-company-accounts.mjs` — finds same-email company_admin accounts across multiple companies, merges secondary company scopes into primary account, deactivates secondary accounts.
+- Run: `node scripts/merge-multi-company-accounts.mjs` (dry run), `--apply` to execute.
+- 8 merges applied: 7 via email match, 1 manual (CBS Norisa Arias — `naarias.cbs@chinabank.ph` now sees both company_id 836 and 847).
+- Account 51 (`dbcuevas.cbs@chinabank.ph`) deactivated, scope 847 added to account 50.
+
+#### Device Status Logic (Customer-Facing)
+- `deriveCustomerStatus(serialAvailable, statusId)` — canonical function.
+- **Has serial → Active** (regardless of internal status — machine is physically at customer).
+- **No serial + NULL status → Needs Attention** (flag for ops, 330 across all companies).
+- **No serial + any status → Active** (contract active, machine present, serial missing from records).
+- **CHANGE UNIT in `tbl_newmachinehistory` → For Replacement** (overrides Active).
+- Removed: Incoming, Under Repair, Pending Setup, Delivered, Unknown from customer view.
+- Internal status map (`CUSTOMER_STATUS_LABELS`) kept for admin views only.
+
+#### Device Status Filter Chips
+- Filter chips above machine list: All | Active | Needs Attention | For Replacement | Inactive.
+- Each chip shows count. Clicking filters instantly. Works alongside search.
+- `state.deviceStatusFilter` drives filtering client-side.
+
+#### Branch Name Cleaning
+- `cleanBranchName(value)` in `utils.js` — strips `~xx`, `~x`, `~xxx` prefix from all branch names before display.
+- Applied: device list, branch dropdowns, admin preview table, invoice breakdown, toner form, service request form.
+- Also applied server-side in `listDevices` query via `regexp_replace`.
+
+#### Billing — Grouped Invoice View
+- Invoices grouped client-side by `invoice_no`. When one invoice_no spans multiple branches (e.g. CBS 836 — 155 branches under invoice 132231): shows one summary row with total amount + "▼ N branches" expand button.
+- `billing_month` NULL fix: derives period from `invoice_date` when `billing_month` is NULL (affects CBS grouped accounts).
+- Due date formatted to `Jun 30, 2026` Manila time via `formatDatePH()`.
+- Status badge fixed: `'0'` or null → shows "Unpaid" (was rendering `0` badge).
+- Payments pane removed from billing page.
+- Server `listInvoices` now returns `branchName` for grouped breakdown.
+
+#### Photo Upload (Multipart)
+- `readMultipart(req)` — pure Node.js Buffer multipart parser, no external library.
+- Both `/portal-api/tickets` and `/portal-api/toner-requests` detect `multipart/form-data` and parse file.
+- `saveUploadedFile()` saves to `public/uploads/` with timestamped filename, returns `/uploads/filename` URL.
+- `DataService.createTicket` and `createTonerRequest` send `FormData` when photo present.
+- Toner form now has "Attach Photo" field.
+
+#### AI Chat (Contact Marga)
+- Claude Sonnet 4.6 via Anthropic API. Customer-context system prompt includes company name.
+- Responds in English or Taglish. Escalates to `+63-2-8123-4567` / `solutions@marga.biz` when needed.
+- Enter key + Send button. Typing indicator. `aiChatState` manages message history.
+
+#### KPI Cards
+- Dashboard KPI cards are now clickable — each navigates to the relevant section.
+- Open Service Requests → tickets, Pending Toner → toner, Machines In Care → devices, Outstanding Balance → billing.
+- `→` arrow with hover animation. Keyboard accessible.
+- Removed fake `+1.9% than last update` CSS pseudo-element.
+
+#### Onboarding Email
+- Sent via Hostinger SMTP (`accounting@marga.biz`, port 465 TLS). Script: `/tmp/send_welcome_v2.mjs`.
+- Test email sent to `michael.marga@gmail.com` as CBS overseer. Content confirmed clean (ASCII only, no Unicode/emoji encoding issues).
+- Email contains: portal URL, login credentials, temporary PIN, company access codes (C00072 branches, C00073 departments), registration link for branches, feedback request.
+
+### Canonical Rules — Marga Care Portal
+
+#### Data Rules
+- **Active contract graph**: always use `api.active_customer_graph`, never raw `marga.machines.current_company_id`.
+- **Branch scope**: all portal API queries scoped server-side via `portalScopeWhere()`. Never trust URL params alone — scope comes from JWT.
+- **Branch isolation**: `branch_user` role can only see their own `branch_id`. `company_admin` sees all branches under their linked `company_ids`.
+- **Machine status**: use `deriveCustomerStatus(hasSerial, statusId)` always. Never show internal logistics statuses (DELIVERED, FOR DELIVERY, etc.) to customers.
+- **Branch names**: always clean with `cleanBranchName()` or `regexp_replace(name, '^~x+\s*', '', 'i')` before display.
+- **Billing period**: `billing_month` is NULL for grouped accounts — always derive from `invoice_date` using the CASE expression in `listInvoices`.
+- **Payments scope**: use `company_id` scope only (not `branch_id`) for grouped billing accounts (CBS pattern).
+- **Change unit detection**: query `tbl_newmachinehistory` where `remarks ILIKE '%CHANGE UNIT%'` and `branch_id = branch_legacy_id::text`.
+
+#### Auth Rules
+- `portal_accounts` is completely separate from `tbl_employee` and `app_meta.users`. No shared credentials.
+- `contact_email` = customer's self-registered email (login + notifications). Set by customer during registration.
+- `credential_delivery_email` = Marga internal delivery address (where Marga sends PINs and notices). Set by Marga admin only.
+- Never show plaintext passwords in any UI. Generate PIN once, show in modal, never store.
+- The CSV export at `~/Documents/Marga-Exports/` is a one-time delivery record. Delete after all customers have logged in.
+
+#### Server Rules
+- All registration routes (`/portal-api/register/*`) are public — no auth required.
+- All other `/portal-api/*` routes require valid `msp_session` cookie or `Authorization: Bearer` token.
+- Admin routes (`/portal-api/admin/*`) additionally require `role IN (marga_admin, marga_staff)` via `requireInternalUser()`.
+- Photo uploads saved to `marga-service-portal/public/uploads/`. Ensure this directory is not committed to git (add to .gitignore).
+
+#### Deployment Rules
+- Version string in `public/index.html` `<script src="/src/portal-main.js?v=...">` must be bumped on every deploy so browsers reload JS.
+- Server restart: `launchctl stop com.marga.service-portal && sleep 2 && launchctl start com.marga.service-portal`.
+- Health check: `curl -s http://127.0.0.1:9200/health` → `{"ok":true,"app":"marga-service-portal"}`.
+- Current version deployed: `v=20260710-device-filter-1`.
+
+### Known Issues / Open Items as of 2026-07-14
+
+1. **Real service history not shown** — portal only shows portal-submitted tickets (zero). `tbl_schedule` has 44,000+ CBS service/delivery records completely unused. First-time customers see all zeros and think portal is broken. **CRITICAL — fix first.**
+2. **No email confirmation on request submit** — customer submits service/toner request, nothing happens on their end. No email, no notification to service team.
+3. **No Field App → portal status feedback** — when a tech is dispatched/completes a job, portal ticket status stays "Pending". There is no webhook or polling connecting Field App close events to portal ticket status.
+4. **Mobile experience** — machine list requires horizontal scroll on phone. Service request form has 4 dropdowns. Not urgent enough for 9am "machine is jammed" scenario.
+5. **330 "Needs Attention" devices** — machines with no serial and no status across all companies. Admin pending-devices route exists (`/portal-api/admin/pending-devices`) but no UI panel yet. These need ops team investigation.
+6. **`active_machine_count` in credential CSV** — still blank for most accounts (export script used wrong source). Portal itself uses `api.active_customer_graph` correctly — CSV field is stale. Do not use CSV for machine counts.
+7. **PDF generation** — SOA PDF not built. Billing table shows `-` in PDF column.
+8. **Payment proof upload** — not built. Customer cannot upload deposit slip.
+9. **PWA push notifications** — not implemented.
+10. **Assigned tech card** — tech name/contact not shown on machine detail.
+11. **Device history** — `tbl_schedule` history join uses `serial` field but many CBS machines have `machine_legacy_id` mismatch. History modal shows empty for most machines.
+12. **Group switcher "All Groups"** — when null (all groups combined), `portalScopeWhere` uses `company_id = any([836,847])`. Verify summary numbers are not double-counted for shared billing.
+13. **`~xx` branch names** — cleaned client-side and server-side in most places. Audit `tbl_branchinfo` legacy names — some branches have `~xx` as their entire name (stripped to empty string). These are excluded from the registration branch list via `length > 0` filter.

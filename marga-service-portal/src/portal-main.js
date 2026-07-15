@@ -840,8 +840,10 @@ async function renderDashboard() {
     return;
   }
 
-  const summary = await service.getDashboardSummary(state.user);
-  const [tickets, requests, invoices, payments] = await Promise.all([
+  const [summary, serviceHistoryResult, devicesForFleet, tickets, requests, invoices, payments] = await Promise.all([
+    service.getDashboardSummary(state.user),
+    service.getServiceHistory(state.user).catch(() => ({ summary: null, recentEvents: [] })),
+    service.listDevices(state.user).catch(() => []),
     service.listTickets(state.user),
     service.listTonerRequests(state.user),
     canViewBilling() ? service.listInvoices(state.user) : Promise.resolve([]),
@@ -852,6 +854,75 @@ async function renderDashboard() {
   const allMachines = Number(groupMachines || 0) + Number(individualMachines || 0);
   const openTickets = tickets.filter((ticket) => !String(ticket.status || '').toLowerCase().includes('complete')).length;
   const recentActivityCount = tickets.length + requests.length;
+
+  // Build "last service" smart text from service history
+  const histSummary = serviceHistoryResult?.summary || summary;
+  const lastServiceData = histSummary?.lastService || null;
+  const lastTonerData = histSummary?.lastToner || null;
+  const recentEvents = serviceHistoryResult?.recentEvents || [];
+
+  function daysAgo(dateStr) {
+    if (!dateStr) return null;
+    const ms = Date.now() - Date.parse(dateStr);
+    if (!Number.isFinite(ms) || ms < 0) return null;
+    const days = Math.floor(ms / 86400000);
+    if (days === 0) return 'today';
+    if (days === 1) return 'yesterday';
+    if (days < 7) return `${days} days ago`;
+    if (days < 30) return `${Math.floor(days / 7)} week${Math.floor(days / 7) > 1 ? 's' : ''} ago`;
+    if (days < 365) return `${Math.floor(days / 30)} month${Math.floor(days / 30) > 1 ? 's' : ''} ago`;
+    return `${Math.floor(days / 365)} year${Math.floor(days / 365) > 1 ? 's' : ''} ago`;
+  }
+
+  function smartServiceText(data, fallback) {
+    if (!data) return fallback;
+    const ago = daysAgo(data.date);
+    const branch = data.branchName ? ` · ${escapeHtml(data.branchName)}` : '';
+    return ago ? `${ago}${branch}` : fallback;
+  }
+
+  const lastServiceText = smartServiceText(lastServiceData, 'No service on record');
+  const lastTonerText = smartServiceText(lastTonerData, 'No deliveries on record');
+  const nextBillingText = summary.nextBillingDue
+    ? `Due ${formatDatePH(summary.nextBillingDue)}`
+    : (summary.unpaidAmount > 0 ? formatMoney(summary.unpaidAmount) : 'No outstanding balance');
+
+  // Fleet health — uses devicesForFleet already loaded above
+  const fleetActive      = devicesForFleet.filter(d => d.status === 'Active').length;
+  const fleetAttention   = devicesForFleet.filter(d => d.status === 'Needs Attention').length;
+  const fleetReplacement = devicesForFleet.filter(d => d.status === 'For Replacement').length;
+  const fleetInactive    = devicesForFleet.filter(d => d.status === 'Inactive').length;
+  const fleetTotal       = devicesForFleet.length;
+  const fleetUptimePct   = fleetTotal > 0 ? Math.round((fleetActive / fleetTotal) * 100) : 0;
+  const fleetUptimeClass = fleetUptimePct >= 95 ? 'uptime-green' : fleetUptimePct >= 80 ? 'uptime-amber' : 'uptime-red';
+
+  // 30-day stats from service history
+  const now30 = Date.now() - 30 * 86400000;
+  const svc30   = (serviceHistoryResult?.recentEvents || []).filter(e => e.type === 'service' && Date.parse(e.date) > now30).length;
+  const toner30 = (serviceHistoryResult?.recentEvents || []).filter(e => e.type === 'toner'   && Date.parse(e.date) > now30).length;
+  const fleet30Parts = [];
+  if (svc30 > 0)   fleet30Parts.push(`${svc30} service visit${svc30 > 1 ? 's' : ''}`);
+  if (toner30 > 0) fleet30Parts.push(`${toner30} cartridge deliver${toner30 > 1 ? 'ies' : 'y'}`);
+  const fleet30Stats = fleet30Parts.join(' · ');
+
+  // Recent activity feed from tbl_schedule — top 5 events
+  const activityFeedHtml = recentEvents.length
+    ? `<div class="dashboard-activity-feed">
+        <div class="activity-feed-heading">Recent Activity</div>
+        ${recentEvents.slice(0, 5).map(ev => `
+          <div class="activity-feed-row">
+            <span class="activity-feed-icon activity-feed-icon--${ev.type}">
+              ${ev.type === 'service' ? '🔧' : '🖨️'}
+            </span>
+            <div class="activity-feed-body">
+              <div class="activity-feed-label">${escapeHtml(ev.label)}</div>
+              <div class="activity-feed-meta">${escapeHtml(ev.branchName || '')}${ev.date ? ` · ${daysAgo(ev.date) || formatDate(ev.date)}` : ''}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>`
+    : '';
+
   viewContainer.innerHTML = `
     ${renderInternalCustomerPicker()}
     <section class="panel glass care-hero">
@@ -863,37 +934,80 @@ async function renderDashboard() {
       <div class="care-hero-actions">
         <button type="button" class="btn btn-primary" id="careActionService">Request Service</button>
         <button type="button" class="btn btn-secondary" id="careActionToner">Request Toner / Ink</button>
-        ${canViewBilling() ? '<button type="button" class="btn btn-secondary" id="careActionBilling">View Billing & Payments</button>' : ''}
+        ${canViewBilling() ? '<button type="button" class="btn btn-secondary" id="careActionBilling">View Billing &amp; Payments</button>' : ''}
         <button type="button" class="btn btn-secondary" id="careActionSupport">Contact Marga</button>
       </div>
     </section>
 
     <section class="panel glass dashboard-summary-card care-metric-strip">
-      <div class="kpi-grid">
+      <div class="kpi-grid kpi-grid--alive">
         <div class="kpi-card kpi-card--link" data-nav="tickets" role="button" tabindex="0">
-          <div class="kpi-card-inner"><div class="value">${openTickets}</div><div class="label">Open Service Requests</div></div>
+          <div class="kpi-card-inner">
+            <div class="value">${openTickets}</div>
+            <div class="label">Open Service Requests</div>
+          </div>
           <div class="kpi-arrow">→</div>
         </div>
-        <div class="kpi-card kpi-card--link" data-nav="toner" role="button" tabindex="0">
-          <div class="kpi-card-inner"><div class="value">${summary.pendingToner}</div><div class="label">Pending Toner / Ink</div></div>
+        <div class="kpi-card kpi-card--service kpi-card--link" data-nav="history" role="button" tabindex="0">
+          <div class="kpi-card-inner">
+            <div class="kpi-eyebrow">Last Service</div>
+            <div class="value value--text">${lastServiceText}</div>
+            <div class="label">Maintenance visit</div>
+          </div>
           <div class="kpi-arrow">→</div>
         </div>
-        <div class="kpi-card kpi-card--link" data-nav="devices" role="button" tabindex="0">
-          <div class="kpi-card-inner"><div class="value">${allMachines}</div><div class="label">Machines In Care</div></div>
+        <div class="kpi-card kpi-card--toner kpi-card--link" data-nav="toner" role="button" tabindex="0">
+          <div class="kpi-card-inner">
+            <div class="kpi-eyebrow">Last Toner / Ink</div>
+            <div class="value value--text">${lastTonerText}</div>
+            <div class="label">${summary.pendingToner > 0 ? `${summary.pendingToner} pending` : 'Supply delivery'}</div>
+          </div>
           <div class="kpi-arrow">→</div>
         </div>
         ${
           canViewBilling()
-            ? `<div class="kpi-card kpi-card--link" data-nav="billing" role="button" tabindex="0">
-                <div class="kpi-card-inner"><div class="value money-value">${formatMoney(summary.unpaidAmount)}</div><div class="label">Outstanding Balance</div></div>
+            ? `<div class="kpi-card kpi-card--billing kpi-card--link" data-nav="billing" role="button" tabindex="0">
+                <div class="kpi-card-inner">
+                  <div class="kpi-eyebrow">Next Billing</div>
+                  <div class="value value--text">${nextBillingText}</div>
+                  <div class="label">${summary.unpaidInvoices > 0 ? `${summary.unpaidInvoices} unpaid invoice${summary.unpaidInvoices > 1 ? 's' : ''}` : 'Billing &amp; payments'}</div>
+                </div>
                 <div class="kpi-arrow">→</div>
                </div>`
-            : `<div class="kpi-card kpi-card--link" data-nav="history" role="button" tabindex="0">
-                <div class="kpi-card-inner"><div class="value">${recentActivityCount}</div><div class="label">Recent Updates</div></div>
+            : `<div class="kpi-card kpi-card--link" data-nav="devices" role="button" tabindex="0">
+                <div class="kpi-card-inner"><div class="value">${allMachines}</div><div class="label">Machines In Care</div></div>
                 <div class="kpi-arrow">→</div>
                </div>`
         }
       </div>
+    </section>
+
+    ${activityFeedHtml}
+
+    <section class="panel glass fleet-health-strip">
+      <div class="fleet-health-header">
+        <span class="fleet-health-title">Fleet Health</span>
+        <span class="fleet-uptime ${fleetUptimeClass}">${fleetUptimePct}% uptime</span>
+      </div>
+      <div class="fleet-health-counts">
+        <div class="fleet-count fleet-count--active" data-nav="devices" data-filter="">
+          <span class="fleet-count-num">${fleetActive}</span>
+          <span class="fleet-count-label">Active</span>
+        </div>
+        ${fleetAttention > 0 ? `<div class="fleet-count fleet-count--attention" data-nav="devices" data-filter="Needs Attention">
+          <span class="fleet-count-num">${fleetAttention}</span>
+          <span class="fleet-count-label">Needs Attention</span>
+        </div>` : ''}
+        ${fleetReplacement > 0 ? `<div class="fleet-count fleet-count--replace" data-nav="devices" data-filter="For Replacement">
+          <span class="fleet-count-num">${fleetReplacement}</span>
+          <span class="fleet-count-label">For Replacement</span>
+        </div>` : ''}
+        ${fleetInactive > 0 ? `<div class="fleet-count fleet-count--inactive">
+          <span class="fleet-count-num">${fleetInactive}</span>
+          <span class="fleet-count-label">Inactive</span>
+        </div>` : ''}
+      </div>
+      ${fleet30Stats ? `<div class="fleet-30day">Last 30 days: <strong>${fleet30Stats}</strong></div>` : ''}
     </section>
   `;
 
@@ -905,18 +1019,220 @@ async function renderDashboard() {
     card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') setView(nav); });
   });
 
-  document.getElementById('careActionService')?.addEventListener('click', () => setView('tickets'));
-  document.getElementById('careActionToner')?.addEventListener('click', () => setView('toner'));
+  // Fleet health count clicks → Machines tab with filter pre-set
+  viewContainer.querySelectorAll('.fleet-count[data-nav]').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      const filter = el.getAttribute('data-filter') || '';
+      state.deviceStatusFilter = filter;
+      setView('devices');
+    });
+  });
+
+  document.getElementById('careActionService')?.addEventListener('click', () => openQuickRequest('service'));
+  document.getElementById('careActionToner')?.addEventListener('click', () => openQuickRequest('toner'));
   document.getElementById('careActionBilling')?.addEventListener('click', () => setView('billing'));
   document.getElementById('careActionSupport')?.addEventListener('click', () => setView('support'));
   bindInternalCustomerPicker();
 }
 
+// ── Quick Request — 2-tap flow ──────────────────────────────────────────
+// State
+const quickReq = { open: false, type: null, devices: [], branches: [] };
+
+function renderQuickRequestFab() {
+  const existing = document.getElementById('quickReqFab');
+  if (existing) return; // already in DOM
+  const fab = document.createElement('div');
+  fab.id = 'quickReqFab';
+  fab.innerHTML = `
+    <button class="fab-btn" id="fabMainBtn" aria-label="Quick request">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="24" height="24">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+    </button>`;
+  document.body.appendChild(fab);
+  document.getElementById('fabMainBtn').addEventListener('click', () => openQuickRequest(null));
+}
+
+function openQuickRequest(type) {
+  quickReq.type = type;
+  quickReq.open = true;
+  quickReq.devices = []; // refresh device list on each open
+  renderQuickSheet();
+}
+
+function closeQuickRequest() {
+  quickReq.open = false;
+  quickReq.type = null;
+  document.getElementById('quickReqSheet')?.remove();
+  document.getElementById('quickReqOverlay')?.remove();
+}
+
+async function renderQuickSheet() {
+  // Remove stale sheet
+  document.getElementById('quickReqSheet')?.remove();
+  document.getElementById('quickReqOverlay')?.remove();
+
+  // Load devices once (cached in quickReq)
+  if (!quickReq.devices.length) {
+    try {
+      quickReq.devices  = await service.listDevices(state.user);
+      quickReq.branches = await service.listBranches(state.user);
+    } catch (_) {}
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = 'quickReqOverlay';
+  overlay.addEventListener('click', closeQuickRequest);
+  document.body.appendChild(overlay);
+
+  const sheet = document.createElement('div');
+  sheet.id = 'quickReqSheet';
+
+  // Step 1 — choose type (if not pre-selected)
+  if (!quickReq.type) {
+    sheet.innerHTML = `
+      <div class="qr-header">
+        <span class="qr-title">What do you need?</span>
+        <button class="qr-close" id="qrCloseBtn">✕</button>
+      </div>
+      <div class="qr-type-grid">
+        <button class="qr-type-btn" data-type="service">
+          <span class="qr-type-icon">🔧</span>
+          <span class="qr-type-label">Machine Issue</span>
+          <span class="qr-type-sub">Request a service visit</span>
+        </button>
+        <button class="qr-type-btn" data-type="toner">
+          <span class="qr-type-icon">🖨️</span>
+          <span class="qr-type-label">Need Toner / Ink</span>
+          <span class="qr-type-sub">Request cartridge delivery</span>
+        </button>
+      </div>`;
+    document.body.appendChild(sheet);
+    document.getElementById('qrCloseBtn').addEventListener('click', closeQuickRequest);
+    sheet.querySelectorAll('.qr-type-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        quickReq.type = btn.getAttribute('data-type');
+        renderQuickSheet();
+      });
+    });
+    return;
+  }
+
+  // Step 2 — submit form (auto-fills if single machine)
+  const isSingle = quickReq.devices.length === 1;
+  const singleDevice = isSingle ? quickReq.devices[0] : null;
+  const deviceOptions = quickReq.devices.map(d =>
+    `<option value="${d.id}">${escapeHtml(cleanBranchName(d.branchName || d.location || ''))} — ${escapeHtml(d.model)} (${escapeHtml(d.serial)})</option>`
+  ).join('');
+
+  const isService = quickReq.type === 'service';
+  const typeLabel = isService ? 'Machine Issue' : 'Toner / Ink';
+  const typeIcon  = isService ? '🔧' : '🖨️';
+
+  sheet.innerHTML = `
+    <div class="qr-header">
+      <span class="qr-title">${typeIcon} ${typeLabel}</span>
+      <button class="qr-close" id="qrCloseBtn">✕</button>
+    </div>
+    <form id="qrForm" class="qr-form">
+      ${isSingle
+        ? `<div class="qr-auto-branch">
+             <span class="qr-auto-label">Machine</span>
+             <span class="qr-auto-value">${escapeHtml(cleanBranchName(singleDevice.branchName || singleDevice.location || ''))} · ${escapeHtml(singleDevice.model)}</span>
+             <input type="hidden" name="deviceId" value="${singleDevice.id}">
+             <input type="hidden" name="branchId" value="${singleDevice.branchId}">
+           </div>`
+        : `<div class="qr-field">
+             <label class="qr-label">Which machine?</label>
+             <select name="deviceId" class="qr-select" required>
+               <option value="">Select machine…</option>
+               ${deviceOptions}
+             </select>
+           </div>`
+      }
+      ${isService
+        ? `<div class="qr-field">
+             <label class="qr-label">What's the issue? <span class="qr-optional">(optional)</span></label>
+             <input name="description" class="qr-input" placeholder="e.g. Paper jam, print quality, blinking error…" autocomplete="off">
+           </div>`
+        : `<div class="qr-field">
+             <label class="qr-label">Notes <span class="qr-optional">(optional)</span></label>
+             <input name="notes" class="qr-input" placeholder="e.g. Black cartridge low, urgent…" autocomplete="off">
+           </div>`
+      }
+      <button type="submit" class="btn btn-primary qr-submit" id="qrSubmitBtn">
+        Send Request
+      </button>
+      <button type="button" class="qr-back" id="qrBackBtn">← Change type</button>
+    </form>`;
+
+  document.body.appendChild(sheet);
+  document.getElementById('qrCloseBtn').addEventListener('click', closeQuickRequest);
+  document.getElementById('qrBackBtn').addEventListener('click', () => {
+    quickReq.type = null;
+    renderQuickSheet();
+  });
+
+  // Auto-submit if single machine and no description needed (toner)
+  document.getElementById('qrForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    const btn = document.getElementById('qrSubmitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+
+    try {
+      const deviceId = fd.get('deviceId') || (isSingle ? singleDevice.id : null);
+      const device = quickReq.devices.find(d => String(d.id) === String(deviceId));
+      const branchId = device?.branchId || fd.get('branchId') || state.user.branchId;
+      const companyId = device?.companyId || activeCompanyId();
+
+      if (isService) {
+        await service.createTicket(state.user, {
+          companyId, branchId, deviceId,
+          category: 'Service',
+          priority: 'Normal',
+          description: fd.get('description') || 'Service request via portal'
+        });
+      } else {
+        await service.createTonerRequest(state.user, {
+          companyId, branchId, deviceId,
+          notes: fd.get('notes') || 'Toner request via portal'
+        });
+      }
+      closeQuickRequest();
+      showNotice(`${typeLabel} request submitted. Marga will follow up shortly.`, 'success');
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Send Request';
+      showNotice(err.message || 'Could not submit request.', 'error');
+    }
+  });
+}
+
+function daysAgoShort(dateStr) {
+  if (!dateStr) return null;
+  const ms = Date.now() - Date.parse(dateStr);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const days = Math.floor(ms / 86400000);
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}yr ago`;
+}
+
 async function renderDevices() {
-  const [devicesRaw, branches] = await Promise.all([
+  const [devicesRaw, branches, serviceHistoryResult] = await Promise.all([
     service.listDevices(state.user),
-    service.listBranches(state.user)
+    service.listBranches(state.user),
+    service.getServiceHistory(state.user).catch(() => ({ byBranch: {} }))
   ]);
+  const histByBranch = serviceHistoryResult?.byBranch || {};
   const branchMap = new Map(branches.map((branch) => [branch.id, cleanBranchName(branch.name)]));
   const devices = [...devicesRaw].sort((left, right) =>
     (left.location || left.branchName || '').localeCompare(right.location || right.branchName || '')
@@ -983,25 +1299,35 @@ async function renderDevices() {
       ${
         filteredDevices.length
           ? `<div class="care-device-table-wrap" data-drag-scroll="devices" tabindex="0" role="region" aria-label="Rented devices table. Swipe or drag horizontally to view more columns.">
-              <div class="care-device-grid">
+              <div class="care-device-grid care-device-grid--with-history">
                 <div class="care-device-grid-head">
                   <div>Model</div>
                   <div>Serial</div>
                   <div>Branch</div>
                   <div>Status</div>
+                  <div>Last Service</div>
+                  <div>Last Toner</div>
                   <div></div>
                 </div>
                 <div class="care-device-grid-body">
                   ${filteredDevices
-                    .map(
-                      (device) => `<div class="care-device-grid-row${selectedDevice && device.id === selectedDevice.id ? ' is-selected' : ''}">
+                    .map((device) => {
+                      const legacyKey = String(device.branchLegacyId || '').trim();
+                      const hist = histByBranch[legacyKey] || {};
+                      const lastSvc = hist.lastService ? (daysAgoShort(hist.lastService.date) || formatDate(hist.lastService.date)) : '—';
+                      const lastToner = hist.lastToner ? (daysAgoShort(hist.lastToner.date) || formatDate(hist.lastToner.date)) : '—';
+                      const svcClass = hist.lastService ? 'device-hist--ok' : 'device-hist--none';
+                      const tonerClass = hist.lastToner ? 'device-hist--ok' : 'device-hist--none';
+                      return `<div class="care-device-grid-row${selectedDevice && device.id === selectedDevice.id ? ' is-selected' : ''}">
                         <div>${escapeHtml(device.model)}</div>
                         <div>${escapeHtml(device.serial)}</div>
                         <div>${escapeHtml(branchMap.get(device.branchId) || cleanBranchName(device.branchName) || device.branchId || '-')}</div>
                         <div><span class="tag ${statusClass(device.status)}">${escapeHtml(device.status || '')}</span></div>
+                        <div class="device-hist ${svcClass}" title="${hist.lastService ? escapeHtml(hist.lastService.date) : 'No data'}">${lastSvc}</div>
+                        <div class="device-hist ${tonerClass}" title="${hist.lastToner ? escapeHtml(hist.lastToner.date) : 'No data'}">${lastToner}</div>
                         <div><button class="btn btn-secondary btn-sm" data-device-id="${device.id}" ${state.deviceDetailLoading && String(selectedDevice?.id) === String(device.id) ? 'disabled' : ''}>${state.deviceDetailLoading && String(selectedDevice?.id) === String(device.id) ? 'Loading...' : 'Details'}</button></div>
-                      </div>`
-                    )
+                      </div>`;
+                    })
                     .join('')}
                 </div>
               </div>
@@ -2406,6 +2732,11 @@ async function showPortal(user, { ephemeral = false } = {}) {
   renderUserCard();
   renderAnnouncements();
   renderNav();
+
+  // Mount FAB for non-internal users (customers only)
+  if (!isInternalPortalUser(user)) {
+    renderQuickRequestFab();
+  }
 
   const hashView = location.hash.replace('#', '');
   setView(hashView || findView('dashboard').key, false);
