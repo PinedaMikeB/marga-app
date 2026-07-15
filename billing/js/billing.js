@@ -3747,17 +3747,16 @@ async function ensureRtpPrintTemplatesReady(options = {}) {
         const margabaseState = await loadRtpPrintTemplatesFromFirestore();
 
         if (margabaseState?.found) {
-            // Margabase is the source of truth — use its templates and active template name.
-            const mergedTemplates = mergeRtpPrintTemplateLibraries(margabaseState.templates, localState.templates);
-            const activeTemplateName = mergedTemplates[margabaseState.activeTemplateName]
+            // Margabase is the source of truth — use its templates and active template name directly.
+            // Do NOT merge with localState: recoverStoredRtpPrintTemplate can overwrite DB
+            // template calibrations with stale localStorage values, producing the wrong layout.
+            const dbTemplates = saveRtpPrintTemplates(margabaseState.templates);
+            const activeTemplateName = dbTemplates[margabaseState.activeTemplateName]
                 ? margabaseState.activeTemplateName
-                : (mergedTemplates[localState.activeTemplateName] ? localState.activeTemplateName : 'Default');
+                : 'Default';
             saveRtpPrintActiveTemplateName(activeTemplateName);
-            currentRtpPrintCalibration = mergedTemplates[activeTemplateName] || normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
+            currentRtpPrintCalibration = dbTemplates[activeTemplateName] || normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
             saveRtpPrintCalibration(currentRtpPrintCalibration, { persistTemplate: false });
-            if (JSON.stringify(mergedTemplates) !== JSON.stringify(margabaseState.templates)) {
-                await saveRtpPrintTemplatesToFirestore().catch(() => {});
-            }
         } else if (margabaseState && !margabaseState.found) {
             // Margabase returned but doc doesn't exist yet — save localStorage state to Margabase.
             currentRtpPrintTemplates = saveRtpPrintTemplates(localState.templates);
