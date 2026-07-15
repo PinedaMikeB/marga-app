@@ -2726,6 +2726,17 @@ async function showPortal(user, { ephemeral = false } = {}) {
   }
   saveSession(user, { ephemeral });
 
+  // Mobile sidebar toggle
+  const menuToggleBtn = document.getElementById('menuToggle');
+  if (menuToggleBtn && sidebar) {
+    menuToggleBtn.addEventListener('click', () => sidebar.classList.toggle('open'));
+    document.addEventListener('click', (e) => {
+      if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && !menuToggleBtn.contains(e.target)) {
+        sidebar.classList.remove('open');
+      }
+    });
+  }
+
   authView.classList.add('hidden');
   portalView.classList.remove('hidden');
 
