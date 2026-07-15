@@ -2872,7 +2872,7 @@ async function recordBillingPrintEvent(preview, channel = 'browser_print') {
     const now = new Date();
     const nowIso = now.toISOString();
     const nowSql = toSqlDateTime(now);
-    const updates = await Promise.allSettled(docIds.map((docId) => setFirestoreDocument('tbl_billing', docId, {
+    const auditFields = {
         billing_printed_at: nowIso,
         billing_printed_date: nowSql,
         billing_printed_by_id: String(audit.id || '').trim(),
@@ -2880,12 +2880,35 @@ async function recordBillingPrintEvent(preview, channel = 'browser_print') {
         billing_print_channel: channel,
         billing_print_count: Number(preview?.billingPrintCount || 0) + 1,
         updated_at: nowIso
-    }, {
-        mode: 'patch',
-        label: `Print audit ${invoiceNo || docId}`,
-        dedupeKey: `tbl_billing:${docId}:printed:${nowIso}`
-    })));
-    const updated = updates.filter((entry) => entry.status === 'fulfilled').length;
+    };
+
+    let updated = 0;
+
+    // Try batch endpoint first — 494 rows become 1 HTTP call + 1 SQL query.
+    // Falls back to per-doc loop if batch endpoint is unavailable (e.g. older API version).
+    try {
+        const batchUrl = `${FIREBASE_CONFIG.baseUrl.replace(/\/v1\/.*$/, '')}/v1/projects/sah-spiritual-journal/databases/(default)/documents/tbl_billing/:batchPrintAudit`;
+        const batchRes = await fetch(batchUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ docIds, fields: auditFields })
+        });
+        if (batchRes.ok) {
+            const batchBody = await batchRes.json();
+            updated = Number(batchBody.updated || 0);
+        } else {
+            throw new Error(`Batch audit returned ${batchRes.status}`);
+        }
+    } catch (batchError) {
+        console.warn('Batch print audit unavailable, falling back to per-doc writes.', batchError.message);
+        // Fallback: original per-doc loop
+        const updates = await Promise.allSettled(docIds.map((docId) => setFirestoreDocument('tbl_billing', docId, auditFields, {
+            mode: 'patch',
+            label: `Print audit ${invoiceNo || docId}`,
+            dedupeKey: `tbl_billing:${docId}:printed:${nowIso}`
+        })));
+        updated = updates.filter((entry) => entry.status === 'fulfilled').length;
+    }
     if (updated) {
         currentRtpPrintPayload = {
             ...preview,
