@@ -4076,17 +4076,47 @@ async function printCurrentRtpInvoice() {
     }
 
     const preview = decorateRtpPrintPayload(currentRtpPrintPayload);
-    try {
-        const result = await recordBillingPrintEvent(preview, 'browser_print');
-        if (result?.updated) {
-            await loadDashboard({ forceRefresh: true }).catch(() => {});
-        }
-    } catch (error) {
-        console.warn('Billing print audit failed.', error);
-        MargaUtils.showToast('Print audit was not saved, so the invoice was not opened for print. Refresh the billing and try again.', 'error');
+
+    // Open the print window IMMEDIATELY while the user gesture is still fresh.
+    // Chrome blocks window.open() if called after async work — so we open first,
+    // then do the audit writes in the background.
+    const printWindow = window.open('', 'marga_invoice_print', 'width=1180,height=860');
+    if (!printWindow) {
+        MargaUtils.showToast('The print window was blocked. Please allow popups for app.marga.biz.', 'error');
         return;
     }
-    printHtmlDocument(buildRtpPrintDocument(preview), 'marga_invoice_print');
+
+    // Write the print document into the window immediately so staff see it right away.
+    const printMarkup = buildRtpPrintDocument(preview);
+    printWindow.document.open('text/html', 'replace');
+    printWindow.document.write(printMarkup);
+    printWindow.document.close();
+
+    // Trigger browser print dialog after a short settle.
+    let printTriggered = false;
+    const triggerPrint = () => {
+        if (printTriggered || printWindow.closed) return;
+        printTriggered = true;
+        printWindow.focus();
+        window.setTimeout(() => { printWindow.print(); }, 150);
+    };
+    if (printWindow.document.readyState === 'complete') {
+        triggerPrint();
+    } else {
+        printWindow.addEventListener('load', triggerPrint, { once: true });
+        window.setTimeout(triggerPrint, 1500);
+    }
+
+    // Audit writes happen in the background — print never waits for them.
+    recordBillingPrintEvent(preview, 'browser_print')
+        .then((result) => {
+            if (result?.updated) {
+                loadDashboard({ forceRefresh: true }).catch(() => {});
+            }
+        })
+        .catch((error) => {
+            console.warn('Billing print audit failed (background).', error);
+        });
 }
 
 function sanitizeDotMatrixText(value) {
