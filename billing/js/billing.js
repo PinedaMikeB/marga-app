@@ -3304,9 +3304,9 @@ const RTP_PRINT_CALIBRATION = {
     }
 };
 
-const RTP_PRINT_CALIBRATION_STORAGE_KEY = 'marga_rtp_print_calibration_v2';
-const RTP_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY = 'marga_rtp_print_templates_v2';
-const RTP_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY = 'marga_rtp_print_active_template_v2';
+const RTP_PRINT_CALIBRATION_STORAGE_KEY = 'marga_rtp_print_calibration_v1';
+const RTP_PRINT_TEMPLATE_LIBRARY_STORAGE_KEY = 'marga_rtp_print_templates_v1';
+const RTP_PRINT_ACTIVE_TEMPLATE_STORAGE_KEY = 'marga_rtp_print_active_template_v1';
 const RTP_PRINT_RECOVERED_TEMPLATE_NAME = 'Saved Invoice Layout';
 const RTP_PRINT_TEMPLATE_FIRESTORE_COLLECTION = 'tbl_app_settings';
 const RTP_PRINT_TEMPLATE_FIRESTORE_DOC_ID = 'billing_invoice_print_templates_v1';
@@ -3314,7 +3314,7 @@ const RTP_PRINT_TEMPLATE_SETTING_KEY = 'billing_invoice_print_templates';
 const BILLING_PRINT_POLICY_FIRESTORE_DOC_ID = 'billing_printing_policy_v1';
 let currentRtpPrintCalibration = normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
 let currentRtpPrintTemplates = {};
-let currentRtpPrintTemplateName = 'Invoice RTP 3';
+let currentRtpPrintTemplateName = 'Default';
 let rtpPrintTemplatesFirebasePromise = null;
 let rtpPrintTemplatesLoadedFromFirebase = false;
 let billingPrintPolicyPromise = null;
@@ -3664,25 +3664,36 @@ function parseRtpPrintTemplateJson(value) {
 }
 
 async function loadRtpPrintTemplatesFromFirestore() {
-    const doc = await getFirestoreDocument(RTP_PRINT_TEMPLATE_FIRESTORE_COLLECTION, RTP_PRINT_TEMPLATE_FIRESTORE_DOC_ID);
-    if (!doc) {
-        return {
-            found: false,
-            templates: {
-                Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION)
-            },
-            activeTemplateName: 'Default'
-        };
+    // Retry up to 8 times with increasing delay — covers the case where
+    // Margabase (port 8787) hasn't finished starting up yet after Mac restart.
+    const delays = [0, 1000, 2000, 3000, 4000, 5000, 7000, 10000];
+    let lastError = null;
+    for (const delay of delays) {
+        if (delay > 0) await new Promise(r => setTimeout(r, delay));
+        try {
+            const doc = await getFirestoreDocument(RTP_PRINT_TEMPLATE_FIRESTORE_COLLECTION, RTP_PRINT_TEMPLATE_FIRESTORE_DOC_ID);
+            if (!doc) {
+                return {
+                    found: false,
+                    templates: { Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION) },
+                    activeTemplateName: 'Default'
+                };
+            }
+            return {
+                found: true,
+                templates: {
+                    Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION),
+                    ...parseRtpPrintTemplateJson(doc.templates_json)
+                },
+                activeTemplateName: normalizeRtpPrintTemplateName(doc.active_template_name || 'Default')
+            };
+        } catch (error) {
+            lastError = error;
+            console.warn(`Unable to load invoice print templates from Margabase (attempt ${delays.indexOf(delay) + 1}/${delays.length}). Retrying...`, error.message);
+        }
     }
-
-    return {
-        found: true,
-        templates: {
-            Default: normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION),
-            ...parseRtpPrintTemplateJson(doc.templates_json)
-        },
-        activeTemplateName: normalizeRtpPrintTemplateName(doc.active_template_name || 'Default')
-    };
+    console.error('All retries exhausted loading invoice print templates.', lastError);
+    return null;
 }
 
 async function saveRtpPrintTemplatesToFirestore() {
@@ -3707,35 +3718,41 @@ async function ensureRtpPrintTemplatesReady(options = {}) {
 
     rtpPrintTemplatesFirebasePromise = (async () => {
         const localState = buildRtpPrintLocalTemplateState();
-        let firebaseState = null;
-        try {
-            firebaseState = await loadRtpPrintTemplatesFromFirestore();
-        } catch (error) {
-            console.warn('Unable to load invoice print templates from Firebase. Using local fallback.', error);
-            firebaseState = null;
-        }
 
-        if (firebaseState?.found) {
-            const mergedTemplates = mergeRtpPrintTemplateLibraries(firebaseState.templates, localState.templates);
-            const activeTemplateName = mergedTemplates[firebaseState.activeTemplateName]
-                ? firebaseState.activeTemplateName
+        // Load from Margabase (local Postgres). Retries built-in.
+        // If all retries fail, margabaseState is null — stay on localStorage, never fall back to Firebase.
+        const margabaseState = await loadRtpPrintTemplatesFromFirestore();
+
+        if (margabaseState?.found) {
+            // Margabase is the source of truth — use its templates and active template name.
+            const mergedTemplates = mergeRtpPrintTemplateLibraries(margabaseState.templates, localState.templates);
+            const activeTemplateName = mergedTemplates[margabaseState.activeTemplateName]
+                ? margabaseState.activeTemplateName
                 : (mergedTemplates[localState.activeTemplateName] ? localState.activeTemplateName : 'Default');
             saveRtpPrintActiveTemplateName(activeTemplateName);
             currentRtpPrintCalibration = mergedTemplates[activeTemplateName] || normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
             saveRtpPrintCalibration(currentRtpPrintCalibration, { persistTemplate: false });
-
-            if (JSON.stringify(mergedTemplates) !== JSON.stringify(firebaseState.templates)) {
-                await saveRtpPrintTemplatesToFirestore();
+            if (JSON.stringify(mergedTemplates) !== JSON.stringify(margabaseState.templates)) {
+                await saveRtpPrintTemplatesToFirestore().catch(() => {});
             }
-        } else {
+        } else if (margabaseState && !margabaseState.found) {
+            // Margabase returned but doc doesn't exist yet — save localStorage state to Margabase.
             currentRtpPrintTemplates = saveRtpPrintTemplates(localState.templates);
             const activeTemplateName = currentRtpPrintTemplates[localState.activeTemplateName]
-                ? localState.activeTemplateName
-                : 'Default';
+                ? localState.activeTemplateName : 'Default';
             saveRtpPrintActiveTemplateName(activeTemplateName);
             currentRtpPrintCalibration = currentRtpPrintTemplates[activeTemplateName] || normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
             saveRtpPrintCalibration(currentRtpPrintCalibration, { persistTemplate: false });
-            await saveRtpPrintTemplatesToFirestore();
+            await saveRtpPrintTemplatesToFirestore().catch(() => {});
+        } else {
+            // Margabase unreachable after all retries — stay on localStorage only. Do NOT write anywhere.
+            currentRtpPrintTemplates = saveRtpPrintTemplates(localState.templates);
+            const activeTemplateName = currentRtpPrintTemplates[localState.activeTemplateName]
+                ? localState.activeTemplateName : 'Default';
+            saveRtpPrintActiveTemplateName(activeTemplateName);
+            currentRtpPrintCalibration = currentRtpPrintTemplates[activeTemplateName] || normalizeRtpPrintCalibration(RTP_PRINT_CALIBRATION);
+            saveRtpPrintCalibration(currentRtpPrintCalibration, { persistTemplate: false });
+            console.warn('Margabase unreachable — staying on localStorage templates. No write performed.');
         }
 
         rtpPrintTemplatesLoadedFromFirebase = true;
