@@ -852,7 +852,6 @@ async function renderDashboard() {
   const groupMachines = summary.activeGroupMachines ?? summary.groupActiveMachines ?? summary.groupMachines ?? summary.activeDevices ?? 0;
   const individualMachines = summary.activeIndividualMachines ?? summary.individualActiveMachines ?? summary.individualMachines ?? 0;
   const allMachines = Number(groupMachines || 0) + Number(individualMachines || 0);
-  const openTickets = tickets.filter((ticket) => !String(ticket.status || '').toLowerCase().includes('complete')).length;
   const recentActivityCount = tickets.length + requests.length;
 
   // Build "last service" smart text from service history
@@ -900,6 +899,13 @@ async function renderDashboard() {
   const fleetUptimeClass    = fleetUptimePct >= 95 ? 'uptime-green' : fleetUptimePct >= 80 ? 'uptime-amber' : 'uptime-red';
   const serviceOpen         = fleetData.serviceOpen  || 0;
   const serviceToday        = fleetData.serviceToday || 0;
+
+  // openTickets = portal tickets + truly open field schedules (combined)
+  const portalOpenTickets = tickets.filter((ticket) => {
+    const s = String(ticket.status || '').toLowerCase();
+    return !['completed', 'closed', 'done', 'cancelled', 'canceled'].includes(s);
+  }).length;
+  const openTickets = portalOpenTickets + serviceOpen;
 
   // 30-day stats from service history
   const now30 = Date.now() - 30 * 86400000;

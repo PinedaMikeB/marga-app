@@ -15,8 +15,8 @@
   <link rel="icon" type="image/png" href="/public/assets/icons/marga-logo-theme.png" />
   <link rel="shortcut icon" type="image/png" href="/public/assets/icons/marga-logo-theme.png" />
   <link rel="apple-touch-icon" href="/public/assets/icons/marga-logo-theme.png" />
-  <link rel="stylesheet" href="/src/styles/app.css?v=20260716-dark-1" />
-  <link rel="stylesheet" href="/src/styles/portal.css?v=20260716-dark-1" />
+  <link rel="stylesheet" href="/src/styles/app.css?v=20260716-dark-3" />
+  <link rel="stylesheet" href="/src/styles/portal.css?v=20260716-dark-3" />
 </head>
 <body>
 
@@ -28,6 +28,24 @@
     </video>
     <button id="introSkip">Skip <span>→</span></button>
   </div>
+  <script>
+  // Apply mobile sizing immediately before any CSS loads — prevents flash of large logo
+  (function() {
+    var v = document.getElementById('introVideo');
+    if (!v) return;
+    if (window.innerWidth < 640) {
+      v.style.width = '100vw';
+      v.style.height = 'auto';
+      v.style.maxHeight = '80vh';
+      v.style.objectFit = 'contain';
+      v.style.transform = 'scale(0.82)';
+    } else {
+      v.style.width = '100vw';
+      v.style.height = '100vh';
+      v.style.objectFit = 'contain';
+    }
+  })();
+  </script>
 
   <!-- AMBIENT GLOW -->
   <div class="ambient-bg" aria-hidden="true">
