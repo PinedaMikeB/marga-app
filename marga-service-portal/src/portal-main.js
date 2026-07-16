@@ -3000,19 +3000,31 @@ async function init() {
   // Always wait for the intro video to finish before restoring session
   await waitForIntro();
 
-  const restored = await restoreSession();
+  const restored = await restoreSession().catch(() => false);
   if (!restored) {
     authView.classList.remove('hidden');
     portalView.classList.add('hidden');
+    // Trigger reveal animations
+    setTimeout(() => {
+      document.querySelectorAll('.reveal-up').forEach((el, i) => {
+        setTimeout(() => el.classList.add('revealed'), 60 + i * 110);
+      });
+    }, 100);
   }
 }
 
 function waitForIntro() {
   return new Promise(function(resolve) {
-    // If intro overlay is already gone, resolve immediately
     var overlay = document.getElementById('introOverlay');
-    if (!overlay || overlay.style.display === 'none') return resolve();
+    // Only skip if intro was explicitly dismissed (has 'none' inline style set by JS)
+    // Don't skip just because overlay starts hidden via CSS
+    if (overlay && overlay.style.display === 'none' && !overlay.classList.contains('active') && !overlay.classList.contains('dismissing')) {
+      return resolve();
+    }
+    // Always listen for the done event — hard timeout in index.html guarantees it fires
     window.addEventListener('marga:intro:done', resolve, { once: true });
+    // Safety net: resolve after 10s max no matter what
+    setTimeout(resolve, 10000);
   });
 }
 
