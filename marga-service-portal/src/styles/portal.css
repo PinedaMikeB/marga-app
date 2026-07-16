@@ -446,3 +446,110 @@
 
 /* ── Money value ── */
 .money-value { font-variant-numeric: tabular-nums; }
+
+/* ═══════════════════════════════════════════════════════
+   CARE HERO — VIDEO BACKGROUND SECTION
+   2026-07-16
+   ═══════════════════════════════════════════════════════ */
+
+.care-hero-video-wrap {
+  position: relative;
+  width: 100%;
+  min-height: 280px;
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  background: #0a0914;
+}
+
+/* The video sits behind everything */
+.care-hero-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center center;
+  z-index: 0;
+  opacity: .85;
+}
+
+/* Gradient veil — transparent at top (video shows),
+   fades to solid dark at bottom so KPIs read cleanly */
+.care-hero-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    180deg,
+    rgba(10, 9, 20, 0.10) 0%,
+    rgba(10, 9, 20, 0.25) 35%,
+    rgba(10, 9, 20, 0.72) 70%,
+    rgba(10, 9, 20, 0.95) 100%
+  );
+}
+
+/* Content floats on top of veil */
+.care-hero-content {
+  position: relative;
+  z-index: 2;
+  padding: 28px 28px 24px;
+  width: 100%;
+}
+
+.care-hero-content .care-eyebrow {
+  display: block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+
+.care-hero-content h2 {
+  font-size: clamp(18px, 3vw, 26px);
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -.01em;
+  line-height: 1.2;
+  margin-bottom: 8px;
+  text-shadow: 0 2px 12px rgba(0,0,0,.5);
+}
+
+.care-hero-content p {
+  font-size: 13px;
+  color: rgba(200, 190, 255, .75);
+  font-weight: 400;
+  letter-spacing: .01em;
+}
+
+/* Mobile — taller hero, video covers portrait */
+@media (max-width: 640px) {
+  .care-hero-video-wrap {
+    min-height: 220px;
+    border-radius: 10px;
+  }
+  /* On mobile use object-position to center the
+     interesting part of the network diagram */
+  .care-hero-video {
+    object-position: center 30%;
+  }
+  .care-hero-content {
+    padding: 20px 16px 20px;
+  }
+  .care-hero-content h2 {
+    font-size: 18px;
+  }
+}
+
+/* Poster fallback — when video can't autoplay
+   the poster jpg fills the area automatically */
+.care-hero-video[style*="display: none"] ~ .care-hero-veil {
+  background: linear-gradient(
+    180deg,
+    rgba(10,9,20,.3) 0%,
+    rgba(10,9,20,.95) 100%
+  );
+}

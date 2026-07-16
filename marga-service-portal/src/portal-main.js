@@ -925,17 +925,24 @@ async function renderDashboard() {
 
   viewContainer.innerHTML = `
     ${renderInternalCustomerPicker()}
-    <section class="panel glass care-hero">
-      <div class="care-hero-copy">
+    <section class="care-hero-video-wrap">
+      <!-- Video background — desktop/mobile sources -->
+      <video
+        class="care-hero-video"
+        autoplay muted loop playsinline
+        poster="/public/assets/marga-bg-poster.jpg"
+        id="careHeroBg"
+      >
+        <source src="/public/assets/marga-bg-desktop.mp4" media="(min-width: 640px)" type="video/mp4" />
+        <source src="/public/assets/marga-bg-mobile.mp4" type="video/mp4" />
+      </video>
+      <!-- Gradient veil — dark on bottom so KPI cards read cleanly -->
+      <div class="care-hero-veil"></div>
+      <!-- Content floats above -->
+      <div class="care-hero-content">
         <span class="care-eyebrow">MARGA Care</span>
-        <h2>${escapeHtml(state.company?.name || 'Your account')} support, tracked and visible</h2>
-        <p>Request help, follow updates, and keep service and billing proof in one place without chasing text threads.</p>
-      </div>
-      <div class="care-hero-actions">
-        <button type="button" class="btn btn-primary" id="careActionService">Request Service</button>
-        <button type="button" class="btn btn-secondary" id="careActionToner">Request Toner / Ink</button>
-        ${canViewBilling() ? '<button type="button" class="btn btn-secondary" id="careActionBilling">View Billing &amp; Payments</button>' : ''}
-        <button type="button" class="btn btn-secondary" id="careActionSupport">Contact Marga</button>
+        <h2>${escapeHtml(state.company?.name || 'Your account')}</h2>
+        <p>Service tracked. Billing visible. Always reachable.</p>
       </div>
     </section>
 
@@ -1029,8 +1036,14 @@ async function renderDashboard() {
     });
   });
 
-  document.getElementById('careActionService')?.addEventListener('click', () => openQuickRequest('service'));
-  document.getElementById('careActionToner')?.addEventListener('click', () => openQuickRequest('toner'));
+  // Hero video — ensure it plays (mobile may need a tap)
+  const heroBg = document.getElementById('careHeroBg');
+  if (heroBg) {
+    heroBg.play().catch(() => {
+      // Mobile blocked autoplay — show poster, hide video
+      heroBg.style.display = 'none';
+    });
+  }
   document.getElementById('careActionBilling')?.addEventListener('click', () => setView('billing'));
   document.getElementById('careActionSupport')?.addEventListener('click', () => setView('support'));
   bindInternalCustomerPicker();
