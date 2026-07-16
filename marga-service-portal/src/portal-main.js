@@ -2906,11 +2906,24 @@ async function init() {
     setTopMessage('Separate-tab customer preview is ready. Press Sign In to open the customer-facing portal.', 'info');
     return;
   }
+
+  // Always wait for the intro video to finish before restoring session
+  await waitForIntro();
+
   const restored = await restoreSession();
   if (!restored) {
     authView.classList.remove('hidden');
     portalView.classList.add('hidden');
   }
+}
+
+function waitForIntro() {
+  return new Promise(function(resolve) {
+    // If intro overlay is already gone, resolve immediately
+    var overlay = document.getElementById('introOverlay');
+    if (!overlay || overlay.style.display === 'none') return resolve();
+    window.addEventListener('marga:intro:done', resolve, { once: true });
+  });
 }
 
 init().catch((error) => {
