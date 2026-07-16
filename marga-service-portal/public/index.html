@@ -22,7 +22,10 @@
 
   <!-- VIDEO INTRO OVERLAY -->
   <div id="introOverlay">
-    <video id="introVideo" src="/public/assets/marga-intro-v1.mp4" playsinline muted autoplay></video>
+    <video id="introVideo" playsinline muted autoplay poster="/public/assets/marga-bg-poster.jpg">
+      <source src="/public/assets/marga-intro-v1.mp4" media="(min-width: 640px)" type="video/mp4" />
+      <source src="/public/assets/marga-intro-mobile.mp4" type="video/mp4" />
+    </video>
     <button id="introSkip">Skip <span>→</span></button>
   </div>
 
@@ -202,7 +205,27 @@
     }
 
     overlay.classList.add('active');
-    video.play().catch(function() { dismiss(); });
+
+    // Try autoplay
+    var playPromise = video.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(function() {
+        // Autoplay blocked (common on mobile without interaction)
+        // Show tap-to-play prompt
+        var tap = document.createElement('div');
+        tap.id = 'introTap';
+        tap.innerHTML = '<span>Tap to play intro</span>';
+        overlay.appendChild(tap);
+        tap.addEventListener('click', function() {
+          tap.remove();
+          video.play().catch(function() { dismiss(); });
+        });
+        // Auto dismiss after 4s if user doesn't tap
+        setTimeout(function() {
+          if (document.getElementById('introTap')) dismiss();
+        }, 4000);
+      });
+    }
 
     function dismiss() {
       sessionStorage.setItem('marga_intro_seen', '1');
@@ -216,7 +239,7 @@
 
     video.addEventListener('ended', dismiss);
     skip.addEventListener('click', dismiss);
-    video.addEventListener('error', function() { setTimeout(dismiss, 800); });
+    video.addEventListener('error', function() { setTimeout(dismiss, 500); });
 
     function triggerReveal() {
       var els = document.querySelectorAll('.reveal-up');
