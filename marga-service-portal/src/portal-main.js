@@ -955,20 +955,9 @@ async function renderDashboard() {
           </div>
           ${fleetAffected > 0 ? `
           <div class="fleet-pill-div"></div>
-          <div class="fleet-pill fleet-pill--link" data-nav="tickets" data-filter="">
+          <div class="fleet-pill fleet-pill--link" data-nav="tickets">
             <span class="fleet-pill-num fleet-red">${fleetAffected}</span>
-            <span class="fleet-pill-label">Affected</span>
-          </div>` : ''}
-          ${serviceOpen > 0 ? `
-          <div class="fleet-pill-div"></div>
-          <div class="fleet-pill fleet-pill--link" data-nav="history" data-filter="">
-            <span class="fleet-pill-num fleet-amber">${serviceOpen}</span>
-            <span class="fleet-pill-label">${serviceToday > 0 ? `${serviceToday} today` : 'Open Visits'}</span>
-          </div>` : ''}
-          ${fleet30Stats ? `
-          <div class="fleet-pill-div"></div>
-          <div class="fleet-pill">
-            <span class="fleet-pill-label fleet-muted">30d: ${fleet30Stats}</span>
+            <span class="fleet-pill-label">Need Attention</span>
           </div>` : ''}
         </div>
       </div>
@@ -983,41 +972,35 @@ async function renderDashboard() {
           </div>
           <div class="kpi-arrow">→</div>
         </div>
-        <div class="kpi-card kpi-card--service kpi-card--link" data-nav="history" role="button" tabindex="0">
+        ${canViewBilling() ? `
+        <div class="kpi-card kpi-card--billing kpi-card--link" data-nav="billing" role="button" tabindex="0">
           <div class="kpi-card-inner">
-            <div class="kpi-eyebrow">Last Service</div>
-            <div class="value value--text">${lastServiceText}</div>
-            <div class="label">Maintenance visit</div>
+            <div class="kpi-eyebrow">Next Billing</div>
+            <div class="value value--text">${nextBillingText}</div>
+            <div class="label">${summary.unpaidInvoices > 0 ? `${summary.unpaidInvoices} unpaid invoice${summary.unpaidInvoices > 1 ? 's' : ''}` : 'Billing & payments'}</div>
           </div>
           <div class="kpi-arrow">→</div>
-        </div>
-        <div class="kpi-card kpi-card--toner kpi-card--link" data-nav="toner" role="button" tabindex="0">
-          <div class="kpi-card-inner">
-            <div class="kpi-eyebrow">Last Toner / Ink</div>
-            <div class="value value--text">${lastTonerText}</div>
-            <div class="label">${summary.pendingToner > 0 ? `${summary.pendingToner} pending` : 'Supply delivery'}</div>
-          </div>
-          <div class="kpi-arrow">→</div>
-        </div>
-        ${
-          canViewBilling()
-            ? `<div class="kpi-card kpi-card--billing kpi-card--link" data-nav="billing" role="button" tabindex="0">
-                <div class="kpi-card-inner">
-                  <div class="kpi-eyebrow">Next Billing</div>
-                  <div class="value value--text">${nextBillingText}</div>
-                  <div class="label">${summary.unpaidInvoices > 0 ? `${summary.unpaidInvoices} unpaid invoice${summary.unpaidInvoices > 1 ? 's' : ''}` : 'Billing &amp; payments'}</div>
-                </div>
-                <div class="kpi-arrow">→</div>
-               </div>`
-            : `<div class="kpi-card kpi-card--link" data-nav="devices" role="button" tabindex="0">
-                <div class="kpi-card-inner"><div class="value">${allMachines}</div><div class="label">Machines In Care</div></div>
-                <div class="kpi-arrow">→</div>
-               </div>`
-        }
+        </div>` : ''}
       </div>
     </section>
 
-    ${activityFeedHtml}
+    <!-- SCROLLING ACTIVITY TICKER -->
+    ${recentEvents.length ? `
+    <div class="activity-ticker-wrap">
+      <div class="activity-ticker-label">LIVE ACTIVITY</div>
+      <div class="activity-ticker-track">
+        <div class="activity-ticker-inner" id="activityTicker">
+          ${[...recentEvents, ...recentEvents].map(ev => {
+            const label = ev.type === 'service' ? '✅ Maintenance completed' : '✅ Cartridge delivered';
+            const ago = daysAgo(ev.date) || 'recently';
+            return `<span class="ticker-item">
+              <span class="ticker-icon">${ev.type === 'service' ? '🔧' : '🖨️'}</span>
+              <span class="ticker-text">${label} · ${escapeHtml(ev.branchName || '')} · <em>${ago}</em></span>
+            </span>`;
+          }).join('<span class="ticker-sep">·</span>')}
+        </div>
+      </div>
+    </div>` : ''}
   `;
 
   // Fleet pill clicks
