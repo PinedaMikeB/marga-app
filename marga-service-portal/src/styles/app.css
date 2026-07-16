@@ -320,23 +320,38 @@ html, body {
 }
 .auth-register a { color: var(--accent); font-weight: 600; }
 
-/* ════════════════════════════════
-   APP SHELL — PORTAL
-   ════════════════════════════════ */
+/* ── APP SHELL — no sidebar on desktop, hamburger only ── */
 .app-shell {
-  display: grid;
-  grid-template-columns: 220px 1fr;
+  display: flex;
+  flex-direction: column;
   min-height: 100vh;
   position: relative; z-index: 10;
 }
 
-/* Sidebar */
+/* Sidebar — always off-canvas, opened via hamburger on ALL screen sizes */
 .sidebar {
   background: var(--bg-1);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
-  height: 100vh; position: sticky; top: 0;
+  height: 100vh;
+  position: fixed; left: -260px; z-index: 300;
+  width: 260px;
+  top: 0;
+  transition: left var(--dur-base) var(--ease-out);
+  box-shadow: 4px 0 32px rgba(0,0,0,.5);
   overflow-y: auto;
+}
+.sidebar.open { left: 0; }
+
+/* Always show hamburger on all screen sizes */
+.icon-btn { display: flex; }
+
+/* Main content — full width always */
+.main-wrap {
+  display: flex; flex-direction: column;
+  min-height: 100vh; overflow-x: hidden;
+  background: var(--bg);
+  width: 100%;
 }
 .sidebar-header { padding: 20px 16px 12px; border-bottom: 1px solid var(--border); }
 .logo-pill { display: flex; align-items: center; gap: 10px; }
@@ -584,15 +599,6 @@ a { color: inherit; text-decoration: none; }
     gap: 32px;
   }
   .auth-headline { font-size: 36px; }
-  .app-shell { grid-template-columns: 1fr; }
-  .sidebar {
-    position: fixed; left: -240px; z-index: 300;
-    height: 100vh; width: 240px;
-    transition: left var(--dur-base) var(--ease-out);
-    box-shadow: 4px 0 32px rgba(0,0,0,.5);
-  }
-  .sidebar.open { left: 0; }
-  .icon-btn { display: flex; }
   .bottom-nav { display: none; }
   .view-grid { padding: 16px; }
   .topbar { padding: 10px 16px; }
