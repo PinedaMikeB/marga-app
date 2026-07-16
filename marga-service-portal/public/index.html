@@ -25,7 +25,7 @@
     <video id="introVideo" playsinline muted autoplay
            poster="/public/assets/marga-bg-poster.jpg"
            style="display:block;background:#000;object-fit:contain;width:100vw;height:100vh;">
-      <source src="/public/assets/marga-intro-v1.mp4" type="video/mp4" />
+      <source src="/public/assets/marga-intro-v1.mp4?v=20260717b" type="video/mp4" />
     </video>
     <button id="introSkip">Skip <span>→</span></button>
   </div>
@@ -196,11 +196,11 @@
       }, 700);
     }
 
-    // HARD TIMEOUT — never hang more than 8 seconds
+    // HARD TIMEOUT — never hang more than 6 seconds
     var hardTimeout = setTimeout(function() {
       console.warn('[MARGA] Intro hard timeout — forcing dismiss');
       dismiss();
-    }, 8000);
+    }, 6000);
 
     video.addEventListener('ended', function() { clearTimeout(hardTimeout); dismiss(); });
     video.addEventListener('error', function() { clearTimeout(hardTimeout); setTimeout(dismiss, 200); });
