@@ -343,9 +343,6 @@ html, body {
 }
 .sidebar.open { left: 0; }
 
-/* Always show hamburger on all screen sizes */
-.icon-btn { display: flex; }
-
 /* Main content — full width always */
 .main-wrap {
   display: flex; flex-direction: column;
@@ -427,9 +424,10 @@ html, body {
 .top-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .icon-btn {
   background: none; border: none; color: var(--ink-2);
-  cursor: pointer; padding: 6px; border-radius: var(--radius-sm);
+  cursor: pointer; padding: 8px; border-radius: var(--radius-sm);
   transition: color var(--dur-fast), background var(--dur-fast);
-  display: none;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
 .icon-btn:hover { color: var(--ink); background: var(--surface); }
 .top-icon-btn {
