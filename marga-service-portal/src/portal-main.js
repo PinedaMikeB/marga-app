@@ -323,9 +323,45 @@ function renderAnnouncements() {
 }
 
 function renderUserCard() {
-  document.getElementById('userName').textContent = state.user?.name || 'User';
-  document.getElementById('userRole').textContent = roleLabel(state.user?.role);
-  document.getElementById('userAvatar').textContent = (state.user?.name || 'U').trim().charAt(0).toUpperCase();
+  const user = state.user;
+  if (!user) return;
+  const initials = (user.name || user.email || 'U').trim().charAt(0).toUpperCase();
+  const roleText  = roleLabel(user.role);
+
+  // Sidebar elements (still exist in slide-out)
+  const nameEl = document.getElementById('userName');
+  const roleEl = document.getElementById('userRole');
+  if (nameEl) nameEl.textContent = user.name || user.email || 'User';
+  if (roleEl) roleEl.textContent = roleText;
+
+  // Topbar avatar
+  const avatarEl = document.getElementById('userAvatar');
+  if (avatarEl) avatarEl.textContent = initials;
+
+  // Topbar popup name/role
+  const name2El = document.getElementById('userName2');
+  const role2El = document.getElementById('userRole2');
+  if (name2El) name2El.textContent = user.name || user.email || '';
+  if (role2El) role2El.textContent = roleText;
+
+  // Toggle popup on avatar click
+  const popup = document.getElementById('topbarUserPopup');
+  if (avatarEl && popup) {
+    avatarEl.onclick = (e) => {
+      e.stopPropagation();
+      popup.classList.toggle('open');
+    };
+    document.addEventListener('click', () => popup.classList.remove('open'), { once: false });
+  }
+
+  // Topbar logout button
+  const logoutBtn2 = document.getElementById('logoutBtn2');
+  if (logoutBtn2) {
+    logoutBtn2.onclick = () => {
+      clearSession({ keepPersistent: String(user?.id || '').startsWith('portal:') });
+      location.href = '/';
+    };
+  }
 }
 
 async function applyCustomerPreview(companyId, branchId = '') {
