@@ -384,4 +384,33 @@ export class DataService {
       };
     });
   }
+
+  // ── Rating & staff methods ──────────────────────────
+  async rateTicket(user, ticketId, rating, comment = '') {
+    return api('/rate-ticket', {
+      method: 'POST',
+      body: JSON.stringify({ ticketId, rating, comment })
+    });
+  }
+
+  async getOpenScheduleCount(user) {
+    const techId = user?.techId || user?.id;
+    if (!techId) return { openCount: 0 };
+    const payload = await api(`/staff/open-schedules?techId=${encodeURIComponent(techId)}`);
+    return payload;
+  }
+
+  async acknowledgeSchedules(user, openCount) {
+    const techId = user?.techId || user?.id;
+    return api('/staff/acknowledge', {
+      method: 'POST',
+      body: JSON.stringify({ techId, openCount })
+    });
+  }
+
+  async getStaffRatings(techId) {
+    const q = techId ? `?techId=${encodeURIComponent(techId)}` : '';
+    const payload = await api(`/staff/ratings${q}`);
+    return payload.ratings || [];
+  }
 }

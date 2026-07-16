@@ -2084,13 +2084,61 @@ async function listServiceHistory(user) {
 }
 
 async function summary(user) {
-  const [devices, tickets, toner, invoices, serviceHistory] = await Promise.all([
+  const graphScope = portalScopeWhere(user, 'g');
+
+  const [devices, tickets, toner, invoices, serviceHistory, fleetData] = await Promise.all([
     listDevices(user),
     listTickets(user),
     listTonerRequests(user),
     listInvoices(user),
-    listServiceHistory(user).catch(() => ({ summary: null }))
+    listServiceHistory(user).catch(() => ({ summary: null })),
+    // Real uptime: open portal tickets + device status
+    pool.query(`
+      with scoped as (
+        select distinct g.branch_id, g.branch_legacy_id
+        from api.active_customer_graph g
+        where true ${graphScope.sql}
+      ),
+      total_machines as (
+        select count(*) as total
+        from api.active_customer_graph g
+        where true ${graphScope.sql}
+      ),
+      attention_machines as (
+        select count(distinct g.branch_legacy_id) as cnt
+        from api.active_customer_graph g
+        where true ${graphScope.sql}
+          and lower(coalesce(g.machine_status,'')) in ('needs attention','for replacement','inactive')
+      ),
+      open_ticket_branches as (
+        select count(distinct t.branch_id) as cnt
+        from marga.portal_service_tickets t
+        join scoped s on s.branch_id = t.branch_id
+        where lower(coalesce(t.status,'')) not in ('completed','closed','done','cancelled','canceled')
+      ),
+      open_schedules as (
+        select
+          count(*) filter (where s.purpose_id in ('5','9') and s.date_finished is null) as service_open,
+          count(*) filter (where s.purpose_id in ('3','4') and s.date_finished is null) as toner_open,
+          count(*) filter (
+            where s.purpose_id in ('5','9')
+            and s.date_finished is null
+            and s.scheduled_date = current_date
+          ) as service_today
+        from marga.service_schedules s
+        join scoped sc on sc.branch_id = s.branch_id
+        where coalesce(s.status,'') not in ('cancelled','canceled')
+      )
+      select
+        (select total from total_machines)::int as total_machines,
+        (select cnt from attention_machines)::int as attention_machines,
+        (select cnt from open_ticket_branches)::int as open_ticket_branches,
+        (select service_open from open_schedules)::int as service_open,
+        (select toner_open from open_schedules)::int as toner_open,
+        (select service_today from open_schedules)::int as service_today
+    `, graphScope.params)
   ]);
+
   const unpaid = invoices.filter((invoice) => String(invoice.status || '').toLowerCase() !== 'paid');
   const openTickets = tickets.filter((ticket) => {
     const status = String(ticket.status || '').toLowerCase();
@@ -2104,15 +2152,48 @@ async function summary(user) {
     .map((i) => cleanText(i.dueDate || ''))
     .filter((d) => d && d > '2020-01-01')
     .sort()[0] || null;
+
+  // Honest uptime calculation
+  const fleet = fleetData.rows[0] || {};
+  const totalMachines  = Number(fleet.total_machines  || devices.length);
+  const attentionCount = Number(fleet.attention_machines || 0);
+  const openTicketBranches = Number(fleet.open_ticket_branches || 0);
+  // Option A: use open portal ticket count as proxy for affected machines
+  const affectedMachines = Math.min(
+    totalMachines,
+    attentionCount + openTicketBranches
+  );
+  const printingNormally = Math.max(0, totalMachines - affectedMachines);
+  const uptimePct = totalMachines > 0
+    ? Math.round((printingNormally / totalMachines) * 100)
+    : 100;
+
+  // Open unresolved schedules (piled up — not just today)
+  const serviceOpen  = Number(fleet.service_open  || 0);
+  const tonerOpen    = Number(fleet.toner_open    || 0);
+  const serviceToday = Number(fleet.service_today || 0);
+
   return {
-    activeDevices: devices.length,
+    activeDevices: totalMachines,
     openTickets,
     pendingToner,
     unpaidInvoices: unpaid.length,
     unpaidAmount: unpaid.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0),
     nextBillingDue,
     lastService: serviceHistory?.summary?.lastService || null,
-    lastToner: serviceHistory?.summary?.lastToner || null
+    lastToner:   serviceHistory?.summary?.lastToner   || null,
+    // Honest fleet health
+    fleet: {
+      total:           totalMachines,
+      printingNormally,
+      affectedMachines,
+      uptimePct,
+      attentionCount,
+      openTicketBranches,
+      serviceOpen,
+      tonerOpen,
+      serviceToday
+    }
   };
 }
 
@@ -2853,6 +2934,63 @@ async function handlePortalApi(req, res, url) {
   }
   if (url.pathname === '/portal-api/service-history') {
     return json(res, 200, { ok: true, ...(await listServiceHistory(previewScopedUser(user, url.searchParams.get('companyId'), url.searchParams.get('branchId'), url.searchParams.get('companyIds')))) });
+  }
+
+  // Staff open schedule count (for gate check)
+  if (url.pathname === '/portal-api/staff/open-schedules') {
+    const techId = url.searchParams.get('techId');
+    if (!techId) return json(res, 400, { ok: false, message: 'techId required' });
+    const { rows } = await pool.query(
+      `SELECT COUNT(*) as open_count
+       FROM marga.service_schedules
+       WHERE tech_id = $1
+         AND date_finished IS NULL
+         AND coalesce(status,'') NOT IN ('cancelled','canceled')
+         AND purpose_id IN ('3','4','5','9')`,
+      [techId]
+    );
+    return json(res, 200, { ok: true, openCount: Number(rows[0]?.open_count || 0) });
+  }
+
+  // Rate a completed service ticket
+  if (url.pathname === '/portal-api/rate-ticket' && req.method === 'POST') {
+    const body = await readBody(req);
+    const { ticketId, rating, comment } = body;
+    if (!ticketId || !rating || rating < 1 || rating > 5) {
+      return json(res, 400, { ok: false, message: 'Invalid rating' });
+    }
+    await pool.query(
+      `UPDATE marga.portal_service_tickets
+       SET customer_rating = $1, customer_comment = $2, rated_at = now()
+       WHERE id = $3 AND company_id IN (
+         SELECT DISTINCT company_id FROM api.active_customer_graph g WHERE true ${portalScopeWhere(user,'g').sql}
+       )`,
+      [rating, comment || null, ticketId, ...portalScopeWhere(user,'g').params]
+    );
+    return json(res, 200, { ok: true });
+  }
+
+  // Staff acknowledgement log
+  if (url.pathname === '/portal-api/staff/acknowledge' && req.method === 'POST') {
+    const body = await readBody(req);
+    const { techId, openCount } = body;
+    if (!techId) return json(res, 400, { ok: false, message: 'techId required' });
+    await pool.query(
+      `INSERT INTO marga.staff_schedule_acknowledgements (tech_id, open_schedule_count) VALUES ($1, $2)`,
+      [techId, openCount || 0]
+    );
+    return json(res, 200, { ok: true });
+  }
+
+  // Staff ratings (internal — field app use)
+  if (url.pathname === '/portal-api/staff/ratings') {
+    requireInternalUser(user);
+    const techId = url.searchParams.get('techId');
+    const { rows } = await pool.query(
+      `SELECT * FROM marga.v_staff_ratings ${techId ? 'WHERE tech_id = $1' : ''} ORDER BY avg_rating DESC LIMIT 50`,
+      techId ? [techId] : []
+    );
+    return json(res, 200, { ok: true, ratings: rows });
   }
   if (url.pathname === '/health') return json(res, 200, { ok: true, app: 'marga-service-portal' });
 

@@ -887,14 +887,19 @@ async function renderDashboard() {
     ? `Due ${formatDatePH(summary.nextBillingDue)}`
     : (summary.unpaidAmount > 0 ? formatMoney(summary.unpaidAmount) : 'No outstanding balance');
 
-  // Fleet health — uses devicesForFleet already loaded above
-  const fleetActive      = devicesForFleet.filter(d => d.status === 'Active').length;
-  const fleetAttention   = devicesForFleet.filter(d => d.status === 'Needs Attention').length;
-  const fleetReplacement = devicesForFleet.filter(d => d.status === 'For Replacement').length;
-  const fleetInactive    = devicesForFleet.filter(d => d.status === 'Inactive').length;
-  const fleetTotal       = devicesForFleet.length;
-  const fleetUptimePct   = fleetTotal > 0 ? Math.round((fleetActive / fleetTotal) * 100) : 0;
-  const fleetUptimeClass = fleetUptimePct >= 95 ? 'uptime-green' : fleetUptimePct >= 80 ? 'uptime-amber' : 'uptime-red';
+  // Honest fleet health from server
+  const fleetData = summary.fleet || {};
+  const fleetTotal          = fleetData.total          || devicesForFleet.length;
+  const fleetPrintingOk     = fleetData.printingNormally ?? fleetTotal;
+  const fleetAffected       = fleetData.affectedMachines ?? 0;
+  const fleetUptimePct      = fleetData.uptimePct      ?? 100;
+  const fleetActive         = devicesForFleet.filter(d => d.status === 'Active').length;
+  const fleetAttention      = fleetData.attentionCount  ?? devicesForFleet.filter(d => d.status === 'Needs Attention').length;
+  const fleetReplacement    = devicesForFleet.filter(d => d.status === 'For Replacement').length;
+  const fleetInactive       = devicesForFleet.filter(d => d.status === 'Inactive').length;
+  const fleetUptimeClass    = fleetUptimePct >= 95 ? 'uptime-green' : fleetUptimePct >= 80 ? 'uptime-amber' : 'uptime-red';
+  const serviceOpen         = fleetData.serviceOpen  || 0;
+  const serviceToday        = fleetData.serviceToday || 0;
 
   // 30-day stats from service history
   const now30 = Date.now() - 30 * 86400000;
@@ -944,18 +949,26 @@ async function renderDashboard() {
             <span class="fleet-pill-label">Fleet Uptime</span>
           </div>
           <div class="fleet-pill-div"></div>
-          <div class="fleet-pill fleet-pill--link" data-nav="devices" data-filter="">
-            <span class="fleet-pill-num fleet-green">${fleetActive}</span>
-            <span class="fleet-pill-label">Active</span>
-          </div>
-          ${fleetAttention > 0 ? `<div class="fleet-pill-div"></div>
-          <div class="fleet-pill fleet-pill--link" data-nav="devices" data-filter="Needs Attention">
-            <span class="fleet-pill-num fleet-red">${fleetAttention}</span>
-            <span class="fleet-pill-label">Need Attention</span>
-          </div>` : ''}
-          ${fleet30Stats ? `<div class="fleet-pill-div"></div>
           <div class="fleet-pill">
-            <span class="fleet-pill-label fleet-muted">Last 30 days: ${fleet30Stats}</span>
+            <span class="fleet-pill-num fleet-green">${fleetPrintingOk} <span style="font-size:11px;font-weight:500">of ${fleetTotal}</span></span>
+            <span class="fleet-pill-label">Printing Normally</span>
+          </div>
+          ${fleetAffected > 0 ? `
+          <div class="fleet-pill-div"></div>
+          <div class="fleet-pill fleet-pill--link" data-nav="tickets" data-filter="">
+            <span class="fleet-pill-num fleet-red">${fleetAffected}</span>
+            <span class="fleet-pill-label">Affected</span>
+          </div>` : ''}
+          ${serviceOpen > 0 ? `
+          <div class="fleet-pill-div"></div>
+          <div class="fleet-pill fleet-pill--link" data-nav="history" data-filter="">
+            <span class="fleet-pill-num fleet-amber">${serviceOpen}</span>
+            <span class="fleet-pill-label">${serviceToday > 0 ? `${serviceToday} today` : 'Open Visits'}</span>
+          </div>` : ''}
+          ${fleet30Stats ? `
+          <div class="fleet-pill-div"></div>
+          <div class="fleet-pill">
+            <span class="fleet-pill-label fleet-muted">30d: ${fleet30Stats}</span>
           </div>` : ''}
         </div>
       </div>
@@ -1235,6 +1248,79 @@ function daysAgoShort(dateStr) {
   if (days < 30) return `${Math.floor(days / 7)}w ago`;
   if (days < 365) return `${Math.floor(days / 30)}mo ago`;
   return `${Math.floor(days / 365)}yr ago`;
+}
+
+// ── Customer Rating Widget ──────────────────────────────
+function showRatingWidget(ticketId, containerEl) {
+  if (!containerEl) return;
+  let selected = 0;
+  const widget = document.createElement('div');
+  widget.className = 'rating-widget';
+  widget.innerHTML = `
+    <div class="rating-widget-title">How was your service experience?</div>
+    <div class="rating-widget-sub">Rate the technician or support staff who helped you.</div>
+    <div class="rating-stars" id="ratingStars">
+      ${[1,2,3,4,5].map(n => `<span class="rating-star" data-val="${n}">⭐</span>`).join('')}
+    </div>
+    <textarea class="rating-comment" placeholder="Optional comment…" id="ratingComment"></textarea>
+    <button class="btn btn-primary rating-submit" id="ratingSubmit" disabled>Submit Rating</button>`;
+  containerEl.appendChild(widget);
+
+  widget.querySelectorAll('.rating-star').forEach(star => {
+    star.addEventListener('click', () => {
+      selected = Number(star.getAttribute('data-val'));
+      widget.querySelectorAll('.rating-star').forEach(s => {
+        s.classList.toggle('active', Number(s.getAttribute('data-val')) <= selected);
+      });
+      widget.querySelector('#ratingSubmit').disabled = false;
+    });
+  });
+
+  widget.querySelector('#ratingSubmit').addEventListener('click', async () => {
+    const comment = widget.querySelector('#ratingComment').value.trim();
+    try {
+      await service.rateTicket(state.user, ticketId, selected, comment);
+      widget.innerHTML = '<div class="rating-thankyou">✅ Thank you for your feedback!</div>';
+    } catch (e) {
+      showNotice('Could not save rating. Please try again.', 'error');
+    }
+  });
+}
+
+// ── Staff blocking gate (check unclosed schedules) ──────
+async function checkStaffGate(user) {
+  if (!['marga_staff','marga_tech'].includes(user.role)) return;
+  try {
+    const data = await service.getOpenScheduleCount(user);
+    const openCount = data?.openCount || 0;
+    if (openCount === 0) return;
+
+    const modal = document.createElement('div');
+    modal.className = 'staff-gate-modal';
+    modal.innerHTML = `
+      <div class="staff-gate-card">
+        <div class="staff-gate-icon">⚠️</div>
+        <div class="staff-gate-title">You have ${openCount} unclosed schedule${openCount > 1 ? 's' : ''}</div>
+        <div class="staff-gate-body">
+          You must acknowledge your open schedules before using the app.
+          Unclosed schedules affect your performance score and team reports.
+        </div>
+        <div class="staff-gate-acknowledge" id="gateAckRow">
+          <input type="checkbox" id="gateCheck" />
+          <label for="gateCheck">I acknowledge my open schedules and commit to closing them today.</label>
+        </div>
+        <button class="btn btn-primary staff-gate-proceed" id="gateProceed" disabled>Proceed to App</button>
+      </div>`;
+    document.body.appendChild(modal);
+
+    modal.querySelector('#gateCheck').addEventListener('change', e => {
+      modal.querySelector('#gateProceed').disabled = !e.target.checked;
+    });
+    modal.querySelector('#gateProceed').addEventListener('click', async () => {
+      await service.acknowledgeSchedules(user, openCount).catch(() => {});
+      modal.remove();
+    });
+  } catch (_) {}
 }
 
 function renderBackBar(title = '') {
@@ -2758,6 +2844,9 @@ async function showPortal(user, { ephemeral = false } = {}) {
   renderUserCard();
   renderAnnouncements();
   renderNav();
+
+  // Check staff gate for unclosed schedules (blocks field staff)
+  checkStaffGate(user).catch(() => {});
 
   // Mount FAB for non-internal users (customers only)
   if (!isInternalPortalUser(user)) {
