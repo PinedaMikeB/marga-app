@@ -2092,7 +2092,7 @@ async function summary(user) {
     listTonerRequests(user),
     listInvoices(user),
     listServiceHistory(user).catch(() => ({ summary: null })),
-    // Real uptime: open portal tickets + device status
+    // Real uptime: open portal tickets + machines with no serial (Needs Attention)
     pool.query(`
       with scoped as (
         select distinct g.branch_id, g.branch_legacy_id
@@ -2104,11 +2104,12 @@ async function summary(user) {
         from api.active_customer_graph g
         where true ${graphScope.sql}
       ),
-      attention_machines as (
-        select count(distinct g.branch_legacy_id) as cnt
+      no_serial_machines as (
+        select count(*) as cnt
         from api.active_customer_graph g
         where true ${graphScope.sql}
-          and lower(coalesce(g.machine_status,'')) in ('needs attention','for replacement','inactive')
+          and (g.machine_serial is null or g.machine_serial = '')
+          and g.machine_status_id is null
       ),
       open_ticket_branches as (
         select count(distinct t.branch_id) as cnt
@@ -2131,7 +2132,7 @@ async function summary(user) {
       )
       select
         (select total from total_machines)::int as total_machines,
-        (select cnt from attention_machines)::int as attention_machines,
+        (select cnt from no_serial_machines)::int as attention_machines,
         (select cnt from open_ticket_branches)::int as open_ticket_branches,
         (select service_open from open_schedules)::int as service_open,
         (select toner_open from open_schedules)::int as toner_open,
