@@ -2152,13 +2152,25 @@ async function summary(user) {
   ]);
 
   const unpaid = invoices.filter((invoice) => String(invoice.status || '').toLowerCase() !== 'paid');
+
+  // fleet must be declared BEFORE using it
+  const fleet = fleetData.rows[0] || {};
+  const totalMachines      = Number(fleet.total_machines       || devices.length);
+  const attentionCount     = Number(fleet.attention_machines   || 0);
+  const openTicketBranches = Number(fleet.open_ticket_branches || 0);
+  const affectedMachines   = Math.min(totalMachines, attentionCount + openTicketBranches);
+  const printingNormally   = Math.max(0, totalMachines - affectedMachines);
+  const uptimePct          = totalMachines > 0 ? Math.round((printingNormally / totalMachines) * 100) : 100;
+  const serviceOpen        = Number(fleet.service_open  || 0);
+  const tonerOpen          = Number(fleet.toner_open    || 0);
+  const serviceToday       = Number(fleet.service_today || 0);
+
   // Open tickets = portal tickets + truly open field schedules
   const portalOpenTickets = tickets.filter((ticket) => {
     const status = String(ticket.status || '').toLowerCase();
     return !['completed', 'closed', 'done', 'cancelled', 'canceled'].includes(status);
   }).length;
-  const fieldOpenSchedules = Number(fleet.service_open || 0);
-  const openTickets = portalOpenTickets + fieldOpenSchedules;
+  const openTickets = portalOpenTickets + serviceOpen;
   const pendingToner = toner.filter((request) => {
     const status = String(request.status || '').toLowerCase();
     return ['pending', 'requested', 'open', 'assigned'].includes(status);
@@ -2168,26 +2180,7 @@ async function summary(user) {
     .filter((d) => d && d > '2020-01-01')
     .sort()[0] || null;
 
-  // Honest uptime calculation
-  const fleet = fleetData.rows[0] || {};
-  const totalMachines  = Number(fleet.total_machines  || devices.length);
-  const attentionCount = Number(fleet.attention_machines || 0);
-  const openTicketBranches = Number(fleet.open_ticket_branches || 0);
-  // Option A: use open portal ticket count as proxy for affected machines
-  const affectedMachines = Math.min(
-    totalMachines,
-    attentionCount + openTicketBranches
-  );
-  const printingNormally = Math.max(0, totalMachines - affectedMachines);
-  const uptimePct = totalMachines > 0
-    ? Math.round((printingNormally / totalMachines) * 100)
-    : 100;
-
-  // Open unresolved schedules (piled up — not just today)
-  const serviceOpen  = Number(fleet.service_open  || 0);
-  const tonerOpen    = Number(fleet.toner_open    || 0);
-  const serviceToday = Number(fleet.service_today || 0);
-
+  // (fleet, totalMachines, etc already declared above — no duplicate needed)
   return {
     activeDevices: totalMachines,
     openTickets,
