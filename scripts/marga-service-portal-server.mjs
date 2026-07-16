@@ -2119,11 +2119,22 @@ async function summary(user) {
       ),
       open_schedules as (
         select
-          count(*) filter (where s.purpose_id in ('5','9') and s.date_finished is null) as service_open,
-          count(*) filter (where s.purpose_id in ('3','4') and s.date_finished is null) as toner_open,
+          -- Truly open = status='0' AND no date_finished
+          -- status='1' means completed by tech in field app
           count(*) filter (
             where s.purpose_id in ('5','9')
             and s.date_finished is null
+            and s.status not in ('1','completed','done','cancelled','canceled','2','3')
+          ) as service_open,
+          count(*) filter (
+            where s.purpose_id in ('3','4')
+            and s.date_finished is null
+            and s.status not in ('1','completed','done','cancelled','canceled','2','3')
+          ) as toner_open,
+          count(*) filter (
+            where s.purpose_id in ('5','9')
+            and s.date_finished is null
+            and s.status not in ('1','completed','done','cancelled','canceled','2','3')
             and s.scheduled_date = current_date
           ) as service_today
         from marga.service_schedules s
@@ -2141,10 +2152,13 @@ async function summary(user) {
   ]);
 
   const unpaid = invoices.filter((invoice) => String(invoice.status || '').toLowerCase() !== 'paid');
-  const openTickets = tickets.filter((ticket) => {
+  // Open tickets = portal tickets + truly open field schedules
+  const portalOpenTickets = tickets.filter((ticket) => {
     const status = String(ticket.status || '').toLowerCase();
     return !['completed', 'closed', 'done', 'cancelled', 'canceled'].includes(status);
   }).length;
+  const fieldOpenSchedules = Number(fleet.service_open || 0);
+  const openTickets = portalOpenTickets + fieldOpenSchedules;
   const pendingToner = toner.filter((request) => {
     const status = String(request.status || '').toLowerCase();
     return ['pending', 'requested', 'open', 'assigned'].includes(status);
