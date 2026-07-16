@@ -991,30 +991,39 @@ async function renderDashboard() {
 
     ${activityFeedHtml}
 
-    <section class="panel glass fleet-health-strip">
-      <div class="fleet-health-header">
-        <span class="fleet-health-title">Fleet Health</span>
-        <span class="fleet-uptime ${fleetUptimeClass}">${fleetUptimePct}% uptime</span>
-      </div>
-      <div class="fleet-health-counts">
-        <div class="fleet-count fleet-count--active" data-nav="devices" data-filter="">
-          <span class="fleet-count-num">${fleetActive}</span>
-          <span class="fleet-count-label">Active</span>
+    <section class="fleet-health-strip">
+      <!-- Cinematic repair video background -->
+      <video class="fleet-bg-video" autoplay muted loop playsinline poster="/public/assets/marga-bg-poster.jpg">
+        <source src="/public/assets/fleet-repair-desktop.mp4" media="(min-width: 640px)" type="video/mp4" />
+        <source src="/public/assets/fleet-repair-mobile.mp4" type="video/mp4" />
+      </video>
+      <div class="fleet-bg-veil"></div>
+      <!-- Fleet health content on top -->
+      <div class="fleet-health-content">
+        <div class="fleet-health-header">
+          <span class="fleet-health-title">Fleet Health</span>
+          <span class="fleet-uptime ${fleetUptimeClass}">${fleetUptimePct}% uptime</span>
         </div>
-        ${fleetAttention > 0 ? `<div class="fleet-count fleet-count--attention" data-nav="devices" data-filter="Needs Attention">
-          <span class="fleet-count-num">${fleetAttention}</span>
-          <span class="fleet-count-label">Needs Attention</span>
-        </div>` : ''}
-        ${fleetReplacement > 0 ? `<div class="fleet-count fleet-count--replace" data-nav="devices" data-filter="For Replacement">
-          <span class="fleet-count-num">${fleetReplacement}</span>
-          <span class="fleet-count-label">For Replacement</span>
-        </div>` : ''}
-        ${fleetInactive > 0 ? `<div class="fleet-count fleet-count--inactive">
-          <span class="fleet-count-num">${fleetInactive}</span>
-          <span class="fleet-count-label">Inactive</span>
-        </div>` : ''}
+        <div class="fleet-health-counts">
+          <div class="fleet-count fleet-count--active" data-nav="devices" data-filter="" role="button" tabindex="0">
+            <span class="fleet-count-num">${fleetActive}</span>
+            <span class="fleet-count-label">Active</span>
+          </div>
+          ${fleetAttention > 0 ? `<div class="fleet-count fleet-count--attention" data-nav="devices" data-filter="Needs Attention" role="button" tabindex="0">
+            <span class="fleet-count-num">${fleetAttention}</span>
+            <span class="fleet-count-label">Needs Attention</span>
+          </div>` : ''}
+          ${fleetReplacement > 0 ? `<div class="fleet-count fleet-count--replace" data-nav="devices" data-filter="For Replacement" role="button" tabindex="0">
+            <span class="fleet-count-num">${fleetReplacement}</span>
+            <span class="fleet-count-label">For Replacement</span>
+          </div>` : ''}
+          ${fleetInactive > 0 ? `<div class="fleet-count fleet-count--inactive">
+            <span class="fleet-count-num">${fleetInactive}</span>
+            <span class="fleet-count-label">Inactive</span>
+          </div>` : ''}
+        </div>
+        ${fleet30Stats ? `<div class="fleet-30day">Last 30 days: <strong>${fleet30Stats}</strong></div>` : ''}
       </div>
-      ${fleet30Stats ? `<div class="fleet-30day">Last 30 days: <strong>${fleet30Stats}</strong></div>` : ''}
     </section>
   `;
 

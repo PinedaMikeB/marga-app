@@ -553,3 +553,89 @@
     rgba(10,9,20,.95) 100%
   );
 }
+
+/* ═══════════════════════════════════════════════════════
+   FLEET HEALTH — CINEMATIC VIDEO BACKGROUND
+   2026-07-16
+   ═══════════════════════════════════════════════════════ */
+
+.fleet-health-strip {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  min-height: 160px;
+  display: flex;
+  align-items: flex-end;
+  background: #0a0914;
+}
+
+/* Repair video behind fleet stats */
+.fleet-bg-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 20%;
+  z-index: 0;
+  opacity: .55;
+}
+
+/* Dark gradient veil — heavier than hero so numbers pop */
+.fleet-bg-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(
+    180deg,
+    rgba(10,9,20,.45) 0%,
+    rgba(10,9,20,.65) 50%,
+    rgba(10,9,20,.92) 100%
+  );
+}
+
+/* Fleet stats float on top */
+.fleet-health-content {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  padding: 18px 20px;
+}
+
+/* Override colors for video background context */
+.fleet-health-strip .fleet-health-title {
+  color: rgba(200,190,255,.6);
+}
+.fleet-health-strip .fleet-uptime {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+.fleet-health-strip .fleet-count-label {
+  color: rgba(200,190,255,.5);
+}
+.fleet-health-strip .fleet-count--active .fleet-count-num { color: #34d399; }
+.fleet-health-strip .fleet-count--attention .fleet-count-num { color: #f87171; }
+.fleet-health-strip .fleet-count--replace .fleet-count-num { color: #fbbf24; }
+.fleet-health-strip .fleet-count--inactive .fleet-count-num { color: rgba(200,190,255,.4); }
+.fleet-health-strip .fleet-30day {
+  color: rgba(200,190,255,.45);
+  border-top: 1px solid rgba(255,255,255,.08);
+}
+.fleet-health-strip .fleet-30day strong { color: rgba(200,190,255,.7); }
+
+/* Mobile — taller section to show more of the video */
+@media (max-width: 640px) {
+  .fleet-health-strip {
+    min-height: 180px;
+    border-radius: 10px;
+  }
+  .fleet-bg-video {
+    object-position: center 15%;
+    opacity: .45;
+  }
+  .fleet-health-content {
+    padding: 16px;
+  }
+}
