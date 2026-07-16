@@ -3002,19 +3002,36 @@ function computePreviewAmounts(totalAmount, source = {}) {
     const total = Number(totalAmount || 0) || 0;
     const vatAmount = Number(source?.vat_amount || 0) || 0;
     const withVat = Boolean(source?.with_vat);
+
+    // Non-VAT / zero-rated customers: no VAT breakdown at all.
+    // Amount Due = contract price. All VAT lines print blank.
+    if (!withVat) {
+        return {
+            total,
+            withVat: false,
+            vatableSales: 0,
+            vatAmount: 0,
+            vatExempt: 0,
+            zeroRated: 0,
+            lessVat: 0,
+            amountDue: total
+        };
+    }
+
     let vatableSales = total;
     let computedVat = 0;
 
     if (vatAmount > 0 && total >= vatAmount) {
         computedVat = vatAmount;
         vatableSales = Math.max(0, total - vatAmount);
-    } else if (withVat && total > 0) {
+    } else if (total > 0) {
         vatableSales = total / 1.12;
         computedVat = total - vatableSales;
     }
 
     return {
         total,
+        withVat: true,
         vatableSales,
         vatAmount: computedVat,
         vatExempt: 0,
@@ -3034,6 +3051,7 @@ function computePreviewAmountsFromEstimate(estimate) {
         Number(line?.vatAmount || 0) > 0
         || line?.profile?.with_vat
     ));
+    const withVat = savedVatAmount > 0 || hasVatInclusiveLines;
     const shouldRecomputeInclusiveVat = total > 0 && !savedBreakdownMatchesTotal && (savedVatAmount > 0 || hasVatInclusiveLines);
     const netAmount = shouldRecomputeInclusiveVat
         ? roundBillingAmount(total / 1.12)
@@ -3044,8 +3062,9 @@ function computePreviewAmountsFromEstimate(estimate) {
 
     return {
         total,
-        vatableSales: netAmount,
-        vatAmount,
+        withVat,
+        vatableSales: withVat ? netAmount : 0,
+        vatAmount: withVat ? vatAmount : 0,
         vatExempt: 0,
         zeroRated: 0,
         lessVat: 0,
@@ -3911,11 +3930,11 @@ function buildRtpSectionedLayoutHtml(preview, mode = 'print') {
         </div>
         <div class="rtp-section-block" style="${buildRtpSectionStyle('totals', mode)}">
             <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(0, mode)}">${escapeHtml(formatFixedAmount(totals.total || 0))}</div>
-            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(9, mode)}">${escapeHtml(formatFixedAmount(totals.vatAmount || 0))}</div>
-            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(17, mode)}">${escapeHtml(formatFixedAmount(totals.vatableSales || 0))}</div>
-            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(26, mode)}">${escapeHtml(formatFixedAmount(totals.vatExempt || 0))}</div>
-            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(35, mode)}">${escapeHtml(formatFixedAmount(totals.zeroRated || 0))}</div>
-            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(44, mode)}">${escapeHtml(formatFixedAmount(totals.lessVat || 0))}</div>
+            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(9, mode)}">${escapeHtml(totals.withVat ? formatFixedAmount(totals.vatAmount || 0) : '')}</div>
+            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(17, mode)}">${escapeHtml(totals.withVat ? formatFixedAmount(totals.vatableSales || 0) : '')}</div>
+            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(26, mode)}">${escapeHtml(totals.withVat ? formatFixedAmount(totals.vatExempt || 0) : '')}</div>
+            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(35, mode)}">${escapeHtml(totals.withVat ? formatFixedAmount(totals.zeroRated || 0) : '')}</div>
+            <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(44, mode)}">${escapeHtml(totals.withVat ? formatFixedAmount(totals.lessVat || 0) : '')}</div>
             <div class="rtp-block-field" style="${buildRtpTotalsAmountStyle(53, mode, { due: true })}">${escapeHtml(formatFixedAmount(totals.amountDue || 0))}</div>
         </div>
     `;
@@ -4199,14 +4218,14 @@ function buildDotMatrixInvoiceText(preview) {
     lines.push('');
     [
         totals.total,
-        totals.vatAmount,
-        totals.vatableSales,
-        totals.vatExempt,
-        totals.zeroRated,
-        totals.lessVat,
+        totals.withVat ? totals.vatAmount : null,
+        totals.withVat ? totals.vatableSales : null,
+        totals.withVat ? totals.vatExempt : null,
+        totals.withVat ? totals.zeroRated : null,
+        totals.withVat ? totals.lessVat : null,
         totals.amountDue
     ].forEach((amount, index) => {
-        const amountText = formatFixedAmount(amount || 0);
+        const amountText = amount !== null ? formatFixedAmount(amount || 0) : '';
         lines.push(`${dotMatrixFit('', 62)}${dotMatrixFit(amountText, 18, 'right')}${index === 6 ? '\f' : ''}`);
     });
     return `${lines.join('\r\n')}\r\n`;
