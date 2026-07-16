@@ -925,24 +925,39 @@ async function renderDashboard() {
 
   viewContainer.innerHTML = `
     ${renderInternalCustomerPicker()}
-    <section class="care-hero-video-wrap">
-      <!-- Video background — desktop/mobile sources -->
-      <video
-        class="care-hero-video"
-        autoplay muted loop playsinline
-        poster="/public/assets/marga-bg-poster.jpg"
-        id="careHeroBg"
-      >
-        <source src="/public/assets/marga-bg-desktop.mp4" media="(min-width: 640px)" type="video/mp4" />
-        <source src="/public/assets/marga-bg-mobile.mp4" type="video/mp4" />
+
+    <!-- COMBINED HERO + FLEET HEALTH — repair video background -->
+    <section class="care-combined-hero">
+      <video class="care-combined-video" autoplay muted loop playsinline poster="/public/assets/marga-bg-poster.jpg">
+        <source src="/public/assets/fleet-repair-desktop.mp4" media="(min-width: 640px)" type="video/mp4" />
+        <source src="/public/assets/fleet-repair-mobile.mp4" type="video/mp4" />
       </video>
-      <!-- Gradient veil — dark on bottom so KPI cards read cleanly -->
-      <div class="care-hero-veil"></div>
-      <!-- Content floats above -->
-      <div class="care-hero-content">
-        <span class="care-eyebrow">MARGA Care</span>
-        <h2>${escapeHtml(state.company?.name || 'Your account')}</h2>
-        <p>Service tracked. Billing visible. Always reachable.</p>
+      <div class="care-combined-veil"></div>
+      <div class="care-combined-content">
+        <div class="care-combined-top">
+          <span class="care-eyebrow">MARGA Care</span>
+          <h2>${escapeHtml(state.company?.name || 'Your account')} — Service tracked. Billing visible. Always reachable.</h2>
+        </div>
+        <div class="care-combined-fleet">
+          <div class="fleet-pill">
+            <span class="fleet-pill-num ${fleetUptimeClass}">${fleetUptimePct}%</span>
+            <span class="fleet-pill-label">Fleet Uptime</span>
+          </div>
+          <div class="fleet-pill-div"></div>
+          <div class="fleet-pill fleet-pill--link" data-nav="devices" data-filter="">
+            <span class="fleet-pill-num fleet-green">${fleetActive}</span>
+            <span class="fleet-pill-label">Active</span>
+          </div>
+          ${fleetAttention > 0 ? `<div class="fleet-pill-div"></div>
+          <div class="fleet-pill fleet-pill--link" data-nav="devices" data-filter="Needs Attention">
+            <span class="fleet-pill-num fleet-red">${fleetAttention}</span>
+            <span class="fleet-pill-label">Need Attention</span>
+          </div>` : ''}
+          ${fleet30Stats ? `<div class="fleet-pill-div"></div>
+          <div class="fleet-pill">
+            <span class="fleet-pill-label fleet-muted">Last 30 days: ${fleet30Stats}</span>
+          </div>` : ''}
+        </div>
       </div>
     </section>
 
@@ -990,42 +1005,16 @@ async function renderDashboard() {
     </section>
 
     ${activityFeedHtml}
-
-    <section class="fleet-health-strip">
-      <!-- Cinematic repair video background -->
-      <video class="fleet-bg-video" autoplay muted loop playsinline poster="/public/assets/marga-bg-poster.jpg">
-        <source src="/public/assets/fleet-repair-desktop.mp4" media="(min-width: 640px)" type="video/mp4" />
-        <source src="/public/assets/fleet-repair-mobile.mp4" type="video/mp4" />
-      </video>
-      <div class="fleet-bg-veil"></div>
-      <!-- Fleet health content on top -->
-      <div class="fleet-health-content">
-        <div class="fleet-health-header">
-          <span class="fleet-health-title">Fleet Health</span>
-          <span class="fleet-uptime ${fleetUptimeClass}">${fleetUptimePct}% uptime</span>
-        </div>
-        <div class="fleet-health-counts">
-          <div class="fleet-count fleet-count--active" data-nav="devices" data-filter="" role="button" tabindex="0">
-            <span class="fleet-count-num">${fleetActive}</span>
-            <span class="fleet-count-label">Active</span>
-          </div>
-          ${fleetAttention > 0 ? `<div class="fleet-count fleet-count--attention" data-nav="devices" data-filter="Needs Attention" role="button" tabindex="0">
-            <span class="fleet-count-num">${fleetAttention}</span>
-            <span class="fleet-count-label">Needs Attention</span>
-          </div>` : ''}
-          ${fleetReplacement > 0 ? `<div class="fleet-count fleet-count--replace" data-nav="devices" data-filter="For Replacement" role="button" tabindex="0">
-            <span class="fleet-count-num">${fleetReplacement}</span>
-            <span class="fleet-count-label">For Replacement</span>
-          </div>` : ''}
-          ${fleetInactive > 0 ? `<div class="fleet-count fleet-count--inactive">
-            <span class="fleet-count-num">${fleetInactive}</span>
-            <span class="fleet-count-label">Inactive</span>
-          </div>` : ''}
-        </div>
-        ${fleet30Stats ? `<div class="fleet-30day">Last 30 days: <strong>${fleet30Stats}</strong></div>` : ''}
-      </div>
-    </section>
   `;
+
+  // Fleet pill clicks
+  viewContainer.querySelectorAll('.fleet-pill--link').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      state.deviceStatusFilter = el.getAttribute('data-filter') || '';
+      setView('devices');
+    });
+  });
 
   // KPI card click navigation
   viewContainer.querySelectorAll('.kpi-card--link').forEach(card => {
@@ -1248,6 +1237,17 @@ function daysAgoShort(dateStr) {
   return `${Math.floor(days / 365)}yr ago`;
 }
 
+function renderBackBar(title = '') {
+  return `<div class="back-bar">
+    <button class="back-btn" onclick="window._goHome()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+      Home
+    </button>
+    ${title ? `<span class="back-bar-title">${escapeHtml(title)}</span>` : ''}
+  </div>`;
+}
+window._goHome = () => setView('dashboard');
+
 async function renderDevices() {
   const [devicesRaw, branches, serviceHistoryResult] = await Promise.all([
     service.listDevices(state.user),
@@ -1285,8 +1285,8 @@ async function renderDevices() {
     : null;
 
   viewContainer.innerHTML = `
+    ${renderBackBar('Machines')}
     <div class="panel glass">
-      <div class="panel-head panel-head-device-search">
         <div class="care-device-title-block">
           <h3>Rented Devices</h3>
           <span class="muted">${filteredDevices.length} of ${devices.length}</span>
@@ -1552,6 +1552,7 @@ async function renderTickets() {
 
   viewContainer.innerHTML = `
     <div class="grid-2">
+      ${renderBackBar('Service Requests')}
       <div class="panel glass">
         <div class="panel-head"><h3>Create Service Ticket</h3></div>
         <form id="createTicketForm" class="form-grid">
@@ -1679,6 +1680,7 @@ async function renderToner() {
   const tonerPhotoLabel = `<label class="full">Attach Photo <small>(optional — ink level or empty cartridge)</small><input type="file" name="attachment" accept="image/*" /></label>`;
 
   viewContainer.innerHTML = `
+    ${renderBackBar('Toner / Ink')}
     <div class="grid-2">
       <div class="panel glass">
         <div class="panel-head"><h3>Request Toner / Ink</h3></div>
@@ -1818,6 +1820,7 @@ async function renderBilling() {
   }
 
   viewContainer.innerHTML = `
+    ${renderBackBar('Billing & Payments')}
     <div class="panel glass">
       <div class="panel-head"><h3>Billing Summary</h3>${activityChip('Visible proof', 'ok')}</div>
       <div class="kpi-grid">
@@ -1866,6 +1869,7 @@ async function renderHistory() {
   const proofCount = items.filter((item) => ['Payment Proof', 'Service Proof'].includes(item.type)).length;
 
   viewContainer.innerHTML = `
+    ${renderBackBar('Proof & History')}
     <div class="panel glass">
       <div class="panel-head">
         <h3>Proof & History</h3>
@@ -2748,17 +2752,6 @@ async function showPortal(user, { ephemeral = false } = {}) {
   }
   saveSession(user, { ephemeral });
 
-  // Mobile sidebar toggle
-  const menuToggleBtn = document.getElementById('menuToggle');
-  if (menuToggleBtn && sidebar) {
-    menuToggleBtn.addEventListener('click', () => sidebar.classList.toggle('open'));
-    document.addEventListener('click', (e) => {
-      if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && !menuToggleBtn.contains(e.target)) {
-        sidebar.classList.remove('open');
-      }
-    });
-  }
-
   authView.classList.add('hidden');
   portalView.classList.remove('hidden');
 
@@ -2837,8 +2830,18 @@ function bindGlobalActions() {
     location.href = '/';
   });
 
+  // Mobile sidebar toggle — single listener only
   menuToggle.addEventListener('click', () => {
     sidebar.classList.toggle('open');
+  });
+
+  // Close sidebar when clicking outside
+  document.addEventListener('click', (e) => {
+    if (sidebar.classList.contains('open') &&
+        !sidebar.contains(e.target) &&
+        !menuToggle.contains(e.target)) {
+      sidebar.classList.remove('open');
+    }
   });
 
   window.addEventListener('hashchange', () => {

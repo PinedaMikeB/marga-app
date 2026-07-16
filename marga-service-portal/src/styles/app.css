@@ -653,7 +653,7 @@ a { color: inherit; text-decoration: none; }
   to   { opacity: 0; transform: scale(1.04); }
 }
 
-/* Video fills the full screen — contain keeps aspect ratio with black bars */
+/* Video fills the full screen — CONTAIN on all devices so logo is never cropped */
 #introVideo {
   width: 100vw;
   height: 100vh;
@@ -663,13 +663,7 @@ a { color: inherit; text-decoration: none; }
   display: block;
 }
 
-/* On mobile — use cover so no black bars, logo stays centered */
-@media (max-width: 639px) {
-  #introVideo {
-    object-fit: cover;
-    object-position: center center;
-  }
-}
+/* No override on mobile — contain works on all screen sizes */
 
 #introSkip {
   position: absolute;
