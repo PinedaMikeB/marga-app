@@ -3041,7 +3041,7 @@ function computePreviewAmounts(totalAmount, source = {}) {
     };
 }
 
-function computePreviewAmountsFromEstimate(estimate) {
+function computePreviewAmountsFromEstimate(estimate, options = {}) {
     const total = roundBillingAmount(estimate?.amountDue || 0);
     const savedNetAmount = roundBillingAmount(estimate?.netAmount || 0);
     const savedVatAmount = roundBillingAmount(estimate?.vatAmount || 0);
@@ -3051,7 +3051,27 @@ function computePreviewAmountsFromEstimate(estimate) {
         Number(line?.vatAmount || 0) > 0
         || line?.profile?.with_vat
     ));
-    const withVat = savedVatAmount > 0 || hasVatInclusiveLines;
+
+    // Contract profile with_vat is the authority — overrides anything saved in tbl_billing.
+    // If explicitly passed (from context.profile.with_vat), use it.
+    // Otherwise fall back to saved vatAmount / line flags.
+    const withVat = 'withVat' in options
+        ? Boolean(options.withVat)
+        : (savedVatAmount > 0 || hasVatInclusiveLines);
+
+    if (!withVat) {
+        return {
+            total,
+            withVat: false,
+            vatableSales: 0,
+            vatAmount: 0,
+            vatExempt: 0,
+            zeroRated: 0,
+            lessVat: 0,
+            amountDue: total
+        };
+    }
+
     const shouldRecomputeInclusiveVat = total > 0 && !savedBreakdownMatchesTotal && (savedVatAmount > 0 || hasVatInclusiveLines);
     const netAmount = shouldRecomputeInclusiveVat
         ? roundBillingAmount(total / 1.12)
@@ -3062,9 +3082,9 @@ function computePreviewAmountsFromEstimate(estimate) {
 
     return {
         total,
-        withVat,
-        vatableSales: withVat ? netAmount : 0,
-        vatAmount: withVat ? vatAmount : 0,
+        withVat: true,
+        vatableSales: netAmount,
+        vatAmount,
         vatExempt: 0,
         zeroRated: 0,
         lessVat: 0,
@@ -3270,7 +3290,7 @@ async function buildRtpPreviewPayloadFromCalculation(row, context, estimate) {
         quotaPages: Number(estimate?.quotaPages || 0) || 0,
         succeedingPages: Number(estimate?.succeedingPages || 0) || 0,
         succeedingRate: Number(estimate?.succeedingRate || getSucceedingPageRate(context?.profile) || 0) || 0,
-        totals: computePreviewAmountsFromEstimate(estimate),
+        totals: computePreviewAmountsFromEstimate(estimate, { withVat: Boolean(context?.profile?.with_vat) }),
         supportsDotMatrix: !isPirdInvoice,
         supportsMeterForm: !isPirdInvoice,
         supportsEnvelope: true,
