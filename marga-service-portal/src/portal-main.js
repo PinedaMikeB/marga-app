@@ -877,6 +877,7 @@ async function renderDashboard() {
   }
 
   let summary, serviceHistoryResult, devicesForFleet, tickets, requests, invoices, payments;
+  viewContainer.innerHTML = '<div style="padding:40px;text-align:center;color:var(--ink-3)">Loading dashboard...</div>';
   try {
     [summary, serviceHistoryResult, devicesForFleet, tickets, requests, invoices, payments] = await Promise.all([
       service.getDashboardSummary(state.user),
@@ -3076,6 +3077,15 @@ function waitForIntro() {
 }
 
 init().catch((error) => {
-  console.error(error);
-  setTopMessage(`Startup error: ${error.message}`, 'error');
+  console.error('Init failed:', error);
+  // ALWAYS show auth on any init failure — never leave black screen
+  const av = document.getElementById('authView');
+  const pv = document.getElementById('portalView');
+  if (av) av.classList.remove('hidden');
+  if (pv) pv.classList.add('hidden');
+  setTimeout(() => {
+    document.querySelectorAll('.reveal-up').forEach((el, i) => {
+      setTimeout(() => el.classList.add('revealed'), 60 + i * 110);
+    });
+  }, 100);
 });
