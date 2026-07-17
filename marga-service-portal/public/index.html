@@ -213,21 +213,20 @@
       var p = video.play();
       if (p !== undefined) {
         p.then(function() {
-          // Playing successfully — hide tap hint if shown
           if (tapHint) tapHint.style.display = 'none';
         }).catch(function() {
-          // Autoplay blocked (iOS Chrome, some Android)
-          // Show tap hint — user must interact first
-          if (tapHint) {
-            tapHint.style.display = 'flex';
-            tapHint.addEventListener('click', function() {
-              tapHint.style.display = 'none';
-              video.play().then(function(){}).catch(function(){ dismiss(); });
-            }, { once: true });
-          }
-          // Auto-dismiss after 5s if no tap
-          setTimeout(function() { if (!dismissed) dismiss(); }, 5000);
+          // Autoplay blocked — show tap hint prominently
+          if (tapHint) tapHint.style.display = 'flex';
+          tapHint.addEventListener('click', function() {
+            tapHint.style.display = 'none';
+            video.play().catch(function() { dismiss(); });
+          }, { once: true });
+          // On iOS incognito, auto-dismiss faster (3s) so user isn't stuck
+          setTimeout(function() { if (!dismissed) dismiss(); }, 3000);
         });
+      } else {
+        // Old browser — just dismiss
+        setTimeout(dismiss, 3000);
       }
     }
 

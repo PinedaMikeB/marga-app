@@ -3051,15 +3051,9 @@ async function init() {
 
 function waitForIntro() {
   return new Promise(function(resolve) {
-    var overlay = document.getElementById('introOverlay');
-    // Only skip if intro was explicitly dismissed (has 'none' inline style set by JS)
-    // Don't skip just because overlay starts hidden via CSS
-    if (overlay && overlay.style.display === 'none' && !overlay.classList.contains('active') && !overlay.classList.contains('dismissing')) {
-      return resolve();
-    }
-    // Always listen for the done event — hard timeout in index.html guarantees it fires
+    // Always listen for the done event first
     window.addEventListener('marga:intro:done', resolve, { once: true });
-    // Safety net: resolve after 10s max no matter what
+    // Safety net: always resolve after 10s max
     setTimeout(resolve, 10000);
   });
 }
