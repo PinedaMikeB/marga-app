@@ -3051,10 +3051,12 @@ async function init() {
 
 function waitForIntro() {
   return new Promise(function(resolve) {
-    // Always listen for the done event first
+    // Check if intro already finished before we started listening (race condition fix)
+    if (window.__margaIntroDone) return resolve();
+    // Listen for the event
     window.addEventListener('marga:intro:done', resolve, { once: true });
-    // Safety net: always resolve after 10s max
-    setTimeout(resolve, 10000);
+    // Safety net: always resolve after 8s max
+    setTimeout(resolve, 8000);
   });
 }
 
