@@ -1,9 +1,10 @@
 export function setupPwa({ installButton, onConnectivityChange } = {}) {
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch((error) => {
-      console.warn('Service worker registration failed', error);
-    });
-  }
+  // Service worker disabled — was caching stale files and causing black screen
+  // if ('serviceWorker' in navigator) {
+  //   navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch((error) => {
+  //     console.warn('Service worker registration failed', error);
+  //   });
+  // }
 
   let deferredPrompt;
   const installBtn = installButton;

@@ -19,6 +19,20 @@
   <link rel="stylesheet" href="/src/styles/portal.css?v=20260717-5" />
 </head>
 <body>
+  <!-- Force unregister old service workers that cache stale files -->
+  <script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(function(regs) {
+      regs.forEach(function(r) { r.unregister(); });
+    });
+    // Also clear all caches
+    if (window.caches) {
+      caches.keys().then(function(names) {
+        names.forEach(function(name) { caches.delete(name); });
+      });
+    }
+  }
+  </script>
 
   <!-- VIDEO INTRO OVERLAY -->
   <div id="introOverlay">
