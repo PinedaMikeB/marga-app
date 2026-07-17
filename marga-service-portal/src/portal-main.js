@@ -876,15 +876,30 @@ async function renderDashboard() {
     return;
   }
 
-  const [summary, serviceHistoryResult, devicesForFleet, tickets, requests, invoices, payments] = await Promise.all([
-    service.getDashboardSummary(state.user),
-    service.getServiceHistory(state.user).catch(() => ({ summary: null, recentEvents: [] })),
-    service.listDevices(state.user).catch(() => []),
-    service.listTickets(state.user),
-    service.listTonerRequests(state.user),
-    canViewBilling() ? service.listInvoices(state.user) : Promise.resolve([]),
-    canViewBilling() ? service.listPayments(state.user) : Promise.resolve([])
-  ]);
+  let summary, serviceHistoryResult, devicesForFleet, tickets, requests, invoices, payments;
+  try {
+    [summary, serviceHistoryResult, devicesForFleet, tickets, requests, invoices, payments] = await Promise.all([
+      service.getDashboardSummary(state.user),
+      service.getServiceHistory(state.user).catch(() => ({ summary: null, recentEvents: [] })),
+      service.listDevices(state.user).catch(() => []),
+      service.listTickets(state.user),
+      service.listTonerRequests(state.user),
+      canViewBilling() ? service.listInvoices(state.user) : Promise.resolve([]),
+      canViewBilling() ? service.listPayments(state.user) : Promise.resolve([])
+    ]);
+  } catch (err) {
+    // Session expired or API error — show login
+    console.error('Dashboard load failed:', err.message);
+    clearSession();
+    authView.classList.remove('hidden');
+    portalView.classList.add('hidden');
+    setTimeout(() => {
+      document.querySelectorAll('.reveal-up').forEach((el, i) => {
+        setTimeout(() => el.classList.add('revealed'), 60 + i * 110);
+      });
+    }, 100);
+    return;
+  }
   const groupMachines = summary.activeGroupMachines ?? summary.groupActiveMachines ?? summary.groupMachines ?? summary.activeDevices ?? 0;
   const individualMachines = summary.activeIndividualMachines ?? summary.individualActiveMachines ?? summary.individualMachines ?? 0;
   const allMachines = Number(groupMachines || 0) + Number(individualMachines || 0);

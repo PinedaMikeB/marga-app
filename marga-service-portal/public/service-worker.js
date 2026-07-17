@@ -1,4 +1,4 @@
-const CACHE_NAME = 'msp-shell-v20260717-dark-2';
+const CACHE_NAME = 'msp-shell-v20260717-dark-3';
 const SHELL_ASSETS = [
   '/',
   '/install/',
