@@ -2990,6 +2990,9 @@ async function refreshBackendStatus() {
 }
 
 async function init() {
+  // Wait for intro FIRST — before any network calls or setup
+  await waitForIntro();
+
   await service.init();
 
   setupInstallGuide({
@@ -3033,14 +3036,11 @@ async function init() {
     return;
   }
 
-  // Always wait for the intro video to finish before restoring session
-  await waitForIntro();
-
+  // Wait for intro FIRST before anything else
   const restored = await restoreSession().catch(() => false);
   if (!restored) {
     authView.classList.remove('hidden');
     portalView.classList.add('hidden');
-    // Trigger reveal animations
     setTimeout(() => {
       document.querySelectorAll('.reveal-up').forEach((el, i) => {
         setTimeout(() => el.classList.add('revealed'), 60 + i * 110);

@@ -22,11 +22,14 @@
 
   <!-- VIDEO INTRO OVERLAY -->
   <div id="introOverlay">
-    <video id="introVideo" playsinline muted autoplay
+    <video id="introVideo" playsinline muted
            style="display:block;background:#000;object-fit:contain;width:100vw;height:100vh;">
       <source src="/public/assets/marga-intro-v1.mp4?v=20260717b" type="video/mp4" />
     </video>
     <button id="introSkip">Skip <span>→</span></button>
+    <div id="introTapHint" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;">
+      <span style="background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:24px;color:rgba(255,255,255,.8);font-family:'DM Sans',sans-serif;font-size:14px;padding:12px 28px;">Tap to play</span>
+    </div>
   </div>
 
   <!-- AMBIENT GLOW -->
@@ -180,13 +183,14 @@
   </template>
 
   <script src="/public/config.js"></script>
-  <script type="module" src="/src/portal-main.js?v=20260717-1"></script>
+  <script type="module" src="/src/portal-main.js?v=20260717-5"></script>
 
   <script>
   (function() {
-    var overlay = document.getElementById('introOverlay');
-    var video   = document.getElementById('introVideo');
-    var skip    = document.getElementById('introSkip');
+    var overlay  = document.getElementById('introOverlay');
+    var video    = document.getElementById('introVideo');
+    var skip     = document.getElementById('introSkip');
+    var tapHint  = document.getElementById('introTapHint');
     var dismissed = false;
 
     overlay.classList.add('active');
@@ -201,33 +205,38 @@
       }, 700);
     }
 
-    // HARD TIMEOUT — never hang more than 6 seconds
-    var hardTimeout = setTimeout(function() {
-      console.warn('[MARGA] Intro hard timeout — forcing dismiss');
-      dismiss();
-    }, 6000);
+    // Hard timeout — never hang more than 7 seconds
+    var hardTimeout = setTimeout(function() { dismiss(); }, 7000);
+
+    function tryPlay() {
+      video.muted = true;
+      var p = video.play();
+      if (p !== undefined) {
+        p.then(function() {
+          // Playing successfully — hide tap hint if shown
+          if (tapHint) tapHint.style.display = 'none';
+        }).catch(function() {
+          // Autoplay blocked (iOS Chrome, some Android)
+          // Show tap hint — user must interact first
+          if (tapHint) {
+            tapHint.style.display = 'flex';
+            tapHint.addEventListener('click', function() {
+              tapHint.style.display = 'none';
+              video.play().then(function(){}).catch(function(){ dismiss(); });
+            }, { once: true });
+          }
+          // Auto-dismiss after 5s if no tap
+          setTimeout(function() { if (!dismissed) dismiss(); }, 5000);
+        });
+      }
+    }
 
     video.addEventListener('ended', function() { clearTimeout(hardTimeout); dismiss(); });
     video.addEventListener('error', function() { clearTimeout(hardTimeout); setTimeout(dismiss, 200); });
     skip.addEventListener('click', function() { clearTimeout(hardTimeout); dismiss(); });
 
-    // Try autoplay
-    var p = video.play();
-    if (p !== undefined) {
-      p.catch(function() {
-        // Autoplay blocked — show tap prompt
-        var tap = document.createElement('div');
-        tap.id = 'introTap';
-        tap.innerHTML = '<span>Tap to play</span>';
-        overlay.appendChild(tap);
-        tap.addEventListener('click', function() {
-          tap.remove();
-          video.play().catch(function() { dismiss(); });
-        });
-        // Auto-dismiss after 5s if no tap
-        setTimeout(function() { if (!dismissed) dismiss(); }, 5000);
-      });
-    }
+    // Small delay to let DOM settle, then try play
+    setTimeout(tryPlay, 100);
 
     // Auth reveal after intro
     window.addEventListener('marga:intro:done', function() {
