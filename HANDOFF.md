@@ -1,6 +1,6 @@
 # MARGA Handoff
 
-Last Updated: 2026-07-14 (Care Portal Week 1 — Phase 1 "Make It Feel Alive" + service history data source fix)
+Last Updated: 2026-07-17 (Dark theme redesign + video intro + fleet health + CRITICAL: black screen bug unresolved)
 Canonical Status: Single source of truth for current operational handoff
 
 Start every new Marga-App thread by reading:
@@ -8,9 +8,114 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 3. `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills/marga-database-migration/SKILL.md` when the work touches database migration, backend cutover, rescue sync, Margabase compatibility APIs, or production write paths.
 
-## Current Focus (2026-07-14)
+## Current Focus (2026-07-17)
 
-### Care Portal Phase 1 "Make It Feel Alive" — COMPLETED TODAY
+### ⚠️ CRITICAL BUG — Black Screen After Intro (UNRESOLVED)
+
+**Symptom:** After the logo intro video plays (or skips), the page shows black with only the topbar (hamburger + logo + Online). Neither the login form nor the dashboard loads. Happens on desktop Chrome, mobile Chrome, iOS Safari, and incognito.
+
+**Console errors seen:**
+- `service-worker.js:54 Failed to execute 'put' on 'Cache': Partial response (status code 206) is unsupported`
+- `503 (Offline)` — returned by old cached service worker when offline fallback triggers
+- `401 (Unauthorized)` on `/portal-api/me` — session expired but auth view not showing
+- `Cannot access 'fleet' before initialization` — was fixed but may still be cached
+
+**Root cause identified:** The old service worker (`CACHE_NAME = 'msp-shell-v12-themed-marga-logo'`) caches `portal-main.js`, `app.css`, and `index.html` WITHOUT version strings. Every browser that visited before gets OLD cached JS/CSS, ignoring all server-side fixes. Even after bumping the cache name to `v20260717-dark-3`, the old SW must finish its lifecycle before the new one activates.
+
+**What was tried:**
+1. Bumped service worker cache name 3 times (v12 → v20260717-dark → dark-2 → dark-3)
+2. Added query string cache busters to all `<link>` and `<script>` tags
+3. Added force-unregister script at top of `<body>` that calls `navigator.serviceWorker.getRegistrations().forEach(r.unregister())`
+4. Disabled SW registration in `pwa.js` (commented out)
+5. Added `window.__margaIntroDone` global flag to fix race condition between inline intro script and deferred module script
+6. Wrapped `renderDashboard` Promise.all in try/catch → shows auth on failure
+7. Added `init().catch()` that always shows auth view on any crash
+
+**What still needs to happen:**
+- The service worker file itself (`/service-worker.js`) served by Cloudflare tunnel may ALSO be cached at the Cloudflare edge. Even though the file on disk is updated, Cloudflare may serve the old version.
+- **Fix approach:** Either rename `service-worker.js` to a different filename (breaks the SW scope), OR add `Cache-Control: no-cache` headers for `.js` files in the portal server, OR purge Cloudflare cache for care.marga.biz.
+- The `service-worker.js` at line 54 has a `cache.put()` call that fails on 206 partial responses (video files). This error itself may crash the SW and prevent it from activating the new cache.
+
+**Rollback available:** Git commit `62568e7` — pre-dark-theme, pre-video-intro, everything was working. Run `git checkout 62568e7 -- marga-service-portal/` to restore the old working version if needed.
+
+---
+
+### Dark Theme Redesign — NajmAI-Inspired (COMPLETED 2026-07-16)
+
+**Design system:**
+- Pure black `#000` background, dark surfaces `#0a0a0f` to `#252530`
+- Accent: `#8b78ff` (indigo-violet)
+- Font: DM Sans (Google Fonts)
+- Glass morphism cards with `backdrop-filter: blur(20px)`
+- Ambient glow background with animated radial gradients
+- NajmAI-style staggered reveal-up animations on auth page
+
+**Files changed:**
+- `marga-service-portal/public/index.html` — full rewrite: video intro overlay, dark auth page, portal shell
+- `marga-service-portal/src/styles/app.css` — full rewrite: dark CSS system (700+ lines)
+- `marga-service-portal/src/styles/portal.css` — full rewrite: dark portal components (900+ lines)
+- `marga-service-portal/src/portal-main.js` — dashboard redesign, fleet health, back bars, quick request
+
+### Video Intro System (COMPLETED 2026-07-17)
+
+**How it works:**
+1. Logo intro video (`marga-intro-v1.mp4`, 683KB, 1:1 square) plays on page load
+2. `marga:intro:done` event fires when video ends, skip is tapped, or 7s hard timeout
+3. `window.__margaIntroDone = true` flag set for race condition safety
+4. `waitForIntro()` in `portal-main.js` resolves on flag or event
+5. `init()` proceeds → `restoreSession()` → dashboard or auth
+
+**Video assets:**
+- `/public/assets/marga-intro-v1.mp4` — logo reveal video (1:1, 683KB, Kling v1.6 pro)
+- `/public/assets/fleet-repair-desktop.mp4` — technician repair cinematic (475KB)
+- `/public/assets/fleet-repair-mobile.mp4` — portrait crop (158KB)
+- `/public/assets/marga-bg-desktop.mp4` — network animation slowed 2.5x (500KB)
+- `/public/assets/marga-bg-mobile.mp4` — portrait crop (151KB)
+- `/public/assets/marga-bg-poster.jpg` — static poster fallback (48KB)
+- `/public/assets/icons/marga-logo-topbar.png` — Marga logo for nav (684KB)
+
+### Kling AI MCP Integration (COMPLETED 2026-07-15)
+
+**Setup:**
+- Custom MCP server at `/Volumes/Wotg Drive Mike/GitHub/kling-mcp-direct/server.mjs`
+- Uses Kling API 2.0 with single bearer token (`api-key-kling-xxx` format)
+- Supports: `kling_generate_video` (text2video), `kling_generate_video_from_image` (image2video with start+end frames), `kling_check_task`, `kling_account_info`
+- Config in `~/Library/Application Support/Claude/claude_desktop_config.json`
+- Models available: kling-v1, kling-v1-6, kling-v2-master, kling-v2-5-turbo, kling-v3
+
+**Key learnings:**
+- Only kling-v1-6 supports BOTH start AND end frame (`image` + `image_tail` params)
+- v2-master rejects `image_tail` with error 1201
+- Prompt max length: 2500 characters
+- `cfg_scale: 0.9` for maximum fidelity to source images
+- Images must be publicly accessible URLs (hosted on care.marga.biz/assets/)
+- Videos downloaded to `/Volumes/Wotg Drive Mike/GitHub/kling-mcp-direct/downloads/`
+- Compress with ffmpeg: `ffmpeg -i raw.mp4 -vf "scale=1280:720" -c:v libx264 -crf 26 -preset slow -an -movflags +faststart output.mp4`
+
+### Dashboard Improvements (COMPLETED 2026-07-16)
+
+1. **Honest fleet uptime** — `(total - affected) / total * 100` where affected = machines with no serial + branches with open portal tickets
+2. **Combined hero + fleet health section** — repair video background, MARGA CARE eyebrow + company name + fleet pills
+3. **2 KPI cards** — Open Service Requests + Next Billing (removed Last Service, Last Toner cards)
+4. **Scrolling activity ticker** — 90s horizontal scroll, shows completed service/toner events, pauses on hover
+5. **Back bar on every submodule** — `← Home` button on Machines, Service Requests, Toner, Billing, History
+6. **Customer rating system** — `customer_rating`, `customer_comment`, `rated_at` columns on `portal_service_tickets`
+7. **Staff blocking gate** — `marga.staff_schedule_acknowledgements` table, forces field staff to acknowledge unclosed schedules
+8. **Data cleanup** — 2,216 migration artifact schedules closed (NULL/year-2000 dates)
+
+### UI/Layout Changes (COMPLETED 2026-07-17)
+
+1. **Sidebar removed from desktop layout** — hamburger-only nav on all screen sizes
+2. **Topbar simplified** — hamburger + Marga logo (left) + phone/chat/Online (right), no title text, no user avatar
+3. **User profile in sidebar only** — avatar, name, role, logout in slide-out panel
+4. **Bottom nav removed** on mobile
+5. **Service worker disabled** — was caching stale files causing black screen
+
+---
+
+## Previous Focus (2026-07-14)
+
+### Care Portal Phase 1 "Make It Feel Alive" — COMPLETED
 
 **Goal:** First-time login should feel like the portal already knows them.
 
