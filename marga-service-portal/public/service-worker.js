@@ -1,4 +1,4 @@
-const CACHE_NAME = 'msp-shell-v12-themed-marga-logo';
+const CACHE_NAME = 'msp-shell-v20260717-dark';
 const SHELL_ASSETS = [
   '/',
   '/install/',
