@@ -2765,13 +2765,13 @@ function renderMasterSchedule() {
                 parts: 'Pending Parts / Machine',
                 closed: 'Closed'
             };
-            const countMap = {
-                total: Math.max(counts.total, masterFallbackBucketRows(fallbackUniverse, 'total').length),
-                today: Math.max(counts.today, masterFallbackBucketRows(fallbackUniverse, 'today').length),
-                past_pending: Math.max(counts.past_pending, masterFallbackBucketRows(fallbackUniverse, 'past_pending').length),
-                unfinished: Math.max(counts.unfinished, masterFallbackBucketRows(fallbackUniverse, 'unfinished').length),
-                parts: Math.max(counts.parts, masterFallbackBucketRows(fallbackUniverse, 'parts').length),
-                closed: Math.max(counts.closed, masterFallbackBucketRows(fallbackUniverse, 'closed').length)
+            const countMap = storedBucketRows.length ? counts : {
+                total: masterFallbackBucketRows(fallbackUniverse, 'total').length,
+                today: masterFallbackBucketRows(fallbackUniverse, 'today').length,
+                past_pending: masterFallbackBucketRows(fallbackUniverse, 'past_pending').length,
+                unfinished: masterFallbackBucketRows(fallbackUniverse, 'unfinished').length,
+                parts: masterFallbackBucketRows(fallbackUniverse, 'parts').length,
+                closed: masterFallbackBucketRows(fallbackUniverse, 'closed').length
             };
             return `
                 <section class="master-group">

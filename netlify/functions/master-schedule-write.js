@@ -1,8 +1,4 @@
-const crypto = require("crypto");
-
-const GOOGLE_SCOPE_FIRESTORE = "https://www.googleapis.com/auth/datastore";
-const FIREBASE_BASE_URL = "https://firestore.googleapis.com/v1/projects/sah-spiritual-journal/databases/(default)/documents";
-const tokenCache = new Map();
+const MARGABASE_BASE_URL = "http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents";
 
 const ROUTE_PATCH_FIELDS = [
   "tech_id",
@@ -129,11 +125,17 @@ function env(name) {
 }
 
 function firestoreBaseUrl() {
-  return env("FIREBASE_BASE_URL") || env("FIRESTORE_BASE_URL") || FIREBASE_BASE_URL;
+  return env("MARGABASE_DOCUMENTS_BASE_URL")
+    || env("MARGABASE_FIRESTORE_BASE_URL")
+    || env("FIRESTORE_BASE_URL")
+    || env("FIREBASE_BASE_URL")
+    || MARGABASE_BASE_URL;
 }
 
-function usesGoogleFirestore() {
-  return firestoreBaseUrl().includes("firestore.googleapis.com");
+function assertMargabaseWritePath(baseUrl) {
+  if (String(baseUrl || "").includes("firestore.googleapis.com")) {
+    throw new Error("Legacy Firestore writes are disabled for master schedule. Configure MARGABASE_DOCUMENTS_BASE_URL or MARGABASE_FIRESTORE_BASE_URL.");
+  }
 }
 
 function json(statusCode, body) {
@@ -148,54 +150,6 @@ function json(statusCode, body) {
     },
     body: JSON.stringify(body)
   };
-}
-
-function sanitizePrivateKey(key) {
-  return String(key || "").replace(/\\n/g, "\n");
-}
-
-function base64UrlEncode(input) {
-  return Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-async function getGoogleAccessToken() {
-  const serviceEmail = env("GOOGLE_SERVICE_ACCOUNT_EMAIL");
-  const privateKey = sanitizePrivateKey(env("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY"));
-  if (!serviceEmail || !privateKey) throw new Error("Missing Google service account environment variables.");
-
-  const cached = tokenCache.get(GOOGLE_SCOPE_FIRESTORE);
-  const nowTs = Math.floor(Date.now() / 1000);
-  if (cached && cached.expiresAt > nowTs + 60) return cached.accessToken;
-
-  const signingInput = `${base64UrlEncode(JSON.stringify({ alg: "RS256", typ: "JWT" }))}.${base64UrlEncode(JSON.stringify({
-    iss: serviceEmail,
-    scope: GOOGLE_SCOPE_FIRESTORE,
-    aud: "https://oauth2.googleapis.com/token",
-    exp: nowTs + 3600,
-    iat: nowTs
-  }))}`;
-  const signer = crypto.createSign("RSA-SHA256");
-  signer.update(signingInput);
-  signer.end();
-  const signature = signer.sign(privateKey).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  const body = new URLSearchParams({
-    grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-    assertion: `${signingInput}.${signature}`
-  });
-  const response = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString()
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok || !payload.access_token) {
-    throw new Error(payload.error_description || payload.error || "Google token request failed.");
-  }
-  tokenCache.set(GOOGLE_SCOPE_FIRESTORE, {
-    accessToken: payload.access_token,
-    expiresAt: nowTs + Math.max(300, Number(payload.expires_in || 3600) - 30)
-  });
-  return payload.access_token;
 }
 
 function firestoreValue(value) {
@@ -253,9 +207,9 @@ exports.handler = async (event) => {
     const docId = cleanIdentifier(body.docId);
     if (!collection || !docId) return json(400, { ok: false, error: "Missing collection or docId." });
 
-    const accessToken = usesGoogleFirestore() ? await getGoogleAccessToken() : "";
     const baseUrl = firestoreBaseUrl();
-    const key = env("FIREBASE_API_KEY") || env("FIRESTORE_API_KEY") || "margabase-local";
+    assertMargabaseWritePath(baseUrl);
+    const key = env("MARGABASE_API_KEY") || env("FIREBASE_API_KEY") || env("FIRESTORE_API_KEY") || "margabase-local";
 
     if (event.httpMethod === "DELETE") {
       if (!ALLOWED_DELETE_COLLECTIONS.has(collection)) {
@@ -263,11 +217,11 @@ exports.handler = async (event) => {
       }
       const response = await fetch(`${baseUrl}/${collection}/${encodeURIComponent(docId)}?key=${encodeURIComponent(key)}`, {
         method: "DELETE",
-        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+        headers: {}
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok && response.status !== 404) {
-        return json(response.status || 500, { ok: false, error: payload?.error?.message || "Firestore delete failed." });
+        return json(response.status || 500, { ok: false, error: payload?.error?.message || "Margabase delete failed." });
       }
       return json(200, { ok: true });
     }
@@ -283,7 +237,6 @@ exports.handler = async (event) => {
 
     params.set("key", key);
     const headers = { "Content-Type": "application/json" };
-    if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
     const response = await fetch(`${baseUrl}/${collection}/${encodeURIComponent(docId)}?${params.toString()}`, {
       method: "PATCH",
       headers,
@@ -291,7 +244,7 @@ exports.handler = async (event) => {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload?.error) {
-      return json(response.status || 500, { ok: false, error: payload?.error?.message || "Firestore update failed." });
+      return json(response.status || 500, { ok: false, error: payload?.error?.message || "Margabase update failed." });
     }
     return json(200, { ok: true, doc: payload });
   } catch (error) {

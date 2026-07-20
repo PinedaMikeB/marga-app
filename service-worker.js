@@ -1,4 +1,4 @@
-const CACHE_NAME = 'marga-app-shell-v207-company-meeting-fallback-1';
+const CACHE_NAME = 'marga-app-shell-v208-master-field-bucket-tally-1';
 const UPDATE_MESSAGE = {
     type: 'MARGA_APP_UPDATED',
     cacheName: CACHE_NAME
@@ -31,7 +31,7 @@ const SHELL_ASSETS = [
     '/collections.html',
     '/collections/js/collections.js?v=20260625-collections-field-assignee-fix-1',
     '/master-schedule.html',
-    '/master-schedule/js/master-schedule.js?v=20260707-master-closed-route-guard-1',
+    '/master-schedule/js/master-schedule.js?v=20260720-master-field-bucket-tally-1',
     '/field/',
     '/field/index.html',
     '/field/css/field.css?v=20260702-field-serial-approval-1',
