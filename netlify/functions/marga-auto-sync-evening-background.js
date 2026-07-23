@@ -1,5 +1,7 @@
-const { runAutoSyncWithFailureHandling } = require("./_marga-auto-sync-core");
-
+// RETIRED 2026-07-23: Netlify + Firebase elimination plan (see MASTERPLAN.md
+// "Netlify + Firebase Full Elimination Plan"). This scheduled sync must not run.
+// Do not restore the schedule or re-wire this to Firebase; Postgres/Margabase
+// is the single source of truth going forward.
 function toJson(statusCode, body) {
   return {
     statusCode,
@@ -13,12 +15,6 @@ function toJson(statusCode, body) {
   };
 }
 
-exports.config = {
-  schedule: "0 11 * * *",
-};
-
 exports.handler = async () => {
-  const result = await runAutoSyncWithFailureHandling("evening");
-  if (!result.ok) return toJson(500, result);
-  return toJson(200, result);
+  return toJson(200, { ok: true, retired: true, message: "marga-auto-sync-evening-background is retired; Firebase auto-sync is disabled." });
 };

@@ -196,6 +196,25 @@ This file exists to protect the project across new chats by recording:
   - Before staff use, compare Collections, Billing, Service, Master Schedule, follow-up remarks, service close, and time-in/out records after the final sync.
   - Preserve the ability to hard switch back to Firebase during the test period.
 
+## Netlify + Firebase Full Elimination Plan (opened 2026-07-23)
+- Owner directive (explicit, 2026-07-23): eliminate Netlify and Firebase entirely from Marga-App. Nothing in production should touch either. This supersedes any earlier "keep Firebase as fallback/mirror" language elsewhere in this doc — those were interim-phase notes, not the end state.
+- Incident that triggered this: on 2026-07-22 night, ad hoc work (outside this checklist, not run through a reviewed migration script) wrote incorrect `marga_active` values for ~17 employees directly into the Postgres mirror (`app_meta.firestore_documents`, `tbl_employee`), while `netlify/functions/login.js` was still reading real Firestore. This caused mass login failures on 2026-07-23. Fixed same day by re-syncing all 262 `tbl_employee` docs from Firebase (confirmed correct source at the time) into Postgres via upsert. Root cause was architectural: production was reading from two inconsistent backends depending on which function/script last touched it. This checklist exists so that stops being possible.
+- Full checklist — nothing is done until every item below is checked off. Convert and verify one function at a time against production before moving to the next; do not batch multiple production cutovers in one session.
+  1. [ ] `netlify/functions/login.js` — Firebase → Postgres (via local Margabase Firestore-compatible shim, same pattern as `master-schedule-write.js`)
+  2. [ ] `netlify/functions/collections.js` — Firebase → Postgres
+  3. [ ] `netlify/functions/marga-care.js` — Firebase → Postgres
+  4. [ ] `netlify/functions/openclaw-analysis.js` — Firebase → Postgres
+  5. [ ] `netlify/functions/openclaw-billing.js` — Firebase → Postgres
+  6. [ ] `netlify/functions/openclaw-billing-compare.js` — Firebase → Postgres
+  7. [ ] `netlify/functions/openclaw-customers.js` — Firebase → Postgres
+  8. [ ] `netlify/functions/_marga-auto-sync-core.js` — Firebase → Postgres (or retire, see below)
+  9. [ ] `netlify/functions/marga-auto-sync-morning-background.js` (scheduled 00:15 UTC / 8:15 AM Manila) — RETIRE, do not convert. This is a recurring Firebase read/write cost generator and a background Firebase dependency the owner does not want, regardless of what it syncs.
+  10. [ ] `netlify/functions/marga-auto-sync-evening-background.js` (scheduled 11:00 UTC / 7:00 PM Manila) — RETIRE, do not convert. Same reason as #9.
+  11. [ ] Move hosting itself off Netlify — serve `app.marga.biz` via the existing Cloudflare Tunnel to the Mac (the `app-proxy` / `scripts/local-margabase-proxy.mjs` path already proves this is reachable).
+  12. [ ] Retire `netlify.toml` and the Netlify site (`siteId 48f0afdd-0bb5-4b04-b935-7251b49c0c54`) once nothing depends on it.
+  13. [ ] Revoke/rotate the Firebase service account and API key last, only after a full parity check confirms no remaining reads/writes anywhere in the codebase (including `shared/js/firebase-config.js` client fallback path and `tools/`/`local-sync/` scripts).
+- Guardrail: as of 2026-07-23, items 2–13 are NOT started. Do not assume any Netlify Function other than login.js has been converted unless this checklist has been updated with a date and verification note.
+
 ## Current Protected State
 - Master Schedule / Field App workload architecture rule as of 2026-06-19:
   - `tbl_schedule` is the single source of truth for route/workload state.
