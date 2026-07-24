@@ -106,12 +106,88 @@ async function loadSignersForTicket(ticket) {
   }
 }
 
+// ── Field-staff status actions + live GPS ping (spec §16, §24, §30) ──────────
+// Buttons are derived from the ticket's route_status so a tech can only move a
+// job to a valid next state — the server enforces this too via updateTicketStatus.
+const STATUS_ACTION_NOTES = {
+  included_in_route: 'Your request has been included in today\u2019s service route.',
+  next_destination: 'You are now the next destination for your assigned field staff.',
+  arrived: '',
+  in_progress: 'Service has started.',
+  waiting_customer: 'Our technician is waiting for access to the machine or service area.',
+  waiting_parts: 'A required part is being prepared. We will notify you when the follow-up visit is scheduled.',
+  for_follow_up: 'A follow-up visit is being scheduled.',
+  completed: 'Your service request has been completed.'
+};
+
+function techStatusActionButtons(ticket) {
+  if (!ticket.assignedStaffName) {
+    return `<button class="btn btn-secondary btn-sm" data-status-action="assign">Assign to Me</button>`;
+  }
+  const routeStatus = ticket.customerStatus?.routeStatus || 'submitted';
+  const nextActions = {
+    assigned: [['included_in_route', 'Include in Today\u2019s Route'], ['next_destination', 'Set as Next Destination']],
+    queued: [['included_in_route', 'Include in Today\u2019s Route'], ['next_destination', 'Set as Next Destination']],
+    included_in_route: [['next_destination', 'Set as Next Destination']],
+    next_destination: [['on_the_way', 'Start Travel (On the Way)']],
+    on_the_way: [['arrived', 'Arrived']],
+    arrived: [['in_progress', 'Start Service']],
+    in_progress: [['waiting_customer', 'Waiting for Customer'], ['waiting_parts', 'Waiting for Parts'], ['completed', 'Mark Completed']],
+    waiting_customer: [['in_progress', 'Resume Service']],
+    waiting_parts: [['for_follow_up', 'Schedule Follow-up'], ['in_progress', 'Resume Service']],
+    for_follow_up: [['on_the_way', 'Reopen \u2014 On the Way']]
+  };
+  const actions = nextActions[routeStatus] || [];
+  const buttonsHtml = actions
+    .map(([action, label]) => `<button class="btn btn-secondary btn-sm" data-status-action="${action}">${escapeHtml(label)}</button>`)
+    .join('');
+  const cancelHtml = !['completed', 'cancelled'].includes(routeStatus)
+    ? `<button class="btn btn-secondary btn-sm" data-status-action="cancel">Cancel Ticket</button>`
+    : '';
+  return buttonsHtml + cancelHtml || '<p class="muted">No further actions for this status.</p>';
+}
+
+let locationPingTimer = null;
+
+function stopLocationPing() {
+  if (locationPingTimer) {
+    clearInterval(locationPingTimer);
+    locationPingTimer = null;
+  }
+}
+
+function startLocationPing(ticketId) {
+  stopLocationPing();
+  if (!navigator.geolocation) return;
+  const ping = () => {
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          await service.pingTicketLocation(state.user, ticketId, {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude
+          });
+        } catch (error) {
+          // Server auto-disables tracking once the ticket leaves on_the_way (spec §30);
+          // stop pinging quietly rather than surfacing an error toast every 20s.
+          stopLocationPing();
+        }
+      },
+      () => {},
+      { enableHighAccuracy: true, maximumAge: 15000, timeout: 10000 }
+    );
+  };
+  ping();
+  locationPingTimer = setInterval(ping, 20000);
+}
+
 async function renderTicketDetail() {
   const ticket = activeTicket();
   if (!ticket) {
     techDetailTicketNo.textContent = 'Select a ticket';
     techDetailBody.className = 'detail-body empty-state';
     techDetailBody.textContent = 'Choose a ticket to view details.';
+    stopLocationPing();
     await loadSignersForTicket(null);
     return;
   }
@@ -138,11 +214,7 @@ async function renderTicketDetail() {
 
     <article class="detail-row">
       <h4>Status Actions</h4>
-      <div class="panel-actions">
-        <button class="btn btn-secondary btn-sm" id="assignToMeBtn">Assign to Me</button>
-        <button class="btn btn-secondary btn-sm" id="setInProgressBtn">Set In Progress</button>
-        <button class="btn btn-secondary btn-sm" id="setPendingPartsBtn">Set Pending Parts</button>
-      </div>
+      <div class="panel-actions" id="statusActionButtons">${techStatusActionButtons(ticket)}</div>
       <form id="workNoteForm" class="form-grid" style="margin-top:.6rem;">
         <label class="full">Work Note<textarea name="workNote" rows="2" required placeholder="Add diagnostics or actions taken"></textarea></label>
         <button class="btn btn-primary full" type="submit">Save Work Note</button>
@@ -170,34 +242,50 @@ async function renderTicketDetail() {
     </article>
   `;
 
-  document.getElementById('assignToMeBtn')?.addEventListener('click', async () => {
-    try {
-      await service.assignTicketToTech(state.user, ticket.id);
-      await refreshTickets();
-      setCompletionMessage('Ticket assigned to you.', 'success');
-    } catch (error) {
-      setCompletionMessage(error.message || 'Failed to assign ticket.', 'error');
-    }
-  });
-
-  document.getElementById('setInProgressBtn')?.addEventListener('click', async () => {
-    try {
-      await service.updateTicket(state.user, ticket.id, { status: 'In Progress' });
-      await refreshTickets();
-      setCompletionMessage('Status updated to In Progress.', 'success');
-    } catch (error) {
-      setCompletionMessage(error.message || 'Status update failed.', 'error');
-    }
-  });
-
-  document.getElementById('setPendingPartsBtn')?.addEventListener('click', async () => {
-    try {
-      await service.updateTicket(state.user, ticket.id, { status: 'Pending Parts' });
-      await refreshTickets();
-      setCompletionMessage('Status updated to Pending Parts.', 'success');
-    } catch (error) {
-      setCompletionMessage(error.message || 'Status update failed.', 'error');
-    }
+  document.getElementById('statusActionButtons')?.querySelectorAll('[data-status-action]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const action = btn.getAttribute('data-status-action');
+      btn.disabled = true;
+      try {
+        if (action === 'assign') {
+          await service.assignTicketToMe(state.user, ticket.id);
+          setCompletionMessage('Ticket assigned to you.', 'success');
+        } else if (action === 'cancel') {
+          const reason = window.prompt('Reason for cancelling this ticket?') || '';
+          await service.updateTicketStatus(state.user, ticket.id, {
+            routeStatus: 'cancelled', cancelReason: reason, internalNote: 'Cancelled by field staff'
+          });
+          setCompletionMessage('Ticket cancelled.', 'success');
+        } else if (action === 'on_the_way') {
+          // Capture GPS as part of the tap so the browser permission prompt is tied
+          // to a real user gesture; fall back to no coords if permission is denied.
+          const coords = await new Promise((resolve) => {
+            if (!navigator.geolocation) return resolve(null);
+            navigator.geolocation.getCurrentPosition(
+              (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+              () => resolve(null),
+              { enableHighAccuracy: true, timeout: 8000 }
+            );
+          });
+          await service.updateTicketStatus(state.user, ticket.id, {
+            routeStatus: 'on_the_way',
+            customerVisibleNote: 'Your assigned field staff is now on the way.'
+          });
+          if (coords) await service.pingTicketLocation(state.user, ticket.id, coords).catch(() => {});
+          setCompletionMessage('Status updated: On the Way. Live location sharing started.', 'success');
+        } else {
+          await service.updateTicketStatus(state.user, ticket.id, {
+            routeStatus: action,
+            customerVisibleNote: STATUS_ACTION_NOTES[action] || ''
+          });
+          setCompletionMessage('Status updated.', 'success');
+        }
+        await refreshTickets();
+      } catch (error) {
+        setCompletionMessage(error.message || 'Action failed.', 'error');
+        btn.disabled = false;
+      }
+    });
   });
 
   document.getElementById('workNoteForm')?.addEventListener('submit', async (event) => {
@@ -211,6 +299,12 @@ async function renderTicketDetail() {
       setCompletionMessage(error.message || 'Unable to save note.', 'error');
     }
   });
+
+  if (ticket.customerStatus?.routeStatus === 'on_the_way') {
+    startLocationPing(ticket.id);
+  } else {
+    stopLocationPing();
+  }
 
   await loadSignersForTicket(ticket);
 }

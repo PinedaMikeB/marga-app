@@ -61,6 +61,17 @@ const MACHINE_HISTORY_STATUS_LABELS = {
     7: 'For Overhauling / Pullout',
     8: 'Under Repair'
 };
+
+const FIELD_MACHINE_STATUS_LABELS = {
+    1: 'Running / Print OK',
+    2: 'Running / Print Problem',
+    3: 'Down / No Print',
+    4: 'Running / Best Mode Only'
+};
+
+function getFieldMachineStatusLabel(statusId) {
+    return FIELD_MACHINE_STATUS_LABELS[Number(statusId || 0)] || '';
+}
 const LOOKUP_COLLECTION_LIMITS = {
     tbl_employee: 2000,
     tbl_empos: 400,
@@ -1808,6 +1819,7 @@ async function openNewRequestModal() {
     opsState.newRequestReleaseItems = [];
     renderNewRequestReleaseItems();
     document.getElementById('newReqStatus').value = '1';
+    document.getElementById('newReqFieldMachineStatus').value = '';
     document.getElementById('newReqSuperUrgent').checked = false;
     document.getElementById('newReqWithRequest').checked = false;
     document.getElementById('newReqWithComplain').checked = false;
@@ -2525,6 +2537,8 @@ async function saveNewServiceRequest() {
         ? releaseItems.reduce((sum, item) => sum + normalizeReleaseQtyValue(item.qty), 0)
         : 0;
     const statusValue = Number(document.getElementById('newReqStatus')?.value || 1);
+    const fieldMachineStatusId = Number(document.getElementById('newReqFieldMachineStatus')?.value || 0);
+    const fieldMachineStatus = getFieldMachineStatusLabel(fieldMachineStatusId);
     const superUrgent = document.getElementById('newReqSuperUrgent')?.checked ? 1 : 0;
     const withRequest = document.getElementById('newReqWithRequest')?.checked ? 1 : 0;
     const withComplain = document.getElementById('newReqWithComplain')?.checked ? 1 : 0;
@@ -2532,6 +2546,10 @@ async function saveNewServiceRequest() {
 
     if (!date) {
         alert('Please choose a schedule date.');
+        return;
+    }
+    if (!fieldMachineStatusId || !fieldMachineStatus) {
+        alert('Please choose a Field Machine Status.');
         return;
     }
     if (!companyId) {
@@ -2698,6 +2716,8 @@ async function saveNewServiceRequest() {
         trouble: String(opsCache.troubles.get(String(troubleId))?.trouble || '').trim(),
         remarks: remarks || '',
         status: Number.isFinite(statusValue) ? statusValue : 1,
+        field_work_machine_status_id: fieldMachineStatusId,
+        field_work_machine_status: fieldMachineStatus,
         isongoing: 0,
         date_finished: ZERO_DATETIME,
         iscancel: 0,

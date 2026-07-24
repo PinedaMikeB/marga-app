@@ -1,4 +1,4 @@
-const CACHE_NAME = 'msp-shell-v33-device-grid-custom';
+const CACHE_NAME = 'msp-shell-v20260722-portal-schedule-branch-slot-1';
 const SHELL_ASSETS = [
   '/',
   '/install/',
@@ -47,11 +47,20 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
 
+  // Never cache range/video requests — 206 Partial Content crashes the Cache API
+  const url = event.request.url;
+  const isRange = event.request.headers.has('range');
+  const isVideo = /\.(mp4|webm|ogv|mov)(\?|$)/i.test(url);
+  if (isRange || isVideo) return; // let browser handle natively
+
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
-        const clone = networkResponse.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        // Only cache full 200 responses (skip 206 partial, opaque, errors)
+        if (networkResponse.ok && networkResponse.status === 200) {
+          const clone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        }
         return networkResponse;
       })
       .catch(async () => {

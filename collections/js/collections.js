@@ -90,7 +90,8 @@ const receivePaymentState = {
     selectedDraft: null,
     selectedDraftGroup: [],
     matchedDraftIds: new Set(),
-    searchResults: []
+    searchResults: [],
+    searchSeq: 0
 };
 
 const DEFAULT_COLLECTION_STATUSES = [
@@ -10393,6 +10394,45 @@ function searchReceivePaymentInvoices(query) {
         .slice(0, 12);
 }
 
+async function supplementReceivePaymentInvoiceSearch(query) {
+    const normalizedInvoice = normalizeCollectorInvoiceSearchValue(query);
+    if (!normalizedInvoice || normalizedInvoice.length < 3) return [];
+
+    const docs = await queryCollectionBillingDocsByInvoice(normalizedInvoice);
+    const found = [];
+    let changed = false;
+    docs.forEach((doc) => {
+        const detail = buildCollectorBillingRecordFromDoc(doc);
+        if (detail.invoiceId) billingMetaByInvoiceKey.set(detail.invoiceId, detail.billingMeta);
+        if (detail.invoiceNo) billingMetaByInvoiceKey.set(detail.invoiceNo, detail.billingMeta);
+        changed = ingestCollectorBillingRecord(detail.record) || changed;
+        if (detail.record) found.push(detail.record);
+
+        const invoice = processInvoice(doc);
+        if (invoice && !allInvoices.some((item) => (
+            item.invoiceKey === invoice.invoiceKey
+            || item.invoiceNo === invoice.invoiceNo
+            || item.invoiceId === invoice.invoiceId
+        ))) {
+            allInvoices.push(invoice);
+            changed = true;
+        }
+    });
+    if (changed) rebuildInvoiceIndex();
+
+    return found.filter((record) => {
+        if (receivePaymentOutstandingForInvoice(record) <= 0.01) return false;
+        const haystack = normalizeText([
+            record.invoiceNo,
+            record.invoiceId,
+            record.company,
+            record.branch,
+            record.accountLabel
+        ].filter(Boolean).join(' '));
+        return haystack.includes(normalizeText(query));
+    });
+}
+
 function setReceivePaymentStatus(message) {
     const node = document.getElementById('receivePaymentStatus');
     if (node) node.textContent = message || 'Ready.';
@@ -10599,11 +10639,33 @@ function removeReceivePaymentInvoice(index) {
     updateReceivePaymentBalanceStatus();
 }
 
-function runReceivePaymentSearch() {
+async function runReceivePaymentSearch() {
     const query = document.getElementById('receivePaymentInvoiceSearch')?.value || '';
+    const seq = receivePaymentState.searchSeq + 1;
+    receivePaymentState.searchSeq = seq;
     receivePaymentState.searchResults = searchReceivePaymentInvoices(query);
     renderReceivePaymentSearchResults();
-    if (!receivePaymentState.searchResults.length && String(query || '').trim()) {
+    if (receivePaymentState.searchResults.length || !String(query || '').trim()) return;
+
+    setReceivePaymentStatus('Checking invoice records...');
+    try {
+        const supplementedRows = await supplementReceivePaymentInvoiceSearch(query);
+        if (receivePaymentState.searchSeq !== seq) return;
+        const byKey = new Map();
+        receivePaymentState.searchResults.concat(supplementedRows).forEach((record) => {
+            const key = String(record.invoiceKey || record.invoiceNo || record.invoiceId || '').trim();
+            if (key) byKey.set(key, record);
+        });
+        receivePaymentState.searchResults = Array.from(byKey.values()).slice(0, 12);
+        renderReceivePaymentSearchResults();
+        if (!receivePaymentState.searchResults.length) {
+            setReceivePaymentStatus('No unpaid matching invoice found.');
+        } else {
+            setReceivePaymentStatus('Select the invoice to allocate this payment.');
+        }
+    } catch (error) {
+        if (receivePaymentState.searchSeq !== seq) return;
+        console.warn('Unable to run targeted receive-payment invoice search:', error);
         setReceivePaymentStatus('No unpaid matching invoice found.');
     }
 }
@@ -13033,9 +13095,13 @@ function setupModalEvents() {
     });
 
     document.getElementById('receivePaymentInvoiceSearch')?.addEventListener('input', runReceivePaymentSearch);
-    document.getElementById('receivePaymentAddBtn')?.addEventListener('click', () => {
+    document.getElementById('receivePaymentAddBtn')?.addEventListener('click', async () => {
+        if (!receivePaymentState.searchResults.length) {
+            await runReceivePaymentSearch();
+        }
+        const fallbackMatch = findReceivePaymentInvoice(document.getElementById('receivePaymentInvoiceSearch')?.value || '');
         const match = receivePaymentState.searchResults[0]
-            || findReceivePaymentInvoice(document.getElementById('receivePaymentInvoiceSearch')?.value || '');
+            || (fallbackMatch && receivePaymentOutstandingForInvoice(fallbackMatch) > 0.01 ? fallbackMatch : null);
         if (match) addReceivePaymentInvoice(match);
         else setReceivePaymentStatus('Search and select an unpaid invoice first.');
     });

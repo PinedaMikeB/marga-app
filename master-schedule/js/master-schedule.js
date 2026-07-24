@@ -844,6 +844,15 @@ function isOpenScheduleRow(row) {
     return Number(row.scheduleId || 0) > 0 && (row.source === 'legacy-route' || row.source === 'pending');
 }
 
+function canOfficeCloseSchedule(row) {
+    return canManageCloseRequests()
+        && row
+        && Number(row.scheduleId || 0) > 0
+        && !isClosedMasterStatus(row.masterStatusValue)
+        && clean(row.status).toLowerCase() !== 'closed'
+        && clean(row.status).toLowerCase() !== 'cancelled';
+}
+
 function daysBetween(startDate, endDate) {
     if (!startDate || !endDate) return '';
     const start = new Date(`${startDate}T00:00:00`);
@@ -1093,9 +1102,17 @@ function masterStaffBucketCounts(staffKey) {
 function masterFallbackBucketRows(rows = [], bucket = 'total') {
     if (bucket === 'total' || bucket === 'all') return rows.filter((row) => rowStatusBucket(row) !== 'cancelled');
     if (bucket === 'today') {
-        return rows.filter((row) => rowStatusBucket(row) !== 'cancelled' && !isPastPendingMasterRow(row));
+        return rows.filter((row) => {
+            const status = rowStatusBucket(row);
+            return status !== 'closed' && status !== 'cancelled' && !isPastPendingMasterRow(row);
+        });
     }
-    if (bucket === 'past_pending') return rows.filter((row) => rowStatusBucket(row) !== 'cancelled' && isPastPendingMasterRow(row));
+    if (bucket === 'past_pending') {
+        return rows.filter((row) => {
+            const status = rowStatusBucket(row);
+            return status !== 'closed' && status !== 'cancelled' && isPastPendingMasterRow(row);
+        });
+    }
     if (bucket === 'unfinished') {
         return rows.filter((row) => {
             const status = rowStatusBucket(row);
@@ -1113,26 +1130,26 @@ function masterFallbackBucketRows(rows = [], bucket = 'total') {
 }
 
 function getStaffBucketFilter(staffKey) {
-    const stored = clean(masterState.staffBucketFilters.get(staffKey) || 'total').toLowerCase() || 'total';
+    const stored = clean(masterState.staffBucketFilters.get(staffKey) || 'unfinished').toLowerCase() || 'unfinished';
     return stored === 'all' ? 'total' : stored;
 }
 
 function setStaffBucketFilter(staffKey, bucket) {
     const normalizedStaff = clean(staffKey) || 'Unassigned';
     const allowed = new Set(['total', 'today', 'past_pending', 'unfinished', 'closed', 'parts']);
-    masterState.staffBucketFilters.set(normalizedStaff, allowed.has(bucket) ? bucket : 'total');
+    masterState.staffBucketFilters.set(normalizedStaff, allowed.has(bucket) ? bucket : 'unfinished');
     renderMasterSchedule();
 }
 
 function renderStaffBucketFilters(staffKey, counts) {
     const activeBucket = getStaffBucketFilter(staffKey);
     const options = [
-        { key: 'total', label: 'Total Workload', count: counts.total },
+        { key: 'unfinished', label: 'Unfinished Schedule', count: counts.unfinished },
         { key: 'today', label: 'New Today', count: counts.today },
         { key: 'past_pending', label: 'Past Pending', count: counts.past_pending },
-        { key: 'unfinished', label: 'Unfinished Schedule', count: counts.unfinished },
         { key: 'parts', label: 'Pending Parts/Machine', count: counts.parts },
-        { key: 'closed', label: 'Closed', count: counts.closed }
+        { key: 'closed', label: 'Closed', count: counts.closed },
+        { key: 'total', label: 'All Rows', count: counts.total }
     ];
     return `
         <div class="master-staff-filters">
@@ -2753,7 +2770,7 @@ function renderMasterSchedule() {
         ${staffGroups.map((group) => {
             const counts = masterStaffBucketCounts(group.staffKey);
             const activeBucket = getStaffBucketFilter(group.staffKey);
-            const storedBucketRows = masterStaffBucketRows(group.staffKey, activeBucket);
+            const storedBucketRows = searchQuery ? [] : masterStaffBucketRows(group.staffKey, activeBucket);
             const fallbackUniverse = [...group.activeRows, ...group.pendingRows];
             const bucketRows = storedBucketRows.length ? storedBucketRows : masterFallbackBucketRows(fallbackUniverse, activeBucket);
             const combinedBucketRows = combineMasterRows(bucketRows);
@@ -3295,6 +3312,7 @@ function renderMasterScheduleRow(row) {
     const defaultForwardDate = clean(document.getElementById('masterForwardDateInput')?.value) || addDays(document.getElementById('masterDateInput')?.value || formatDateYmd(new Date()), 1);
     const priorityValue = schedulePriorityValue(row);
     const closeRequest = masterState.lookups.closeRequestsBySchedule.get(String(row.scheduleId || ''));
+    const canOfficeClose = canOfficeCloseSchedule(row) && !closeRequest;
     return `
         <tr data-row-key="${escapeHtml(row.rowKey)}">
             <td data-label="TIN #">${escapeHtml(row.tin || '-')}</td>
@@ -3331,6 +3349,7 @@ function renderMasterScheduleRow(row) {
                         </div>
                     ` : ''}
                     <button type="button" class="schedule-status-view" onclick="openMasterStatusModal('${escapeHtml(row.rowKey)}')">View</button>
+                    ${canOfficeClose ? `<button type="button" class="schedule-office-close-btn" onclick="closeScheduleWithoutRequest('${escapeHtml(row.rowKey)}')">Close Schedule</button>` : ''}
                     <div class="schedule-forward-tools">
                         <input class="schedule-forward-date" type="date" value="${escapeHtml(defaultForwardDate)}" aria-label="Forward date" ${canForward ? '' : 'disabled'}>
                         <button type="button" class="schedule-forward-btn" onclick="forwardScheduleRow('${escapeHtml(row.rowKey)}', this)" ${canForward ? '' : 'disabled'}>Forward</button>
@@ -3485,7 +3504,13 @@ async function applyApprovedCloseRequest(request, row = null, options = {}) {
         master_schedule_status_updated_by: actor,
         close_request_status: 'approved',
         close_request_approved_at: nowIso,
-        close_request_approved_by: actor
+        close_request_approved_by: actor,
+        ...(options.officeCloseReason ? {
+            master_office_closed_at: nowIso,
+            master_office_closed_by: actor,
+            master_office_closed_reason: options.officeCloseReason,
+            master_office_closed_without_request: options.withoutRequest ? 1 : 0
+        } : {})
     });
 
     const routeDocId = clean(row?.routeDocId || request?.route_doc_id);
@@ -3499,12 +3524,49 @@ async function applyApprovedCloseRequest(request, row = null, options = {}) {
         }).catch((error) => console.warn('Route close update failed; schedule was closed.', error));
     }
 
-    if (row) {
+    if (row && !options.withoutRequest) {
         await appendActivityLog(row, {
             actionType: 'approve_close_request',
             actionLabel: 'Close Request Approved',
             detail: `Approved close request from ${request.requester_name || `staff #${request.requester_staff_id || ''}`}.`
         }).catch((error) => console.warn('Close approval activity log failed:', error));
+    }
+}
+
+async function closeScheduleWithoutRequest(rowKey) {
+    const row = findScheduleRow(rowKey);
+    if (!canOfficeCloseSchedule(row)) return;
+
+    const defaultReason = 'Field staff missed close request; office confirmed schedule is done.';
+    const reasonInput = window.prompt(`Close schedule #${row.scheduleId} for ${row.customer || 'this customer'} without a field close request?`, defaultReason);
+    if (reasonInput === null) return;
+    const reason = clean(reasonInput) || defaultReason;
+    const ok = window.confirm(`Close schedule #${row.scheduleId} now?\n\nThis will remove it from open field schedule buckets and record an office close audit note.`);
+    if (!ok) return;
+
+    try {
+        await applyApprovedCloseRequest({
+            schedule_id: row.scheduleId,
+            schedule_doc_id: row.docId,
+            requester_staff_id: Number(row.techId || 0) || 0,
+            requester_name: row.assignedTo || currentActorLabel(),
+            reason,
+            tech_id: Number(row.techId || 0) || 0,
+            route_doc_id: row.routeDocId,
+            route_source: row.routeSource
+        }, row, {
+            officeCloseReason: reason,
+            withoutRequest: true
+        });
+        await appendActivityLog(row, {
+            actionType: 'office_close_without_request',
+            actionLabel: 'Office Closed Schedule',
+            detail: `Closed without field close request. Reason: ${reason}`
+        }).catch((error) => console.warn('Office close activity log failed:', error));
+        await loadMasterSchedule();
+    } catch (error) {
+        console.error('Office schedule close failed:', error);
+        window.alert(`Unable to close schedule: ${error.message || error}`);
     }
 }
 

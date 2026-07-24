@@ -1,0 +1,1806 @@
+diff --git a/marga-service-portal/public/index.html b/marga-service-portal/public/index.html
+index c320bae..27b06f8 100644
+--- a/marga-service-portal/public/index.html
++++ b/marga-service-portal/public/index.html
+@@ -23,7 +23,14 @@
+   <script>
+   if ('serviceWorker' in navigator) {
+     navigator.serviceWorker.getRegistrations().then(function(regs) {
+-      regs.forEach(function(r) { r.unregister(); });
++      var hadController = !!navigator.serviceWorker.controller;
++      var unregisters = regs.map(function(r) { return r.unregister(); });
++      Promise.all(unregisters).then(function() {
++        if (hadController && !sessionStorage.getItem('marga-sw-cleared-once')) {
++          sessionStorage.setItem('marga-sw-cleared-once', '1');
++          window.location.reload();
++        }
++      });
+     });
+     // Also clear all caches
+     if (window.caches) {
+@@ -38,7 +45,7 @@
+   <div id="introOverlay">
+     <video id="introVideo" playsinline muted
+            style="display:block;background:#000;object-fit:contain;width:100vw;height:100vh;">
+-      <source src="/public/assets/marga-intro-v1.mp4?v=20260717b" type="video/mp4" />
++      <source src="/public/assets/marga-intro-v1.mp4?v=20260717c" type="video/mp4" />
+     </video>
+     <button id="introSkip">Skip <span>→</span></button>
+     <div id="introTapHint" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;">
+@@ -197,7 +204,7 @@
+   </template>
+ 
+   <script src="/public/config.js"></script>
+-  <script type="module" src="/src/portal-main.js?v=20260717-8"></script>
++  <script type="module" src="/src/portal-main.js?v=20260717-9"></script>
+ 
+   <script>
+   (function() {
+diff --git a/marga-service-portal/public/service-worker.js b/marga-service-portal/public/service-worker.js
+index 1c789bc..c64e8c2 100644
+--- a/marga-service-portal/public/service-worker.js
++++ b/marga-service-portal/public/service-worker.js
+@@ -1,4 +1,4 @@
+-const CACHE_NAME = 'msp-shell-v20260717-dark-3';
++const CACHE_NAME = 'msp-shell-v20260717-dark-4';
+ const SHELL_ASSETS = [
+   '/',
+   '/install/',
+@@ -47,11 +47,20 @@ self.addEventListener('activate', (event) => {
+ self.addEventListener('fetch', (event) => {
+   if (event.request.method !== 'GET') return;
+ 
++  // Never cache range/video requests — 206 Partial Content crashes the Cache API
++  const url = event.request.url;
++  const isRange = event.request.headers.has('range');
++  const isVideo = /\.(mp4|webm|ogv|mov)(\?|$)/i.test(url);
++  if (isRange || isVideo) return; // let browser handle natively
++
+   event.respondWith(
+     fetch(event.request)
+       .then((networkResponse) => {
+-        const clone = networkResponse.clone();
+-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
++        // Only cache full 200 responses (skip 206 partial, opaque, errors)
++        if (networkResponse.ok && networkResponse.status === 200) {
++          const clone = networkResponse.clone();
++          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
++        }
+         return networkResponse;
+       })
+       .catch(async () => {
+diff --git a/marga-service-portal/service-worker.js b/marga-service-portal/service-worker.js
+index c97f032..d0cb72b 100644
+--- a/marga-service-portal/service-worker.js
++++ b/marga-service-portal/service-worker.js
+@@ -1,4 +1,4 @@
+-const CACHE_NAME = 'msp-shell-v33-device-grid-custom';
++const CACHE_NAME = 'msp-shell-v34-fix-206';
+ const SHELL_ASSETS = [
+   '/',
+   '/install/',
+@@ -47,11 +47,20 @@ self.addEventListener('activate', (event) => {
+ self.addEventListener('fetch', (event) => {
+   if (event.request.method !== 'GET') return;
+ 
++  // Never cache range/video requests — 206 Partial Content crashes the Cache API
++  const url = event.request.url;
++  const isRange = event.request.headers.has('range');
++  const isVideo = /\.(mp4|webm|ogv|mov)(\?|$)/i.test(url);
++  if (isRange || isVideo) return; // let browser handle natively
++
+   event.respondWith(
+     fetch(event.request)
+       .then((networkResponse) => {
+-        const clone = networkResponse.clone();
+-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
++        // Only cache full 200 responses (skip 206 partial, opaque, errors)
++        if (networkResponse.ok && networkResponse.status === 200) {
++          const clone = networkResponse.clone();
++          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
++        }
+         return networkResponse;
+       })
+       .catch(async () => {
+diff --git a/marga-service-portal/src/lib/data-service.js b/marga-service-portal/src/lib/data-service.js
+index f362b50..6383d0b 100644
+--- a/marga-service-portal/src/lib/data-service.js
++++ b/marga-service-portal/src/lib/data-service.js
+@@ -238,6 +238,39 @@ export class DataService {
+     return tickets.find((ticket) => String(ticket.id) === String(ticketId)) || null;
+   }
+ 
++  // Full ticket detail: computed customer-facing status + timeline + messages.
++  // Falls back to the list-derived ticket (e.g. synthetic legacy schedule rows,
++  // which have no dedicated detail row) if the detail endpoint 404s.
++  async getTicketDetail(user, ticketId) {
++    if (String(ticketId).startsWith('schedule:')) return this.getTicketById(ticketId);
++    try {
++      const payload = await api(this.queryWithCompany(`/tickets/${encodeURIComponent(ticketId)}`, user));
++      return payload.ticket || null;
++    } catch (error) {
++      return this.getTicketById(ticketId);
++    }
++  }
++
++  async sendTicketMessage(_user, ticketId, body, photoFile = null) {
++    if (photoFile && photoFile.size > 0) {
++      const form = new FormData();
++      form.append('body', body || '');
++      form.append('attachment', photoFile);
++      const token = loadAuthToken();
++      const response = await fetch(`/portal-api/tickets/${encodeURIComponent(ticketId)}/messages`, {
++        method: 'POST',
++        headers: token ? { Authorization: `Bearer ${token}` } : {},
++        credentials: 'same-origin',
++        body: form
++      });
++      const data = await response.json().catch(() => ({}));
++      if (!response.ok || data.ok === false) throw new Error(data.message || `Message failed (${response.status}).`);
++      return data.message;
++    }
++    const response = await api(`/tickets/${encodeURIComponent(ticketId)}/messages`, { method: 'POST', body: JSON.stringify({ body }) });
++    return response.message;
++  }
++
+   async listTonerRequests() {
+     const user = arguments[0];
+     const payload = await api(this.queryWithCompany('/toner-requests', user));
+@@ -318,6 +351,31 @@ export class DataService {
+     return { id: ticketId, ...patch };
+   }
+ 
++  // ── Internal-only (marga_admin / marga_staff): assignment, status transitions, GPS ──
++  // Used by the field-staff (tech) app. Backed by /portal-api/admin/tickets/:id/*.
++  async assignTicketToMe(user, ticketId) {
++    const response = await api(`/admin/tickets/${encodeURIComponent(ticketId)}/assign`, {
++      method: 'POST',
++      body: JSON.stringify({ staffId: user?.id, staffName: user?.name })
++    });
++    return response.ticket;
++  }
++
++  async updateTicketStatus(_user, ticketId, payload) {
++    const response = await api(`/admin/tickets/${encodeURIComponent(ticketId)}/status`, {
++      method: 'POST',
++      body: JSON.stringify(payload)
++    });
++    return response.ticket;
++  }
++
++  async pingTicketLocation(_user, ticketId, { latitude, longitude }) {
++    return api(`/admin/tickets/${encodeURIComponent(ticketId)}/location`, {
++      method: 'POST',
++      body: JSON.stringify({ latitude, longitude })
++    });
++  }
++
+   async upsertBranch(_user, payload) {
+     throw new Error('Branch management is read-only in the Margabase portal for now.');
+   }
+diff --git a/marga-service-portal/src/portal-main.js b/marga-service-portal/src/portal-main.js
+index eeb39f8..97bd6ba 100644
+--- a/marga-service-portal/src/portal-main.js
++++ b/marga-service-portal/src/portal-main.js
+@@ -45,7 +45,14 @@ const state = {
+   deviceDetail: null,
+   deviceDetailRequestId: 0,
+   selectedTicketId: null,
+-  ticketFilter: 'all'
++  ticketFilter: 'all',
++  ticketTab: 'my-tickets',    // 'my-tickets' | 'create'
++  ticketDetailOpen: false,
++  ticketDetailLoading: false,
++  ticketDetail: null,
++  ticketDetailRequestId: 0,
++  ticketMessageSending: false,
++  highlightTicketId: null     // newly created ticket to visually highlight in My Tickets
+ };
+ 
+ // Expose state for data-service group switcher integration
+@@ -449,8 +456,8 @@ function setView(viewKey, replaceHash = true) {
+   const safe = findView(viewKey)?.key || 'dashboard';
+   state.currentView = safe;
+   const viewMeta = findView(safe);
+-  viewTitle.textContent = viewMeta?.label || 'Dashboard';
+-  viewSubtitle.textContent = viewMeta?.subtitle || '';
++  if (viewTitle) viewTitle.textContent = viewMeta?.label || 'Dashboard';
++  if (viewSubtitle) viewSubtitle.textContent = viewMeta?.subtitle || '';
+   renderNav();
+   if (replaceHash && location.hash !== `#${safe}`) {
+     history.replaceState(null, '', `#${safe}`);
+@@ -992,8 +999,8 @@ async function renderDashboard() {
+     <!-- COMBINED HERO + FLEET HEALTH — repair video background -->
+     <section class="care-combined-hero">
+       <video class="care-combined-video" autoplay muted loop playsinline poster="/public/assets/marga-bg-poster.jpg">
+-        <source src="/public/assets/fleet-repair-desktop.mp4" media="(min-width: 640px)" type="video/mp4" />
+-        <source src="/public/assets/fleet-repair-mobile.mp4" type="video/mp4" />
++        <source src="/public/assets/fleet-repair-desktop.mp4?v=20260717c" media="(min-width: 640px)" type="video/mp4" />
++        <source src="/public/assets/fleet-repair-mobile.mp4?v=20260717c" type="video/mp4" />
+       </video>
+       <div class="care-combined-veil"></div>
+       <div class="care-combined-content">
+@@ -1617,146 +1624,393 @@ async function openDeviceDetail(deviceId) {
+   }
+ }
+ 
+-function renderTicketTimeline(ticket) {
+-  if (!ticket) return '<div class="empty-state">Select a ticket to see timeline.</div>';
+-
+-  const items = [
+-    {
+-      label: 'Created',
+-      details: ticket.description,
+-      at: ticket.createdAt
+-    },
+-    {
+-      label: 'Latest Update',
+-      details: `Status: ${ticket.status || 'Open'}`,
+-      at: ticket.updatedAt
+-    }
+-  ];
+-
+-  const notes = Array.isArray(ticket.workNotes) ? ticket.workNotes : [];
+-  notes.slice(0, 4).forEach((note) => {
+-    items.push({ label: 'Work Note', details: note, at: ticket.updatedAt });
+-  });
+-
+-  if (ticket.completion) {
+-    items.push({
+-      label: 'Completed',
+-      details: `Ack: ${ticket.completion.acknowledgedByName || '-'} (${ticket.completion.ackMethod || 'PIN'})`,
+-      at: ticket.completion.completedAt
+-    });
++const TICKET_STATUS_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>`;
++const INFO_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>`;
++const CHAT_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`;
++const CALL_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.24 1.24 2 2 0 012.24 0h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 14.92z"/></svg>`;
++
++// Display order for the My Tickets list (spec §7): active/in-motion states first,
++// completed/cancelled last. Independent from the raw DB status column.
++const TICKET_STATUS_ORDER = [
++  'on_the_way', 'arrived', 'in_progress', 'waiting_customer', 'waiting_parts',
++  'included_in_route', 'next_destination', 'assigned', 'queued', 'submitted', 'under_review',
++  'for_follow_up', 'completed', 'cancelled'
++];
++
++function ticketSortWeight(ticket) {
++  const idx = TICKET_STATUS_ORDER.indexOf(ticket.customerStatus?.routeStatus || 'submitted');
++  return idx === -1 ? TICKET_STATUS_ORDER.length : idx;
++}
++
++// Pill color per route_status — teal is reserved for "technician engaged" states
++// to match the live-tracking design language (spec §33).
++function ticketStatusTagClass(routeStatus) {
++  if (['on_the_way', 'arrived', 'in_progress', 'waiting_customer'].includes(routeStatus)) return 'tag-live';
++  if (routeStatus === 'completed') return 'tag-ok';
++  if (routeStatus === 'cancelled') return 'tag-attention';
++  if (['waiting_parts', 'for_follow_up'].includes(routeStatus)) return 'tag-watch';
++  return 'tag-accent';
++}
++
++function ticketCardHtml(ticket) {
++  const cs = ticket.customerStatus || {};
++  const tagClass = ticketStatusTagClass(cs.routeStatus);
++  let note = '';
++  if (cs.showLiveEta) {
++    note = `<div class="ticket-card-note">Live ETA: <b>${cs.liveEtaMinutes != null ? `${cs.liveEtaMinutes} min` : 'Calculating\u2026'}</b></div>`;
++  } else if (cs.showArrivalNotConfirmed) {
++    note = `<div class="ticket-card-note">Arrival time not yet confirmed.${cs.routeStatus === 'included_in_route' ? ' Included in today\u2019s service route.' : ''}</div>`;
++  } else if (cs.showBroadVisitPeriod && cs.broadVisitPeriod) {
++    note = `<div class="ticket-card-note">Expected visit period: <b>${escapeHtml(cs.broadVisitPeriod)}</b></div>`;
+   }
+ 
+-  return `<div class="timeline">${items
+-    .map(
+-      (item) => `<article class="timeline-item">
+-      <strong>${escapeHtml(item.label)}</strong>
+-      <p>${escapeHtml(item.details || '')}</p>
+-      <p>${formatDate(item.at)}</p>
+-    </article>`
+-    )
+-    .join('')}</div>`;
++  return `<div class="ticket-card">
++    <div class="ticket-card-head">
++      <div>
++        <p class="ticket-card-title">${escapeHtml(ticket.category || 'Service Request')}</p>
++        <p class="ticket-card-sub">Ticket #${escapeHtml(ticket.ticketNo || ticket.id)}</p>
++      </div>
++      <span class="tag ${tagClass}">${escapeHtml(cs.label || ticket.status || '-')}</span>
++    </div>
++    <div class="ticket-card-meta">
++      <span>Branch: <b>${escapeHtml(ticket.branchName || '-')}</b></span>
++      <span>Priority: <b>${escapeHtml(ticket.priority || '-')}</b></span>
++      <span>Updated: <b>${formatDate(ticket.updatedAt || ticket.createdAt)}</b></span>
++    </div>
++    ${note}
++    <div class="ticket-card-actions">
++      ${cs.showTracking ? `<button class="btn btn-primary btn-sm" data-ticket-id="${ticket.id}">Track Technician</button>` : ''}
++      ${cs.ticketMessageAvailable ? `<button class="btn btn-secondary btn-sm" data-ticket-id="${ticket.id}">${escapeHtml(cs.ticketMessageLabel || 'Message Service Team')}</button>` : ''}
++      <button class="btn btn-secondary btn-sm" data-ticket-id="${ticket.id}">View Details</button>
++    </div>
++  </div>`;
+ }
+ 
+-async function renderTickets() {
+-  const [devices, branches, tickets] = await Promise.all([
+-    service.listDevices(state.user),
+-    service.listBranches(state.user),
+-    service.listTickets(state.user)
+-  ]);
+-
+-  let visibleTickets = tickets;
++function renderMyTicketsTab(tickets) {
++  let visible = tickets;
+   if (state.ticketFilter !== 'all') {
+-    visibleTickets = tickets.filter((ticket) => String(ticket.status || '').toLowerCase() === state.ticketFilter);
++    visible = tickets.filter((ticket) => (ticket.customerStatus?.routeStatus || '') === state.ticketFilter);
+   }
++  visible = [...visible].sort(
++    (a, b) => ticketSortWeight(a) - ticketSortWeight(b) || new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)
++  );
+ 
+-  if (!state.selectedTicketId && visibleTickets.length) state.selectedTicketId = visibleTickets[0].id;
+-  const selectedTicket = tickets.find((ticket) => ticket.id === state.selectedTicketId) || null;
++  const filterOptions = [
++    ['all', 'All'],
++    ['on_the_way', 'On the Way'], ['arrived', 'Arrived'], ['in_progress', 'In Progress'],
++    ['waiting_customer', 'Waiting for Customer'], ['waiting_parts', 'Waiting for Parts'],
++    ['included_in_route', 'Scheduled for Today'], ['assigned', 'Assigned / Queued'],
++    ['submitted', 'Submitted / Under Review'], ['for_follow_up', 'Follow-up'],
++    ['completed', 'Completed'], ['cancelled', 'Cancelled']
++  ];
+ 
++  return `
++    <div class="panel glass">
++      <div class="panel-head stack-on-mobile">
++        <h3>My Tickets</h3>
++        <div class="panel-actions">
++          <select id="ticketStatusFilter" class="input">
++            ${filterOptions.map(([value, label]) => `<option value="${value}" ${state.ticketFilter === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}
++          </select>
++        </div>
++      </div>
++      ${visible.length ? visible.map(ticketCardHtml).join('') : '<div class="empty-state">No tickets found for this filter.</div>'}
++    </div>
++  `;
++}
++
++function renderCreateTicketTab(devices, branches) {
+   const deviceOptions = devices
+     .map((device) => `<option value="${device.id}">${escapeHtml(device.model)} - ${escapeHtml(device.serial)}</option>`)
+     .join('');
+   const branchOptions = branches.map((branch) => `<option value="${branch.id}">${escapeHtml(cleanBranchName(branch.name))}</option>`).join('');
+ 
+-  viewContainer.innerHTML = `
+-    <div class="grid-2">
+-      ${renderBackBar('Service Requests')}
+-      <div class="panel glass">
+-        <div class="panel-head"><h3>Create Service Ticket</h3></div>
+-        <form id="createTicketForm" class="form-grid">
+-          ${
+-            ['marga_admin', 'marga_staff', 'corporate_admin', 'company_admin'].includes(state.user.role)
+-              ? `<label>Branch<select name="branchId" required>${branchOptions}</select></label>`
+-              : `<input type="hidden" name="branchId" value="${escapeHtml(state.user.branchId || '')}" />`
+-          }
+-          <label>Device<select name="deviceId" required>${deviceOptions}</select></label>
+-          <label>Category
+-            <select name="category" required>
+-              <option>Paper Jam</option>
+-              <option>Print Quality</option>
+-              <option>Connectivity</option>
+-              <option>Hardware Error</option>
+-              <option>Preventive Maintenance</option>
+-            </select>
+-          </label>
+-          <label>Priority
+-            <select name="priority" required>
+-              <option>Low</option>
+-              <option selected>Medium</option>
+-              <option>High</option>
+-              <option>Critical</option>
+-            </select>
+-          </label>
+-          <label class="full">Description<textarea name="description" rows="3" required placeholder="Describe the issue clearly..."></textarea></label>
+-          <label class="full">Attach Photo (optional)<input type="file" name="attachment" accept="image/*" /></label>
+-          <button type="submit" class="btn btn-primary full">Submit Ticket</button>
+-        </form>
++  return `
++    <div class="panel glass">
++      <div class="panel-head"><h3>Create Service Ticket</h3></div>
++      <form id="createTicketForm" class="form-grid">
++        ${
++          ['marga_admin', 'marga_staff', 'corporate_admin', 'company_admin'].includes(state.user.role)
++            ? `<label>Branch<select name="branchId" required>${branchOptions}</select></label>`
++            : `<input type="hidden" name="branchId" value="${escapeHtml(state.user.branchId || '')}" />`
++        }
++        <label>Device<select name="deviceId" required>${deviceOptions}</select></label>
++        <label>Category
++          <select name="category" required>
++            <option>Paper Jam</option>
++            <option>Print Quality</option>
++            <option>Connectivity</option>
++            <option>Hardware Error</option>
++            <option>Preventive Maintenance</option>
++          </select>
++        </label>
++        <label>Priority
++          <select name="priority" required>
++            <option>Low</option>
++            <option selected>Medium</option>
++            <option>High</option>
++            <option>Critical</option>
++          </select>
++        </label>
++        <label class="full">Description<textarea name="description" rows="3" required placeholder="Describe the issue clearly..."></textarea></label>
++        <label class="full">Attach Photo (optional)<input type="file" name="attachment" accept="image/*" /></label>
++        <button type="submit" class="btn btn-primary full">Submit Ticket</button>
++      </form>
++    </div>
++  `;
++}
++
++// ── Ticket Details overlay (spec §9): status hero + step tracker + assigned staff
++// + ticket-linked messaging + timeline. Appended to <body> (not viewContainer) so it
++// survives sibling re-renders and never gets clipped by the module grid.
++function renderStatusHero(cs) {
++  const heroClass = cs.routeStatus === 'on_the_way' ? 'status-hero live' : 'status-hero';
++  let box = '';
++  if (cs.showLiveEta) {
++    box = `<div class="status-hero-box live">
++      <p class="status-hero-box-label">Live ETA</p>
++      <p class="status-hero-box-value live">${cs.liveEtaMinutes != null ? `${cs.liveEtaMinutes} min` : 'Calculating\u2026'}</p>
++      <p class="status-hero-box-note">You are the technician\u2019s next stop.</p>
++    </div>`;
++  } else if (cs.showArrivalNotConfirmed) {
++    box = `<div class="status-hero-box">
++      <p class="status-hero-box-label">Arrival Time</p>
++      <p class="status-hero-box-value">Not Yet Confirmed</p>
++      <p class="status-hero-box-note">We\u2019ll notify you when your assigned field staff is approaching.</p>
++    </div>`;
++  } else if (cs.showBroadVisitPeriod && cs.broadVisitPeriod) {
++    box = `<div class="status-hero-box">
++      <p class="status-hero-box-label">Expected Visit Period</p>
++      <p class="status-hero-box-value">${escapeHtml(cs.broadVisitPeriod)}</p>
++      <p class="status-hero-box-note">This is an estimate, not a guarantee.</p>
++    </div>`;
++  }
++  return `<div class="${heroClass}">
++    <div class="status-hero-icon-row">
++      <div class="status-hero-icon">${TICKET_STATUS_ICON}</div>
++      <div>
++        <p class="status-hero-title">${escapeHtml(cs.label || 'Request Received')}</p>
++        <span class="tag ${ticketStatusTagClass(cs.routeStatus)}">${escapeHtml((cs.routeStatus || '').replace(/_/g, ' '))}</span>
+       </div>
++    </div>
++    ${box}
++    <p class="status-hero-info">${INFO_ICON} <span>${escapeHtml(cs.message || '')}</span></p>
++  </div>`;
++}
+ 
+-      <div class="panel glass">
+-        <div class="panel-head">
+-          <h3>Ticket Timeline</h3>
+-          <span class="muted">${selectedTicket ? escapeHtml(selectedTicket.ticketNo || selectedTicket.id) : 'No ticket selected'}</span>
++function renderStepTracker(steps) {
++  const currentIdx = steps.length - 1;
++  return `<div class="step-tracker">${steps
++    .map((label, i) => {
++      const cls = i < currentIdx ? 'done' : i === currentIdx ? 'current' : '';
++      const dot = i < currentIdx ? '\u2713' : String(i + 1);
++      return `${i > 0 ? `<div class="step-line ${i <= currentIdx ? 'done' : ''}"></div>` : ''}<div class="step ${cls}">
++          <div class="step-dot">${dot}</div>
++          <div class="step-label">${escapeHtml(label)}</div>
++        </div>`;
++    })
++    .join('')}</div>`;
++}
++
++function renderTechCard(cs, isLive) {
++  const initials = (cs.assignedStaffName || '').trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase() || '?';
++  return `<div class="tech-card">
++    <div class="avatar">${initials}</div>
++    <div class="tech-card-body">
++      <p class="tech-card-name">${escapeHtml(cs.assignedStaffName)}</p>
++      <p class="tech-card-role">${isLive ? 'Assigned Field Staff' : 'Assigned to your request'}</p>
++    </div>
++  </div>`;
++}
++
++function renderTicketDetailContent(ticket) {
++  const cs = ticket.customerStatus || {};
++  const isLive = ['on_the_way', 'arrived', 'in_progress', 'waiting_customer'].includes(cs.routeStatus);
++  const steps = cs.progressSteps && cs.progressSteps.length ? cs.progressSteps : ['Received'];
++  const messages = Array.isArray(ticket.messages) ? ticket.messages : [];
++  const events = Array.isArray(ticket.events) ? ticket.events : [];
++
++  return `
++    <div class="panel-head">
++      <h3>${escapeHtml(ticket.category || 'Service Request')}</h3>
++      <button class="btn btn-ghost-dark" id="closeTicketDetail" style="width:auto">Close</button>
++    </div>
++    <div class="ticket-detail-columns">
++      <div>
++        ${renderStatusHero(cs)}
++        ${renderStepTracker(steps)}
++        ${cs.showAssignedStaffProfile && cs.assignedStaffName ? renderTechCard(cs, isLive) : ''}
++        <div class="ticket-card-actions" style="margin-top:10px">
++          <a class="btn btn-secondary btn-sm" href="tel:+63281234567">${CALL_ICON} Call Marga Care</a>
++          <a class="btn btn-secondary btn-sm" href="mailto:support@marga.biz">${CHAT_ICON} Chat with Marga Care</a>
+         </div>
+-        ${renderTicketTimeline(selectedTicket)}
+       </div>
+-    </div>
++      <div>
++        <div class="panel glass" style="margin-bottom:14px">
++          <div class="panel-head"><h3>Request Details</h3></div>
++          <div class="ticket-card-meta" style="flex-direction:column;align-items:flex-start;gap:6px">
++            <span>Ticket No: <b>${escapeHtml(ticket.ticketNo || ticket.id)}</b></span>
++            <span>Branch: <b>${escapeHtml(ticket.branchName || '-')}</b></span>
++            <span>Priority: <b>${escapeHtml(ticket.priority || '-')}</b></span>
++            <span>Submitted: <b>${formatDate(ticket.createdAt)}</b></span>
++          </div>
++          <p style="font-size:12px;color:var(--ink-2);margin-top:10px">${escapeHtml(ticket.description || '')}</p>
++        </div>
+ 
+-    <div class="panel glass">
+-      <div class="panel-head stack-on-mobile">
+-        <h3>Ticket List</h3>
+-        <div class="panel-actions">
+-          <select id="ticketStatusFilter" class="input">
+-            <option value="all" ${state.ticketFilter === 'all' ? 'selected' : ''}>All statuses</option>
+-            <option value="open" ${state.ticketFilter === 'open' ? 'selected' : ''}>Open</option>
+-            <option value="assigned" ${state.ticketFilter === 'assigned' ? 'selected' : ''}>Assigned</option>
+-            <option value="in progress" ${state.ticketFilter === 'in progress' ? 'selected' : ''}>In Progress</option>
+-            <option value="pending follow up" ${state.ticketFilter === 'pending follow up' ? 'selected' : ''}>Pending Follow Up</option>
+-            <option value="completed" ${state.ticketFilter === 'completed' ? 'selected' : ''}>Completed</option>
+-          </select>
++        ${
++          cs.ticketMessageAvailable
++            ? `<div class="panel glass">
++                <div class="panel-head"><h3>${escapeHtml(cs.ticketMessageLabel || 'Message Service Team')}</h3></div>
++                <div class="message-thread">
++                  ${
++                    messages.length
++                      ? messages
++                          .map(
++                            (m) => `<div class="message-bubble ${m.senderType === 'customer' ? 'mine' : ''}">
++                              <p class="msg-sender">${escapeHtml(m.senderName || (m.senderType === 'customer' ? 'You' : 'Marga Service Team'))}</p>
++                              <p class="msg-body">${escapeHtml(m.body || '')}</p>
++                              <p class="msg-time">${formatDate(m.createdAt)}</p>
++                            </div>`
++                          )
++                          .join('')
++                      : '<div class="empty-state">Messages are attached to this service request. The assigned team will respond when available.</div>'
++                  }
++                </div>
++                <form id="ticketMessageForm" class="message-composer">
++                  <textarea name="body" placeholder="Type a message..." required></textarea>
++                  <button type="submit" class="btn btn-primary btn-sm">Send</button>
++                </form>
++                ${cs.callTechnicianEnabled ? `<button type="button" class="btn btn-secondary btn-sm" data-tech-call style="margin-top:8px;width:100%">${CALL_ICON} Call Assigned Technician</button>` : ''}
++              </div>`
++            : '<div class="panel glass"><div class="empty-state">Messaging opens once your request is assigned.</div></div>'
++        }
++
++        <div class="panel glass" style="margin-top:14px">
++          <div class="panel-head"><h3>Timeline</h3></div>
++          ${
++            events.length
++              ? `<div class="timeline">${events
++                  .map(
++                    (e) => `<article class="timeline-item">
++                      <strong>${escapeHtml((e.status || '').replace(/_/g, ' '))}</strong>
++                      <p>${escapeHtml(e.customerVisibleNote || '')}</p>
++                      <p>${formatDate(e.createdAt)}</p>
++                    </article>`
++                  )
++                  .join('')}</div>`
++              : '<div class="empty-state">No timeline events yet.</div>'
++          }
+         </div>
+       </div>
+-      ${
+-        visibleTickets.length
+-          ? `<div class="table-wrap"><table class="data-table"><thead><tr>
+-              <th>Ticket No</th><th>Category</th><th>Priority</th><th>Status</th><th>Updated</th><th></th>
+-            </tr></thead><tbody>
+-            ${visibleTickets
+-              .map(
+-                (ticket) => `<tr>
+-                  <td>${escapeHtml(ticket.ticketNo || ticket.id)}</td>
+-                  <td>${escapeHtml(ticket.category || '-')}</td>
+-                  <td>${escapeHtml(ticket.priority || '-')}</td>
+-                  <td><span class="tag ${statusClass(ticket.status)}">${escapeHtml(ticket.status || '-')}</span></td>
+-                  <td>${formatDate(ticket.updatedAt || ticket.createdAt)}</td>
+-                  <td><button class="btn btn-secondary btn-sm" data-ticket-id="${ticket.id}">View</button></td>
+-                </tr>`
+-              )
+-              .join('')}
+-            </tbody></table></div>`
+-          : '<div class="empty-state">No tickets found for this filter.</div>'
+-      }
+     </div>
+   `;
++}
++
++function closeTicketDetailOverlay() {
++  document.getElementById('ticketDetailOverlay')?.remove();
++  state.ticketDetailOpen = false;
++  state.ticketDetail = null;
++}
++
++function renderTicketDetailOverlay() {
++  document.getElementById('ticketDetailOverlay')?.remove();
++  if (!state.ticketDetailOpen) return;
++
++  const overlay = document.createElement('div');
++  overlay.id = 'ticketDetailOverlay';
++  overlay.className = 'ticket-detail-overlay';
++  overlay.innerHTML = `<div class="ticket-detail-panel">${
++    state.ticketDetailLoading || !state.ticketDetail
++      ? '<div class="empty-state">Loading ticket details\u2026</div>'
++      : renderTicketDetailContent(state.ticketDetail)
++  }</div>`;
++  document.body.appendChild(overlay);
++
++  overlay.addEventListener('click', (event) => {
++    if (event.target === overlay) {
++      closeTicketDetailOverlay();
++      renderTickets();
++    }
++  });
++  document.getElementById('closeTicketDetail')?.addEventListener('click', () => {
++    closeTicketDetailOverlay();
++    renderTickets();
++  });
++  document.querySelectorAll('#ticketDetailOverlay [data-tech-call]').forEach((btn) => {
++    btn.addEventListener('click', () => {
++      showNotice('In-app technician calling is coming soon. Use Chat Assigned Technician for now.', 'info');
++    });
++  });
++
++  const messageForm = document.getElementById('ticketMessageForm');
++  messageForm?.addEventListener('submit', async (event) => {
++    event.preventDefault();
++    if (state.ticketMessageSending) return;
++    const textarea = messageForm.querySelector('textarea[name="body"]');
++    const body = (textarea?.value || '').trim();
++    if (!body) return;
++    state.ticketMessageSending = true;
++    try {
++      await service.sendTicketMessage(state.user, state.ticketDetail.id, body);
++      state.ticketDetail = await service.getTicketDetail(state.user, state.ticketDetail.id);
++      renderTicketDetailOverlay();
++    } catch (error) {
++      showNotice(error.message || 'Failed to send message.', 'error');
++    } finally {
++      state.ticketMessageSending = false;
++    }
++  });
++}
++
++async function openTicketDetail(ticketId) {
++  state.selectedTicketId = ticketId;
++  state.ticketDetailOpen = true;
++  state.ticketDetailLoading = true;
++  state.ticketDetail = null;
++  state.ticketDetailRequestId += 1;
++  const requestId = state.ticketDetailRequestId;
++  renderTicketDetailOverlay();
++  try {
++    const detail = await service.getTicketDetail(state.user, ticketId);
++    if (requestId !== state.ticketDetailRequestId) return;
++    state.ticketDetail = detail;
++  } catch (error) {
++    if (requestId !== state.ticketDetailRequestId) return;
++    showNotice(error.message || 'Failed to load ticket detail.', 'error');
++  } finally {
++    if (requestId !== state.ticketDetailRequestId) return;
++    state.ticketDetailLoading = false;
++    renderTicketDetailOverlay();
++  }
++}
++
++async function renderTickets() {
++  const [devices, branches, tickets] = await Promise.all([
++    service.listDevices(state.user),
++    service.listBranches(state.user),
++    service.listTickets(state.user)
++  ]);
++
++  viewContainer.innerHTML = `
++    ${renderBackBar('Service Requests')}
++    <div class="ticket-tabs">
++      <button class="ticket-tab ${state.ticketTab === 'my-tickets' ? 'active' : ''}" data-ticket-tab="my-tickets" type="button">My Tickets</button>
++      <button class="ticket-tab ${state.ticketTab === 'create' ? 'active' : ''}" data-ticket-tab="create" type="button">Create Ticket</button>
++    </div>
++    ${state.ticketTab === 'create' ? renderCreateTicketTab(devices, branches) : renderMyTicketsTab(tickets)}
++  `;
++
++  viewContainer.querySelectorAll('[data-ticket-tab]').forEach((btn) => {
++    btn.addEventListener('click', async () => {
++      state.ticketTab = btn.getAttribute('data-ticket-tab');
++      await renderTickets();
++    });
++  });
++
++  document.getElementById('ticketStatusFilter')?.addEventListener('change', async (event) => {
++    state.ticketFilter = event.target.value;
++    await renderTickets();
++  });
+ 
+   document.getElementById('createTicketForm')?.addEventListener('submit', async (event) => {
+     event.preventDefault();
+@@ -1778,21 +2032,26 @@ async function renderTickets() {
+     const hasFile = attachment && attachment.size > 0;
+ 
+     try {
+-      await service.createTicket(state.user, payload, hasFile ? attachment : null);
++      const ticket = await service.createTicket(state.user, payload, hasFile ? attachment : null);
+       showNotice('Ticket submitted successfully.', 'success');
+       form.reset();
++      state.ticketTab = 'my-tickets';
++      state.highlightTicketId = ticket?.id || null;
+       await renderTickets();
+     } catch (error) {
+       showNotice(error.message || 'Unable to create ticket.', 'error');
+     }
+   });
+ 
+-  document.getElementById('ticketStatusFilter')?.addEventListener('change', async (event) => {
+-    state.ticketFilter = event.target.value;
+-    await renderTickets();
+-  });
++  // Just-created ticket: land on My Tickets and open its detail (spec §8).
++  if (state.highlightTicketId) {
++    const idToOpen = state.highlightTicketId;
++    state.highlightTicketId = null;
++    await openTicketDetail(idToOpen);
++  }
+ }
+ 
++
+ async function renderToner() {
+   const [devices, requests, branches] = await Promise.all([
+     service.listDevices(state.user),
+@@ -2800,8 +3059,7 @@ async function renderView() {
+ 
+   viewContainer.querySelectorAll('[data-ticket-id]').forEach((button) => {
+     button.addEventListener('click', async () => {
+-      state.selectedTicketId = button.getAttribute('data-ticket-id');
+-      await renderTickets();
++      await openTicketDetail(button.getAttribute('data-ticket-id'));
+     });
+   });
+ }
+diff --git a/marga-service-portal/src/styles/app.css b/marga-service-portal/src/styles/app.css
+index 7ba1771..83ec577 100644
+--- a/marga-service-portal/src/styles/app.css
++++ b/marga-service-portal/src/styles/app.css
+@@ -39,6 +39,9 @@
+   --red-soft:   rgba(248,113,113,.1);
+   --blue:       #60a5fa;
+   --blue-soft:  rgba(96,165,250,.1);
++  --teal:       #2dd4bf;
++  --teal-soft:  rgba(45,212,191,.12);
++  --teal-glow:  rgba(45,212,191,.25);
+ 
+   /* ── Layout ── */
+   --radius:    10px;
+diff --git a/marga-service-portal/src/styles/portal.css b/marga-service-portal/src/styles/portal.css
+index 48de336..a93f826 100644
+--- a/marga-service-portal/src/styles/portal.css
++++ b/marga-service-portal/src/styles/portal.css
+@@ -1071,3 +1071,146 @@
+   flex-shrink: 0;
+   margin-left: auto;
+ }
++
++
++/* ═══════════════════════════════════════════
++   SERVICE REQUESTS — tabs, ticket cards, status hero,
++   step tracker, technician card, message thread
++   2026-07-20
++   ═══════════════════════════════════════════ */
++
++/* ── Tabs ── */
++.ticket-tabs {
++  display: flex; gap: 6px; margin-bottom: 14px;
++  border-bottom: 1px solid var(--border);
++}
++.ticket-tab {
++  background: none; border: none; cursor: pointer;
++  font: inherit; font-size: 12px; font-weight: 600;
++  color: var(--ink-3); padding: 10px 4px; margin-right: 18px;
++  border-bottom: 2px solid transparent;
++  transition: color var(--dur-fast), border-color var(--dur-fast);
++}
++.ticket-tab:hover { color: var(--ink-2); }
++.ticket-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
++
++/* ── Extra tag colors for route-status pills ── */
++.tag-accent { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--border-accent); }
++.tag-live   { background: var(--teal-soft);   color: var(--teal);   border: 1px solid rgba(45,212,191,.3); }
++
++/* ── Ticket card (My Tickets list) ── */
++.ticket-card {
++  background: var(--surface); border: 1px solid var(--border);
++  border-radius: var(--radius); padding: 14px; margin-bottom: 10px;
++  transition: border-color var(--dur-fast);
++}
++.ticket-card:hover { border-color: var(--border-strong); }
++.ticket-card-head {
++  display: flex; align-items: flex-start; justify-content: space-between;
++  gap: 10px; margin-bottom: 8px;
++}
++.ticket-card-title { font-size: 13px; font-weight: 700; color: var(--ink); margin: 0; }
++.ticket-card-sub { font-size: 11px; color: var(--ink-3); margin: 2px 0 0; }
++.ticket-card-meta {
++  display: flex; flex-wrap: wrap; gap: 6px 14px;
++  font-size: 11px; color: var(--ink-2); margin: 8px 0;
++}
++.ticket-card-meta span b { color: var(--ink); font-weight: 600; }
++.ticket-card-note {
++  font-size: 11px; color: var(--ink-3); margin: 6px 0 10px;
++  padding: 8px 10px; background: var(--bg-2); border-radius: var(--radius-sm);
++}
++.ticket-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
++
++/* ── Status hero (Ticket Details top card) ── */
++.status-hero {
++  border-radius: var(--radius-lg); padding: 16px;
++  background: var(--surface-2); border: 1px solid var(--border-accent);
++  margin-bottom: 14px;
++}
++.status-hero.live {
++  background: var(--teal-soft); border-color: rgba(45,212,191,.35);
++  box-shadow: 0 0 0 1px rgba(45,212,191,.08), 0 8px 24px var(--teal-glow);
++}
++.status-hero-icon-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
++.status-hero-icon {
++  width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
++  background: var(--accent-soft); border: 1px solid var(--border-accent);
++  display: flex; align-items: center; justify-content: center; color: var(--accent);
++}
++.status-hero.live .status-hero-icon { background: var(--teal-soft); border-color: rgba(45,212,191,.35); color: var(--teal); }
++.status-hero-title { font-size: 14px; font-weight: 700; color: var(--ink); margin: 0; }
++.status-hero-box {
++  background: var(--bg-2); border-radius: var(--radius); padding: 12px 14px; margin-top: 8px;
++}
++.status-hero-box.live { background: rgba(45,212,191,.06); }
++.status-hero-box-label { font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; margin: 0; }
++.status-hero-box-value { font-size: 20px; font-weight: 700; color: var(--ink); margin: 2px 0 4px; }
++.status-hero-box-value.live { color: var(--teal); }
++.status-hero-box-note { font-size: 11px; color: var(--ink-2); margin: 0; line-height: 1.5; }
++.status-hero-info {
++  font-size: 11px; color: var(--ink-2); margin-top: 10px; line-height: 1.6;
++  display: flex; gap: 8px; align-items: flex-start;
++}
++.status-hero-info svg { flex-shrink: 0; margin-top: 1px; color: var(--accent); }
++
++/* ── Step tracker ── */
++.step-tracker { display: flex; align-items: center; margin: 14px 0; }
++.step { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 0 0 auto; }
++.step-dot {
++  width: 26px; height: 26px; border-radius: 50%;
++  display: flex; align-items: center; justify-content: center;
++  background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--ink-3);
++  font-size: 10px; flex-shrink: 0;
++}
++.step.done .step-dot { background: var(--accent); border-color: var(--accent); color: #fff; }
++.step.current .step-dot { background: var(--teal-soft); border: 2px solid var(--teal); color: var(--teal); }
++.step-label { font-size: 9px; color: var(--ink-3); white-space: nowrap; text-align: center; }
++.step.done .step-label, .step.current .step-label { color: var(--ink-2); }
++.step-line { flex: 1 1 auto; height: 2px; background: var(--border-strong); margin: 0 4px; margin-bottom: 16px; }
++.step-line.done { background: var(--accent); }
++
++/* ── Assigned staff / technician card ── */
++.tech-card {
++  display: flex; align-items: center; gap: 12px;
++  background: var(--surface); border: 1px solid var(--border);
++  border-radius: var(--radius); padding: 12px; margin: 12px 0;
++}
++.tech-card .avatar { width: 42px; height: 42px; font-size: 15px; }
++.tech-card-body { flex: 1; min-width: 0; }
++.tech-card-name { font-size: 13px; font-weight: 700; color: var(--ink); margin: 0; }
++.tech-card-role { font-size: 11px; color: var(--ink-3); margin: 2px 0 0; }
++.tech-card-actions { display: flex; flex-direction: column; gap: 6px; }
++
++/* ── Message thread ── */
++.message-thread {
++  display: flex; flex-direction: column; gap: 8px;
++  max-height: 320px; overflow-y: auto; padding: 4px 2px; margin-bottom: 10px;
++}
++.message-bubble {
++  max-width: 82%; padding: 8px 12px; border-radius: 12px;
++  background: var(--surface-2); border: 1px solid var(--border);
++  font-size: 12px; color: var(--ink-2); align-self: flex-start;
++}
++.message-bubble.mine {
++  background: var(--accent-soft); border-color: var(--border-accent);
++  color: var(--ink); align-self: flex-end;
++}
++.message-bubble .msg-sender { font-size: 10px; font-weight: 700; color: var(--accent); margin: 0 0 3px; }
++.message-bubble .msg-body { margin: 0; line-height: 1.5; white-space: pre-wrap; }
++.message-bubble .msg-time { font-size: 9px; color: var(--ink-3); margin: 4px 0 0; }
++.message-composer { display: flex; gap: 8px; }
++.message-composer textarea { resize: none; min-height: 38px; }
++.ticket-detail-overlay {
++  position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 90;
++  display: flex; justify-content: flex-end;
++}
++.ticket-detail-panel {
++  background: var(--bg-1); width: 100%; max-width: 560px; height: 100%;
++  overflow-y: auto; padding: 16px; border-left: 1px solid var(--border);
++}
++@media (min-width: 900px) {
++  .ticket-detail-overlay { align-items: center; justify-content: center; }
++  .ticket-detail-panel { max-width: 920px; height: 90vh; border-radius: var(--radius-lg); border: 1px solid var(--border); }
++  .ticket-detail-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
++}
+diff --git a/marga-service-portal/src/tech-main.js b/marga-service-portal/src/tech-main.js
+index 018226e..93e7d25 100644
+--- a/marga-service-portal/src/tech-main.js
++++ b/marga-service-portal/src/tech-main.js
+@@ -106,12 +106,88 @@ async function loadSignersForTicket(ticket) {
+   }
+ }
+ 
++// ── Field-staff status actions + live GPS ping (spec §16, §24, §30) ──────────
++// Buttons are derived from the ticket's route_status so a tech can only move a
++// job to a valid next state — the server enforces this too via updateTicketStatus.
++const STATUS_ACTION_NOTES = {
++  included_in_route: 'Your request has been included in today\u2019s service route.',
++  next_destination: 'You are now the next destination for your assigned field staff.',
++  arrived: '',
++  in_progress: 'Service has started.',
++  waiting_customer: 'Our technician is waiting for access to the machine or service area.',
++  waiting_parts: 'A required part is being prepared. We will notify you when the follow-up visit is scheduled.',
++  for_follow_up: 'A follow-up visit is being scheduled.',
++  completed: 'Your service request has been completed.'
++};
++
++function techStatusActionButtons(ticket) {
++  if (!ticket.assignedStaffName) {
++    return `<button class="btn btn-secondary btn-sm" data-status-action="assign">Assign to Me</button>`;
++  }
++  const routeStatus = ticket.customerStatus?.routeStatus || 'submitted';
++  const nextActions = {
++    assigned: [['included_in_route', 'Include in Today\u2019s Route'], ['next_destination', 'Set as Next Destination']],
++    queued: [['included_in_route', 'Include in Today\u2019s Route'], ['next_destination', 'Set as Next Destination']],
++    included_in_route: [['next_destination', 'Set as Next Destination']],
++    next_destination: [['on_the_way', 'Start Travel (On the Way)']],
++    on_the_way: [['arrived', 'Arrived']],
++    arrived: [['in_progress', 'Start Service']],
++    in_progress: [['waiting_customer', 'Waiting for Customer'], ['waiting_parts', 'Waiting for Parts'], ['completed', 'Mark Completed']],
++    waiting_customer: [['in_progress', 'Resume Service']],
++    waiting_parts: [['for_follow_up', 'Schedule Follow-up'], ['in_progress', 'Resume Service']],
++    for_follow_up: [['on_the_way', 'Reopen \u2014 On the Way']]
++  };
++  const actions = nextActions[routeStatus] || [];
++  const buttonsHtml = actions
++    .map(([action, label]) => `<button class="btn btn-secondary btn-sm" data-status-action="${action}">${escapeHtml(label)}</button>`)
++    .join('');
++  const cancelHtml = !['completed', 'cancelled'].includes(routeStatus)
++    ? `<button class="btn btn-secondary btn-sm" data-status-action="cancel">Cancel Ticket</button>`
++    : '';
++  return buttonsHtml + cancelHtml || '<p class="muted">No further actions for this status.</p>';
++}
++
++let locationPingTimer = null;
++
++function stopLocationPing() {
++  if (locationPingTimer) {
++    clearInterval(locationPingTimer);
++    locationPingTimer = null;
++  }
++}
++
++function startLocationPing(ticketId) {
++  stopLocationPing();
++  if (!navigator.geolocation) return;
++  const ping = () => {
++    navigator.geolocation.getCurrentPosition(
++      async (pos) => {
++        try {
++          await service.pingTicketLocation(state.user, ticketId, {
++            latitude: pos.coords.latitude,
++            longitude: pos.coords.longitude
++          });
++        } catch (error) {
++          // Server auto-disables tracking once the ticket leaves on_the_way (spec §30);
++          // stop pinging quietly rather than surfacing an error toast every 20s.
++          stopLocationPing();
++        }
++      },
++      () => {},
++      { enableHighAccuracy: true, maximumAge: 15000, timeout: 10000 }
++    );
++  };
++  ping();
++  locationPingTimer = setInterval(ping, 20000);
++}
++
+ async function renderTicketDetail() {
+   const ticket = activeTicket();
+   if (!ticket) {
+     techDetailTicketNo.textContent = 'Select a ticket';
+     techDetailBody.className = 'detail-body empty-state';
+     techDetailBody.textContent = 'Choose a ticket to view details.';
++    stopLocationPing();
+     await loadSignersForTicket(null);
+     return;
+   }
+@@ -138,11 +214,7 @@ async function renderTicketDetail() {
+ 
+     <article class="detail-row">
+       <h4>Status Actions</h4>
+-      <div class="panel-actions">
+-        <button class="btn btn-secondary btn-sm" id="assignToMeBtn">Assign to Me</button>
+-        <button class="btn btn-secondary btn-sm" id="setInProgressBtn">Set In Progress</button>
+-        <button class="btn btn-secondary btn-sm" id="setPendingPartsBtn">Set Pending Parts</button>
+-      </div>
++      <div class="panel-actions" id="statusActionButtons">${techStatusActionButtons(ticket)}</div>
+       <form id="workNoteForm" class="form-grid" style="margin-top:.6rem;">
+         <label class="full">Work Note<textarea name="workNote" rows="2" required placeholder="Add diagnostics or actions taken"></textarea></label>
+         <button class="btn btn-primary full" type="submit">Save Work Note</button>
+@@ -170,34 +242,50 @@ async function renderTicketDetail() {
+     </article>
+   `;
+ 
+-  document.getElementById('assignToMeBtn')?.addEventListener('click', async () => {
+-    try {
+-      await service.assignTicketToTech(state.user, ticket.id);
+-      await refreshTickets();
+-      setCompletionMessage('Ticket assigned to you.', 'success');
+-    } catch (error) {
+-      setCompletionMessage(error.message || 'Failed to assign ticket.', 'error');
+-    }
+-  });
+-
+-  document.getElementById('setInProgressBtn')?.addEventListener('click', async () => {
+-    try {
+-      await service.updateTicket(state.user, ticket.id, { status: 'In Progress' });
+-      await refreshTickets();
+-      setCompletionMessage('Status updated to In Progress.', 'success');
+-    } catch (error) {
+-      setCompletionMessage(error.message || 'Status update failed.', 'error');
+-    }
+-  });
+-
+-  document.getElementById('setPendingPartsBtn')?.addEventListener('click', async () => {
+-    try {
+-      await service.updateTicket(state.user, ticket.id, { status: 'Pending Parts' });
+-      await refreshTickets();
+-      setCompletionMessage('Status updated to Pending Parts.', 'success');
+-    } catch (error) {
+-      setCompletionMessage(error.message || 'Status update failed.', 'error');
+-    }
++  document.getElementById('statusActionButtons')?.querySelectorAll('[data-status-action]').forEach((btn) => {
++    btn.addEventListener('click', async () => {
++      const action = btn.getAttribute('data-status-action');
++      btn.disabled = true;
++      try {
++        if (action === 'assign') {
++          await service.assignTicketToMe(state.user, ticket.id);
++          setCompletionMessage('Ticket assigned to you.', 'success');
++        } else if (action === 'cancel') {
++          const reason = window.prompt('Reason for cancelling this ticket?') || '';
++          await service.updateTicketStatus(state.user, ticket.id, {
++            routeStatus: 'cancelled', cancelReason: reason, internalNote: 'Cancelled by field staff'
++          });
++          setCompletionMessage('Ticket cancelled.', 'success');
++        } else if (action === 'on_the_way') {
++          // Capture GPS as part of the tap so the browser permission prompt is tied
++          // to a real user gesture; fall back to no coords if permission is denied.
++          const coords = await new Promise((resolve) => {
++            if (!navigator.geolocation) return resolve(null);
++            navigator.geolocation.getCurrentPosition(
++              (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
++              () => resolve(null),
++              { enableHighAccuracy: true, timeout: 8000 }
++            );
++          });
++          await service.updateTicketStatus(state.user, ticket.id, {
++            routeStatus: 'on_the_way',
++            customerVisibleNote: 'Your assigned field staff is now on the way.'
++          });
++          if (coords) await service.pingTicketLocation(state.user, ticket.id, coords).catch(() => {});
++          setCompletionMessage('Status updated: On the Way. Live location sharing started.', 'success');
++        } else {
++          await service.updateTicketStatus(state.user, ticket.id, {
++            routeStatus: action,
++            customerVisibleNote: STATUS_ACTION_NOTES[action] || ''
++          });
++          setCompletionMessage('Status updated.', 'success');
++        }
++        await refreshTickets();
++      } catch (error) {
++        setCompletionMessage(error.message || 'Action failed.', 'error');
++        btn.disabled = false;
++      }
++    });
+   });
+ 
+   document.getElementById('workNoteForm')?.addEventListener('submit', async (event) => {
+@@ -212,6 +300,12 @@ async function renderTicketDetail() {
+     }
+   });
+ 
++  if (ticket.customerStatus?.routeStatus === 'on_the_way') {
++    startLocationPing(ticket.id);
++  } else {
++    stopLocationPing();
++  }
++
+   await loadSignersForTicket(ticket);
+ }
+ 
+diff --git a/scripts/marga-service-portal-server.mjs b/scripts/marga-service-portal-server.mjs
+index af2d532..8020839 100755
+--- a/scripts/marga-service-portal-server.mjs
++++ b/scripts/marga-service-portal-server.mjs
+@@ -34,9 +34,36 @@ const REQUIRED_PORTAL_TABLES = [
+   'portal_accounts',
+   'audit_logs',
+   'care_company_profiles',
+-  'care_account_scopes'
++  'care_account_scopes',
++  'portal_ticket_events',
++  'portal_ticket_messages'
+ ];
+ 
++// Canonical customer-facing ticket status machine (spec §10).
++// routeStatus values are internal/backend-facing; customer-facing labels are derived
++// by computeCustomerFacingStatus() below so we never expose internal dispatch language.
++const TICKET_ROUTE_STATUSES = [
++  'submitted', 'under_review', 'assigned', 'queued', 'included_in_route',
++  'next_destination', 'on_the_way', 'arrived', 'in_progress',
++  'waiting_customer', 'waiting_parts', 'for_follow_up', 'completed', 'cancelled'
++];
++
++// Legacy free-text `status` values (as currently stored) mapped to the new route_status enum.
++// Used to backfill/interpret old tickets without breaking existing data (spec: "map existing
++// database statuses to the new customer-facing labels where practical").
++const LEGACY_STATUS_TO_ROUTE_STATUS = {
++  'open': 'submitted',
++  'assigned': 'assigned',
++  'in progress': 'in_progress',
++  'pending follow up': 'for_follow_up',
++  'completed': 'completed',
++  'fulfilled': 'completed',
++  'cancelled': 'cancelled'
++};
++
++// Ticket-linked messaging channel modes (spec §25/§29).
++const TECH_CHAT_MODES = ['marga_support_only', 'shared_service_team', 'assigned_technician_direct', 'read_only', 'closed'];
++
+ const REQUIRED_PORTAL_ACCOUNT_COLUMNS = [
+   'must_change_password',
+   'last_password_generated_at',
+@@ -70,6 +97,10 @@ const mimeTypes = new Map([
+   ['.png', 'image/png'],
+   ['.jpg', 'image/jpeg'],
+   ['.jpeg', 'image/jpeg'],
++  ['.mp4', 'video/mp4'],
++  ['.webm', 'video/webm'],
++  ['.mov', 'video/quicktime'],
++  ['.ogv', 'video/ogg'],
+   ['.svg', 'image/svg+xml; charset=utf-8'],
+   ['.webp', 'image/webp'],
+   ['.ico', 'image/x-icon']
+@@ -474,6 +505,70 @@ async function ensurePortalTables() {
+         coalesce(machine_id, 0),
+         coalesce(contractmain_id, 0)
+       );
++
++    -- ── Care Portal: Service Request tracking / assignment / communication (additive) ──
++    alter table marga.portal_service_tickets add column if not exists assigned_staff_id text;
++    alter table marga.portal_service_tickets add column if not exists assigned_staff_name text;
++    alter table marga.portal_service_tickets add column if not exists assignment_id text;
++    alter table marga.portal_service_tickets add column if not exists assignment_status text not null default 'unassigned';
++    alter table marga.portal_service_tickets add column if not exists route_status text not null default 'submitted';
++    alter table marga.portal_service_tickets add column if not exists customer_is_next_destination boolean not null default false;
++    alter table marga.portal_service_tickets add column if not exists tracking_enabled boolean not null default false;
++    alter table marga.portal_service_tickets add column if not exists staff_latitude double precision;
++    alter table marga.portal_service_tickets add column if not exists staff_longitude double precision;
++    alter table marga.portal_service_tickets add column if not exists last_location_update timestamptz;
++    alter table marga.portal_service_tickets add column if not exists destination_latitude double precision;
++    alter table marga.portal_service_tickets add column if not exists destination_longitude double precision;
++    alter table marga.portal_service_tickets add column if not exists live_eta_minutes integer;
++    alter table marga.portal_service_tickets add column if not exists broad_visit_period text;
++    alter table marga.portal_service_tickets add column if not exists confirmed_window_start timestamptz;
++    alter table marga.portal_service_tickets add column if not exists confirmed_window_end timestamptz;
++    alter table marga.portal_service_tickets add column if not exists on_the_way_at timestamptz;
++    alter table marga.portal_service_tickets add column if not exists arrived_at timestamptz;
++    alter table marga.portal_service_tickets add column if not exists service_started_at timestamptz;
++    alter table marga.portal_service_tickets add column if not exists completed_at timestamptz;
++    alter table marga.portal_service_tickets add column if not exists location_permission_status text;
++    alter table marga.portal_service_tickets add column if not exists technician_contact_enabled boolean not null default false;
++    alter table marga.portal_service_tickets add column if not exists technician_chat_mode text not null default 'marga_support_only';
++    alter table marga.portal_service_tickets add column if not exists communication_grace_period_ends_at timestamptz;
++    alter table marga.portal_service_tickets add column if not exists cancel_reason text;
++    alter table marga.portal_service_tickets add column if not exists internal_priority_score integer;
++
++    create table if not exists marga.portal_ticket_events (
++      id bigserial primary key,
++      ticket_id bigint not null references marga.portal_service_tickets(id) on delete cascade,
++      status text not null,
++      customer_visible_note text not null default '',
++      internal_note text not null default '',
++      reason text,
++      next_action text,
++      responsible_staff_id text,
++      responsible_staff_name text,
++      staff_latitude double precision,
++      staff_longitude double precision,
++      tracking_enabled boolean,
++      assignment_id text,
++      customer_visible boolean not null default true,
++      created_by_user_id text,
++      created_at timestamptz not null default now()
++    );
++    create index if not exists portal_ticket_events_ticket_idx on marga.portal_ticket_events(ticket_id, created_at);
++
++    create table if not exists marga.portal_ticket_messages (
++      id bigserial primary key,
++      ticket_id bigint not null references marga.portal_service_tickets(id) on delete cascade,
++      channel text not null default 'shared_service_team',
++      sender_type text not null,
++      sender_user_id text,
++      sender_name text not null default '',
++      body text not null default '',
++      photo_url text,
++      video_url text,
++      visible_to_customer boolean not null default true,
++      read_at timestamptz,
++      created_at timestamptz not null default now()
++    );
++    create index if not exists portal_ticket_messages_ticket_idx on marga.portal_ticket_messages(ticket_id, created_at);
+   `);
+ }
+ 
+@@ -1796,15 +1891,24 @@ async function listTonerRequests(user) {
+ 
+ async function listTickets(user) {
+   const scope = portalScopeWhere(user, 't');
+-  const { rows: portalRows } = await pool.query(
++  const { rows: portalRowsRaw } = await pool.query(
+     `select t.id::text, t.ticket_no as "ticketNo", t.company_id as "companyId", t.branch_id as "branchId",
+             t.machine_id as "deviceId", t.requester_user_id as "requesterUserId", t.category,
+-            t.description, t.priority, t.status, t.created_at as "createdAt", t.updated_at as "updatedAt"
++            t.description, t.priority, t.status, t.created_at as "createdAt", t.updated_at as "updatedAt",
++            t.assigned_staff_name as "assignedStaffName", t.assignment_status as "assignmentStatus",
++            t.route_status as "routeStatus", t.customer_is_next_destination as "customerIsNextDestination",
++            t.tracking_enabled as "trackingEnabled", t.live_eta_minutes as "liveEtaMinutes",
++            t.broad_visit_period as "broadVisitPeriod", t.confirmed_window_start as "confirmedWindowStart",
++            t.confirmed_window_end as "confirmedWindowEnd", t.on_the_way_at as "onTheWayAt",
++            t.arrived_at as "arrivedAt", t.service_started_at as "serviceStartedAt", t.completed_at as "completedAt",
++            t.technician_contact_enabled as "technicianContactEnabled", t.technician_chat_mode as "technicianChatMode",
++            t.communication_grace_period_ends_at as "communicationGracePeriodEndsAt", t.cancel_reason as "cancelReason"
+      from marga.portal_service_tickets t
+      where true ${scope.sql}
+      order by t.updated_at desc limit 250`,
+     scope.params
+   );
++  const portalRows = portalRowsRaw.map((t) => ({ ...t, customerStatus: computeCustomerFacingStatus(t) }));
+   const graphScope = portalScopeWhere(user, 'g');
+   const { rows: scheduleRows } = await pool.query(
+     `with scoped_branches as (
+@@ -1835,7 +1939,167 @@ async function listTickets(user) {
+      limit 150`,
+     graphScope.params
+   );
+-  return [...portalRows, ...scheduleRows].slice(0, 250);
++  const scheduleRowsWithStatus = scheduleRows.map((t) => ({ ...t, customerStatus: computeCustomerFacingStatus(t) }));
++  return [...portalRows, ...scheduleRowsWithStatus].slice(0, 250);
++}
++
++async function getTicketDetail(user, ticketId) {
++  const scope = portalScopeWhere(user, 't');
++  const { rows } = await pool.query(
++    `select t.id::text, t.ticket_no as "ticketNo", t.company_id as "companyId", t.branch_id as "branchId",
++            t.machine_id as "deviceId", t.requester_user_id as "requesterUserId", t.category,
++            t.description, t.priority, t.status, t.photo_url as "photoUrl",
++            t.created_at as "createdAt", t.updated_at as "updatedAt",
++            t.assigned_staff_name as "assignedStaffName", t.assignment_status as "assignmentStatus",
++            t.route_status as "routeStatus", t.customer_is_next_destination as "customerIsNextDestination",
++            t.tracking_enabled as "trackingEnabled", t.staff_latitude as "staffLatitude",
++            t.staff_longitude as "staffLongitude", t.last_location_update as "lastLocationUpdate",
++            t.live_eta_minutes as "liveEtaMinutes", t.broad_visit_period as "broadVisitPeriod",
++            t.confirmed_window_start as "confirmedWindowStart", t.confirmed_window_end as "confirmedWindowEnd",
++            t.on_the_way_at as "onTheWayAt", t.arrived_at as "arrivedAt",
++            t.service_started_at as "serviceStartedAt", t.completed_at as "completedAt",
++            t.technician_contact_enabled as "technicianContactEnabled", t.technician_chat_mode as "technicianChatMode",
++            t.communication_grace_period_ends_at as "communicationGracePeriodEndsAt", t.cancel_reason as "cancelReason"
++     from marga.portal_service_tickets t
++     where t.id = $1 ${scope.sql.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + 1}`)}
++     limit 1`,
++    [Number(ticketId), ...scope.params]
++  ).catch(() => ({ rows: [] }));
++  const ticket = rows[0];
++  if (!ticket) return null;
++  const includeInternal = isInternalUser(user);
++  const [events, messages] = await Promise.all([
++    listTicketEvents(ticket.id, { includeInternal }),
++    listTicketMessages(user, ticket.id, { includeInternal })
++  ]);
++  return { ...ticket, customerStatus: computeCustomerFacingStatus(ticket), events, messages };
++}
++
++// ── Ticket-linked messaging (spec §4, §25) ───────────────────────────────────
++// Separate from the permanent Marga Care top-bar channel. `channel` reflects the
++// mode at send time (shared_service_team vs assigned_technician_direct) so history
++// stays accurate even after the ticket moves to a different phase.
++async function listTicketMessages(user, ticketId, { includeInternal = false } = {}) {
++  const { rows } = await pool.query(
++    `select id::text, channel, sender_type as "senderType", sender_name as "senderName",
++            body, photo_url as "photoUrl", video_url as "videoUrl", created_at as "createdAt"
++     from marga.portal_ticket_messages
++     where ticket_id = $1 ${includeInternal ? '' : 'and visible_to_customer = true'}
++     order by created_at asc`,
++    [ticketId]
++  );
++  return rows;
++}
++
++async function sendTicketMessage(user, ticketId, body, photoFile = null) {
++  const ticket = await getTicketDetail(user, ticketId);
++  if (!ticket) throw Object.assign(new Error('Ticket not found or not accessible.'), { status: 404 });
++
++  const mode = ticket.technicianChatMode || 'shared_service_team';
++  if (mode === 'closed') throw Object.assign(new Error('This conversation is closed.'), { status: 403 });
++  if (mode === 'read_only' && !isInternalUser(user)) throw Object.assign(new Error('This conversation is now read-only.'), { status: 403 });
++
++  const senderType = isInternalUser(user) ? 'staff' : 'customer';
++  const photoUrl = photoFile ? (await saveUploadedFile(photoFile, 'ticket-message').catch(() => null)) : null;
++  const { rows } = await pool.query(
++    `insert into marga.portal_ticket_messages (ticket_id, channel, sender_type, sender_user_id, sender_name, body, photo_url)
++     values ($1,$2,$3,$4,$5,$6,$7)
++     returning id::text, channel, sender_type as "senderType", sender_name as "senderName",
++       body, photo_url as "photoUrl", created_at as "createdAt"`,
++    [Number(ticketId), mode, senderType, user.id, user.name, String(body || ''), photoUrl]
++  );
++  await pool.query(`update marga.portal_service_tickets set updated_at = now() where id = $1`, [Number(ticketId)]);
++  await auditLog({ userId: user.id, action: 'ticket_message_sent', entityType: 'portal_service_ticket', entityId: String(ticketId), metadata: { channel: mode } });
++  return rows[0];
++}
++
++// ── Internal-only: assignment, status transitions, live location (spec §5, §12-§20, §30) ──
++// These are called from Marga-internal tooling (dispatcher UI / tech app), never directly
++// by the customer portal. Every call is required to write a timeline event.
++async function assignTicketStaff(user, ticketId, { staffId, staffName }) {
++  requireInternalUser(user);
++  const assignmentId = `AS-${Date.now()}`;
++  await pool.query(
++    `update marga.portal_service_tickets
++     set assigned_staff_id = $2, assigned_staff_name = $3, assignment_id = $4,
++         assignment_status = 'assigned', route_status = 'assigned', updated_at = now()
++     where id = $1`,
++    [Number(ticketId), staffId, staffName, assignmentId]
++  );
++  await insertTicketEvent(Number(ticketId), {
++    status: 'assigned',
++    customerVisibleNote: `${staffName} is now assigned to this request.`,
++    staffId, staffName, assignmentId, createdByUserId: user.id
++  });
++  await auditLog({ userId: user.id, action: 'ticket_assigned', entityType: 'portal_service_ticket', entityId: String(ticketId), metadata: { staffId, staffName } });
++  return getTicketDetail(user, ticketId);
++}
++
++// Allowed route_status transitions and the side effects each one applies, per spec:
++// tracking only turns on for on_the_way; technician direct contact only for
++// on_the_way/arrived/in_progress/waiting_customer (+ configurable grace period after completed).
++const STATUS_SIDE_EFFECTS = {
++  under_review: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'marga_support_only' },
++  assigned: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'shared_service_team' },
++  queued: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'shared_service_team' },
++  included_in_route: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'shared_service_team' },
++  next_destination: { trackingEnabled: false, customerIsNextDestination: true, technicianChatMode: 'shared_service_team' },
++  on_the_way: { trackingEnabled: true, customerIsNextDestination: true, technicianContactEnabled: true, technicianChatMode: 'assigned_technician_direct', stampField: 'on_the_way_at' },
++  arrived: { trackingEnabled: false, technicianContactEnabled: true, technicianChatMode: 'assigned_technician_direct', stampField: 'arrived_at' },
++  in_progress: { trackingEnabled: false, technicianContactEnabled: true, technicianChatMode: 'assigned_technician_direct', stampField: 'service_started_at' },
++  waiting_customer: { trackingEnabled: false, technicianContactEnabled: true, technicianChatMode: 'assigned_technician_direct' },
++  waiting_parts: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'shared_service_team' },
++  for_follow_up: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'shared_service_team' },
++  completed: { trackingEnabled: false, stampField: 'completed_at', gracePeriodHours: 2 },
++  cancelled: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'closed' }
++};
++
++async function updateTicketStatus(user, ticketId, { routeStatus, customerVisibleNote, internalNote, reason, liveEtaMinutes, broadVisitPeriod, cancelReason }) {
++  requireInternalUser(user);
++  if (!TICKET_ROUTE_STATUSES.includes(routeStatus)) {
++    throw Object.assign(new Error('Invalid status.'), { status: 400 });
++  }
++  const effects = STATUS_SIDE_EFFECTS[routeStatus] || {};
++  const sets = ['route_status = $2', 'updated_at = now()'];
++  const params = [Number(ticketId), routeStatus];
++  let i = params.length;
++
++  if ('trackingEnabled' in effects) { sets.push(`tracking_enabled = $${++i}`); params.push(effects.trackingEnabled); }
++  if ('customerIsNextDestination' in effects) { sets.push(`customer_is_next_destination = $${++i}`); params.push(effects.customerIsNextDestination); }
++  if ('technicianContactEnabled' in effects) { sets.push(`technician_contact_enabled = $${++i}`); params.push(effects.technicianContactEnabled); }
++  if (effects.technicianChatMode) { sets.push(`technician_chat_mode = $${++i}`); params.push(effects.technicianChatMode); }
++  if (effects.stampField) { sets.push(`${effects.stampField} = now()`); }
++  if (effects.gracePeriodHours) { sets.push(`communication_grace_period_ends_at = now() + interval '${Number(effects.gracePeriodHours)} hours'`); }
++  if (liveEtaMinutes !== undefined) { sets.push(`live_eta_minutes = $${++i}`); params.push(liveEtaMinutes); }
++  if (broadVisitPeriod !== undefined) { sets.push(`broad_visit_period = $${++i}`); params.push(broadVisitPeriod); }
++  if (routeStatus === 'cancelled' && cancelReason) { sets.push(`cancel_reason = $${++i}`); params.push(cancelReason); }
++
++  await pool.query(`update marga.portal_service_tickets set ${sets.join(', ')} where id = $1`, params);
++  await insertTicketEvent(Number(ticketId), {
++    status: routeStatus,
++    customerVisibleNote: customerVisibleNote || '',
++    internalNote: internalNote || '',
++    reason: reason || null,
++    trackingEnabled: 'trackingEnabled' in effects ? effects.trackingEnabled : null,
++    createdByUserId: user.id
++  });
++  await auditLog({ userId: user.id, action: 'ticket_status_changed', entityType: 'portal_service_ticket', entityId: String(ticketId), metadata: { routeStatus } });
++  return getTicketDetail(user, ticketId);
++}
++
++// Field-staff location ping while status = on_the_way. Auto-disables tracking on any
++// condition from spec §30 (not on_the_way, stale ping, no assignment, etc.).
++async function updateTicketLocation(user, ticketId, { latitude, longitude }) {
++  requireInternalUser(user);
++  const { rows } = await pool.query(
++    `update marga.portal_service_tickets
++     set staff_latitude = $2, staff_longitude = $3, last_location_update = now()
++     where id = $1 and route_status = 'on_the_way' and tracking_enabled = true
++     returning id::text`,
++    [Number(ticketId), latitude, longitude]
++  );
++  if (!rows.length) throw Object.assign(new Error('Tracking is not active for this ticket.'), { status: 409 });
++  return { ok: true };
+ }
+ 
+ async function listInvoices(user) {
+@@ -1960,9 +2224,209 @@ async function createTicket(user, body, photoFile = null) {
+   });
+   const result = rows[0] || {};
+   await auditLog({ userId: user.id, action: 'ticket_created', entityType: 'portal_service_ticket', entityId: result.id, metadata: { branchId, companyId, deviceId, hasPhoto: !!photoUrl } });
++  if (result.id) {
++    await insertTicketEvent(result.id, {
++      status: 'submitted',
++      customerVisibleNote: 'We are reviewing your service request.',
++      createdByUserId: user.id
++    }).catch(() => {});
++  }
+   return result;
+ }
+ 
++// ── Ticket timeline / status-event log (spec §10, §26) ──────────────────────
++// Every status change is recorded here. Internal notes never reach the customer
++// unless explicitly marked customer_visible.
++async function insertTicketEvent(ticketId, {
++  status,
++  customerVisibleNote = '',
++  internalNote = '',
++  reason = null,
++  nextAction = null,
++  staffId = null,
++  staffName = null,
++  staffLat = null,
++  staffLng = null,
++  trackingEnabled = null,
++  assignmentId = null,
++  customerVisible = true,
++  createdByUserId = null
++}) {
++  await pool.query(
++    `insert into marga.portal_ticket_events
++      (ticket_id, status, customer_visible_note, internal_note, reason, next_action,
++       responsible_staff_id, responsible_staff_name, staff_latitude, staff_longitude,
++       tracking_enabled, assignment_id, customer_visible, created_by_user_id)
++     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
++    [ticketId, status, customerVisibleNote, internalNote, reason, nextAction, staffId, staffName,
++     staffLat, staffLng, trackingEnabled, assignmentId, customerVisible, createdByUserId]
++  );
++}
++
++async function listTicketEvents(ticketId, { includeInternal = false } = {}) {
++  const { rows } = await pool.query(
++    `select id::text, status, customer_visible_note as "customerVisibleNote",
++            ${includeInternal ? 'internal_note as "internalNote", reason, next_action as "nextAction",' : ''}
++            responsible_staff_name as "staffName", customer_visible as "customerVisible",
++            created_at as "createdAt"
++     from marga.portal_ticket_events
++     where ticket_id = $1 ${includeInternal ? '' : 'and customer_visible = true'}
++     order by created_at asc`,
++    [ticketId]
++  );
++  return rows;
++}
++
++// ── Customer-facing status derivation (spec §5, §10-§20) ────────────────────
++// route_status is the internal/dispatch-facing state. This function is the single
++// place that turns it into what the customer is allowed to see: label, supporting
++// copy, which communication channels are enabled, and whether tracking may show.
++// Never let the frontend infer these rules independently from raw status text.
++function computeCustomerFacingStatus(ticket) {
++  const routeStatus = ticket.routeStatus || LEGACY_STATUS_TO_ROUTE_STATUS[String(ticket.status || '').toLowerCase()] || 'submitted';
++  const graceExpired = ticket.communicationGracePeriodEndsAt
++    ? new Date(ticket.communicationGracePeriodEndsAt).getTime() < Date.now()
++    : false;
++
++  const base = {
++    routeStatus,
++    label: 'Request Received',
++    message: 'We are reviewing your service request.',
++    showArrivalNotConfirmed: false,
++    showBroadVisitPeriod: false,
++    broadVisitPeriod: ticket.broadVisitPeriod || null,
++    showLiveEta: false,
++    liveEtaMinutes: null,
++    showTracking: false,
++    showAssignedStaffProfile: false,
++    assignedStaffName: ticket.assignedStaffName || null,
++    ticketMessageLabel: 'Message Service Team',
++    ticketMessageAvailable: false,
++    chatTechnicianEnabled: false,
++    callTechnicianEnabled: false,
++    callMargaCareEnabled: true,
++    chatMargaCareEnabled: true,
++    progressSteps: ['Received']
++  };
++
++  switch (routeStatus) {
++    case 'submitted':
++    case 'under_review':
++      return { ...base, label: 'Request Received', message: 'We are reviewing your service request. We will update you once it has been assigned or included in a field route.' };
++
++    case 'assigned':
++      return {
++        ...base, label: 'Assigned to Service Team', message: 'Arrival time is not yet confirmed.',
++        showAssignedStaffProfile: !!ticket.assignedStaffName,
++        ticketMessageAvailable: true,
++        progressSteps: ['Received', 'Assigned']
++      };
++
++    case 'queued':
++      return {
++        ...base, label: 'Assigned to Service Team', message: 'Messages are attached to this service request. The assigned team will respond when available.',
++        showAssignedStaffProfile: !!ticket.assignedStaffName,
++        ticketMessageAvailable: true,
++        progressSteps: ['Received', 'Assigned', 'Queued']
++      };
++
++    case 'included_in_route':
++      return {
++        ...base, label: 'Scheduled for Today', message: 'Your request is included in today\u2019s service route. Exact arrival time is not yet available. We\u2019ll notify you when your assigned field staff is approaching.',
++        showArrivalNotConfirmed: !ticket.confirmedWindowStart,
++        showBroadVisitPeriod: !!ticket.broadVisitPeriod,
++        showAssignedStaffProfile: !!ticket.assignedStaffName,
++        ticketMessageAvailable: true,
++        progressSteps: ['Received', 'Assigned', 'Queued']
++      };
++
++    case 'next_destination':
++      return {
++        ...base, label: 'You Are the Next Destination', message: 'Your assigned field staff will travel to your location next. We\u2019ll notify you as soon as the trip begins.',
++        showAssignedStaffProfile: !!ticket.assignedStaffName,
++        ticketMessageAvailable: true,
++        chatTechnicianEnabled: !!ticket.technicianContactEnabled,
++        progressSteps: ['Received', 'Assigned', 'Queued']
++      };
++
++    case 'on_the_way':
++      return {
++        ...base, label: 'Technician On the Way', message: 'You are the technician\u2019s next stop.',
++        showLiveEta: true, liveEtaMinutes: ticket.liveEtaMinutes ?? null,
++        showTracking: !!ticket.trackingEnabled,
++        showAssignedStaffProfile: true,
++        ticketMessageLabel: 'Chat Assigned Technician',
++        ticketMessageAvailable: true,
++        chatTechnicianEnabled: true, callTechnicianEnabled: true,
++        progressSteps: ['Received', 'Assigned', 'On the Way']
++      };
++
++    case 'arrived':
++      return {
++        ...base, label: 'Technician Has Arrived', message: ticket.arrivedAt ? `Arrival confirmed at ${new Date(ticket.arrivedAt).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}.` : 'Your technician has arrived.',
++        showAssignedStaffProfile: true,
++        ticketMessageLabel: 'Chat Assigned Technician', ticketMessageAvailable: true,
++        chatTechnicianEnabled: true, callTechnicianEnabled: true,
++        progressSteps: ['Received', 'Assigned', 'On the Way', 'Arrived']
++      };
++
++    case 'in_progress':
++      return {
++        ...base, label: 'Service in Progress', message: ticket.serviceStartedAt ? `Started at ${new Date(ticket.serviceStartedAt).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}.` : 'Your technician is working on this request.',
++        showAssignedStaffProfile: true,
++        ticketMessageLabel: 'Chat Assigned Technician', ticketMessageAvailable: true,
++        chatTechnicianEnabled: true, callTechnicianEnabled: true,
++        progressSteps: ['Received', 'Assigned', 'On the Way', 'Arrived', 'In Progress']
++      };
++
++    case 'waiting_customer':
++      return {
++        ...base, label: 'Waiting for Customer Access', message: 'Our technician is waiting for access to the machine or service area.',
++        showAssignedStaffProfile: true,
++        ticketMessageLabel: 'Chat Assigned Technician', ticketMessageAvailable: true,
++        chatTechnicianEnabled: true, callTechnicianEnabled: true,
++        progressSteps: ['Received', 'Assigned', 'On the Way', 'Arrived', 'In Progress']
++      };
++
++    case 'waiting_parts':
++      return {
++        ...base, label: 'Waiting for Parts', message: 'A required part is being prepared. We\u2019ll notify you when the follow-up visit is scheduled.',
++        showAssignedStaffProfile: !!ticket.assignedStaffName,
++        ticketMessageAvailable: true,
++        callTechnicianEnabled: !!ticket.technicianContactEnabled,
++        progressSteps: ['Received', 'Assigned', 'On the Way', 'Arrived', 'In Progress']
++      };
++
++    case 'for_follow_up':
++      return {
++        ...base, label: 'Follow-up Scheduled', message: 'A follow-up visit is being arranged for this request.',
++        ticketMessageAvailable: true,
++        progressSteps: ['Received', 'Assigned', 'Completed (Follow-up Pending)']
++      };
++
++    case 'completed':
++      return {
++        ...base, label: 'Service Completed', message: ticket.completedAt ? `Completed at ${new Date(ticket.completedAt).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}.` : 'This request has been completed.',
++        showAssignedStaffProfile: true,
++        ticketMessageLabel: graceExpired ? 'Message Service Team' : 'Chat Assigned Technician',
++        ticketMessageAvailable: true,
++        chatTechnicianEnabled: !graceExpired,
++        callTechnicianEnabled: !graceExpired,
++        progressSteps: ['Received', 'Assigned', 'On the Way', 'Arrived', 'In Progress', 'Completed']
++      };
++
++    case 'cancelled':
++      return {
++        ...base, label: 'Request Cancelled', message: ticket.cancelReason || 'This service request was cancelled.',
++        chatTechnicianEnabled: false, callTechnicianEnabled: false,
++        progressSteps: ['Received', 'Cancelled']
++      };
++
++    default:
++      return base;
++  }
++}
++
+ // Get per-branch service history from marga.service_schedules (relational, clean typed dates).
+ // Returns lastService, lastToner, lastReading per branch + recent activity feed.
+ async function listServiceHistory(user) {
+@@ -2917,6 +3381,59 @@ async function handlePortalApi(req, res, url) {
+     }
+     return json(res, 200, { ok: true, ticket: await createTicket(user, await readJson(req)) });
+   }
++
++  // ── Ticket Details / messaging / internal dispatch actions (spec §9, §25, §5) ──
++  const ticketDetailMatch = url.pathname.match(/^\/portal-api\/tickets\/(\d+)$/);
++  if (ticketDetailMatch && req.method === 'GET') {
++    const detail = await getTicketDetail(previewScopedUser(user, url.searchParams.get('companyId'), url.searchParams.get('branchId'), url.searchParams.get('companyIds')), ticketDetailMatch[1]);
++    if (!detail) return json(res, 404, { ok: false, message: 'Ticket not found.' });
++    return json(res, 200, { ok: true, ticket: detail });
++  }
++  const ticketMessagesMatch = url.pathname.match(/^\/portal-api\/tickets\/(\d+)\/messages$/);
++  if (ticketMessagesMatch && req.method === 'POST') {
++    try {
++      const ct = String(req.headers['content-type'] || '');
++      let message;
++      if (ct.includes('multipart/form-data')) {
++        const { fields, files } = await readMultipart(req);
++        message = await sendTicketMessage(user, ticketMessagesMatch[1], fields.body, files.attachment || null);
++      } else {
++        const body = await readJson(req);
++        message = await sendTicketMessage(user, ticketMessagesMatch[1], body.body);
++      }
++      return json(res, 200, { ok: true, message });
++    } catch (error) {
++      return json(res, error.statusCode || error.status || 500, { ok: false, message: error.message || 'Failed to send message.' });
++    }
++  }
++  const ticketAssignMatch = url.pathname.match(/^\/portal-api\/admin\/tickets\/(\d+)\/assign$/);
++  if (ticketAssignMatch && req.method === 'POST') {
++    try {
++      const body = await readJson(req);
++      return json(res, 200, { ok: true, ticket: await assignTicketStaff(user, ticketAssignMatch[1], { staffId: body.staffId, staffName: body.staffName }) });
++    } catch (error) {
++      return json(res, error.statusCode || error.status || 500, { ok: false, message: error.message || 'Failed to assign ticket.' });
++    }
++  }
++  const ticketStatusMatch = url.pathname.match(/^\/portal-api\/admin\/tickets\/(\d+)\/status$/);
++  if (ticketStatusMatch && req.method === 'POST') {
++    try {
++      const body = await readJson(req);
++      return json(res, 200, { ok: true, ticket: await updateTicketStatus(user, ticketStatusMatch[1], body) });
++    } catch (error) {
++      return json(res, error.statusCode || error.status || 500, { ok: false, message: error.message || 'Failed to update ticket status.' });
++    }
++  }
++  const ticketLocationMatch = url.pathname.match(/^\/portal-api\/admin\/tickets\/(\d+)\/location$/);
++  if (ticketLocationMatch && req.method === 'POST') {
++    try {
++      const body = await readJson(req);
++      return json(res, 200, { ok: true, ...(await updateTicketLocation(user, ticketLocationMatch[1], { latitude: Number(body.latitude), longitude: Number(body.longitude) })) });
++    } catch (error) {
++      return json(res, error.statusCode || error.status || 500, { ok: false, message: error.message || 'Failed to update location.' });
++    }
++  }
++
+   if (url.pathname === '/portal-api/toner-requests' && req.method === 'GET') {
+     return json(res, 200, { ok: true, tonerRequests: await listTonerRequests(previewScopedUser(user, url.searchParams.get('companyId'), url.searchParams.get('branchId'), url.searchParams.get('companyIds'))) });
+   }
+@@ -3363,6 +3880,34 @@ async function handleRequest(req, res) {
+     return;
+   }
+ 
++  // Emergency SW nuke page — clears all caches and unregisters all service workers, then reloads
++  if (url.pathname === '/nuke-sw') {
++    const nukePage = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Clearing cache…</title>
++<style>body{background:#000;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px}
++.dot{width:8px;height:8px;border-radius:50%;background:#6C63FF;animation:pulse 1s infinite}@keyframes pulse{0%,100%{opacity:.2}50%{opacity:1}}</style></head>
++<body><div class="dot"></div><p id="msg">Clearing service worker cache…</p>
++<script>
++(async()=>{
++  const msg=document.getElementById('msg');
++  try{
++    if('serviceWorker' in navigator){
++      const regs=await navigator.serviceWorker.getRegistrations();
++      for(const r of regs){await r.unregister();}
++      msg.textContent='Unregistered '+regs.length+' service worker(s)…';
++    }
++    if('caches' in self){
++      const keys=await caches.keys();
++      await Promise.all(keys.map(k=>caches.delete(k)));
++      msg.textContent='Cleared '+keys.length+' cache(s). Reloading…';
++    }
++  }catch(e){msg.textContent='Done ('+e.message+'). Reloading…';}
++  setTimeout(()=>location.replace('/'),1200);
++})();
++</script></body></html>`;
++    sendResponse(res, 200, nukePage, 'text/html; charset=utf-8');
++    return;
++  }
++
+   let relativePath = resolvePortalPath(req.url);
+   let filePath = await existingFile(relativePath);
+ 
+@@ -3381,6 +3926,41 @@ async function handleRequest(req, res) {
+   const cacheControl = ext === '.html' || ext === '.js' || ext === '.css'
+     ? 'no-store'
+     : 'public, max-age=86400';
++  const isVideo = contentType.startsWith('video/');
++  const fileStat = await stat(filePath);
++
++  if (isVideo) {
++    const range = req.headers.range;
++    res.setHeader('Accept-Ranges', 'bytes');
++    res.setHeader('Cache-Control', 'no-store');
++    res.setHeader('Content-Type', contentType);
++
++    if (range) {
++      const match = String(range).match(/^bytes=(\d*)-(\d*)$/);
++      if (!match) {
++        res.writeHead(416, { 'Content-Range': `bytes */${fileStat.size}` });
++        res.end();
++        return;
++      }
++      const start = match[1] ? Number(match[1]) : 0;
++      const end = match[2] ? Number(match[2]) : fileStat.size - 1;
++      if (start >= fileStat.size || end >= fileStat.size || start > end) {
++        res.writeHead(416, { 'Content-Range': `bytes */${fileStat.size}` });
++        res.end();
++        return;
++      }
++      res.writeHead(206, {
++        'Content-Range': `bytes ${start}-${end}/${fileStat.size}`,
++        'Content-Length': String(end - start + 1)
++      });
++      createReadStream(filePath, { start, end }).pipe(res);
++      return;
++    }
++
++    res.writeHead(200, { 'Content-Length': String(fileStat.size) });
++    createReadStream(filePath).pipe(res);
++    return;
++  }
+ 
+   res.writeHead(200, {
+     'Content-Type': contentType,

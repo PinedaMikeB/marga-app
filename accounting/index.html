@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../shared/css/styles.css">
     <link rel="stylesheet" href="../shared/css/dashboard.css?v=20260518-company-meeting-1">
-    <link rel="stylesheet" href="css/accounting.css">
+    <link rel="stylesheet" href="css/accounting.css?v=20260724-field-reimbursement-tin-export-1">
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
@@ -139,9 +139,17 @@
                     <span>To</span>
                     <input type="date" id="toDateInput">
                 </label>
+                <label>
+                    <span>Petty Cash Source</span>
+                    <select id="pettyCashScopeFilter">
+                        <option value="all">All petty cash rows</option>
+                        <option value="field_reimbursements">Field staff reimbursements</option>
+                        <option value="field_all">All Field App rows</option>
+                    </select>
+                </label>
                 <label class="search-field">
                     <span>Search</span>
-                    <input type="search" id="accountingSearchInput" placeholder="Company, TIN, invoice, check, bank">
+                    <input type="search" id="accountingSearchInput" placeholder="Company, TIN, request, invoice, check, bank">
                 </label>
             </section>
 
@@ -188,6 +196,6 @@
     <script src="../shared/js/offline-sync.js?v=20260703-offline-queue-self-heal-1"></script>
     <script src="../shared/js/marga-meetings.js?v=20260714-company-meeting-fallback-1"></script>
     <script src="../shared/js/pwa-install.js"></script>
-    <script src="js/accounting.js?v=20260505-payment-excel-fields-1"></script>
+    <script src="js/accounting.js?v=20260724-field-reimbursement-tin-export-1"></script>
 </body>
 </html>

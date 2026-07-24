@@ -22,6 +22,9 @@ const PETTY_CASH_COLUMNS = [
     { key: 'address', label: 'ADDRESS' },
     { key: 'voucherNumber', label: 'VOUCHER NO.' },
     { key: 'date', label: 'DATE' },
+    { key: 'requestedBy', label: 'REQUESTED BY' },
+    { key: 'sourceRequestType', label: 'SOURCE TYPE' },
+    { key: 'sourceRequestId', label: 'SOURCE REQUEST' },
     { key: 'itemNote', label: 'ITEM / REMARKS' },
     { key: 'status', label: 'STATUS' }
 ];
@@ -81,6 +84,7 @@ function bindControls() {
     document.getElementById('fromDateInput').addEventListener('change', renderAccountingGrid);
     document.getElementById('toDateInput').addEventListener('change', renderAccountingGrid);
     document.getElementById('accountingSearchInput').addEventListener('input', MargaUtils.debounce(renderAccountingGrid, 150));
+    document.getElementById('pettyCashScopeFilter')?.addEventListener('change', renderAccountingGrid);
     document.getElementById('refreshAccountingBtn').addEventListener('click', loadAccountingData);
     document.getElementById('exportAccountingBtn').addEventListener('click', exportActiveGrid);
 }
@@ -191,7 +195,7 @@ function buildPettyCashAccountingRow(entry) {
     const supplierKey = normalizeSearch(entry.supplier || entry.payee);
     const supplier = ACCOUNTING_STATE.suppliers.get(supplierKey) || {};
     const company = firstValue(supplier.supplier, supplier.supplier_name, supplier.companyname, supplier.company_name, supplier.name, entry.supplier, entry.payee);
-    const tinNumber = firstValue(supplier.tin, supplier.tin_number, supplier.tinno, supplier.tin_no, supplier.tax_id);
+    const tinNumber = firstValue(supplier.tin_num, supplier.tin, supplier.tin_number, supplier.tinno, supplier.tin_no, supplier.tax_id);
     const address = buildAddressText([
         supplier.address,
         supplier.supplier_address,
@@ -214,6 +218,10 @@ function buildPettyCashAccountingRow(entry) {
         tinNumber,
         address,
         voucherNumber: entry.voucherNumber || entry.voucher_number || entry.id || '',
+        requestedBy: firstValue(entry.requestedBy, entry.payee),
+        sourceModule: firstValue(entry.sourceModule),
+        sourceRequestType: firstValue(entry.sourceRequestType),
+        sourceRequestId: firstValue(entry.sourceRequestId),
         itemNote: firstValue(entry.itemNote, entry.description),
         status: entry.status || ''
     };
@@ -303,6 +311,7 @@ async function fetchCollectionRows(collection, pageSize = 1000, maxPages = 100, 
 function renderAccountingGrid() {
     const columns = ACCOUNTING_STATE.activeTab === 'pettycash' ? PETTY_CASH_COLUMNS : COLLECTION_COLUMNS;
     const rows = getFilteredRows();
+    document.getElementById('pettyCashScopeFilter')?.closest('label')?.classList.toggle('hidden', ACCOUNTING_STATE.activeTab !== 'pettycash');
     document.getElementById('gridTitle').textContent = ACCOUNTING_STATE.activeTab === 'pettycash'
         ? 'Petty Cash VAT Extract'
         : 'Collections Paid Register';
@@ -340,12 +349,19 @@ function getFilteredRows() {
     const toDate = normalizeDate(document.getElementById('toDateInput').value);
     if (toDate) toDate.setHours(23, 59, 59, 999);
     const search = normalizeSearch(document.getElementById('accountingSearchInput').value);
+    const pettyCashScope = String(document.getElementById('pettyCashScopeFilter')?.value || 'all').trim();
 
     return sourceRows
         .filter((row) => {
             const rowDate = row.sortDate || normalizeDate(row.datePaid || row.date);
             if (fromDate && rowDate && rowDate < fromDate) return false;
             if (toDate && rowDate && rowDate > toDate) return false;
+            if (ACCOUNTING_STATE.activeTab === 'pettycash' && pettyCashScope === 'field_reimbursements') {
+                return row.sourceModule === 'field_app' && row.sourceRequestType === 'Reimbursement';
+            }
+            if (ACCOUNTING_STATE.activeTab === 'pettycash' && pettyCashScope === 'field_all') {
+                return row.sourceModule === 'field_app';
+            }
             if (!search) return true;
             return normalizeSearch(Object.values(row).join(' ')).includes(search);
         })

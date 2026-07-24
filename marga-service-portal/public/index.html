@@ -23,7 +23,14 @@
   <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then(function(regs) {
-      regs.forEach(function(r) { r.unregister(); });
+      var hadController = !!navigator.serviceWorker.controller;
+      var unregisters = regs.map(function(r) { return r.unregister(); });
+      Promise.all(unregisters).then(function() {
+        if (hadController && !sessionStorage.getItem('marga-sw-cleared-once')) {
+          sessionStorage.setItem('marga-sw-cleared-once', '1');
+          window.location.reload();
+        }
+      });
     });
     // Also clear all caches
     if (window.caches) {
@@ -38,7 +45,7 @@
   <div id="introOverlay">
     <video id="introVideo" playsinline muted
            style="display:block;background:#000;object-fit:contain;width:100vw;height:100vh;">
-      <source src="/public/assets/marga-intro-v1.mp4?v=20260717b" type="video/mp4" />
+      <source src="/public/assets/marga-intro-v1.mp4?v=20260717c" type="video/mp4" />
     </video>
     <button id="introSkip">Skip <span>→</span></button>
     <div id="introTapHint" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;">
@@ -113,7 +120,7 @@
             <form id="loginForm" class="auth-form">
               <div class="field-wrap">
                 <label class="field-label">Email or company code</label>
-                <input type="text" name="login" required autocomplete="username" placeholder="e.g. norisa@cbs.com.ph" />
+                <input type="text" name="login" required autocomplete="username" placeholder="" />
               </div>
               <div class="field-wrap">
                 <label class="field-label">Password</label>
@@ -197,7 +204,7 @@
   </template>
 
   <script src="/public/config.js"></script>
-  <script type="module" src="/src/portal-main.js?v=20260717-8"></script>
+  <script type="module" src="/src/portal-main.js?v=20260722-portal-schedule-branch-slot-1"></script>
 
   <script>
   (function() {

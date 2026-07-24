@@ -31,6 +31,11 @@ function normalizeDevice(device) {
     serial: device.serial || '-',
     location: device.location || device.branchName || '',
     status: device.status || 'Active',
+    fleetStatus: device.fleetStatus || device.status || 'Active',
+    attentionReason: device.attentionReason || '',
+    attentionReasons: Array.isArray(device.attentionReasons) ? device.attentionReasons : [],
+    machineStatusLabel: device.machineStatusLabel || '',
+    graphStatusId: device.graphStatusId == null ? null : Number(device.graphStatusId),
     contractStart: device.contractStart || '',
     contractEnd: device.contractEnd || '',
     notes: device.notes || ''
@@ -238,6 +243,39 @@ export class DataService {
     return tickets.find((ticket) => String(ticket.id) === String(ticketId)) || null;
   }
 
+  // Full ticket detail: computed customer-facing status + timeline + messages.
+  // Falls back to the list-derived ticket (e.g. synthetic legacy schedule rows,
+  // which have no dedicated detail row) if the detail endpoint 404s.
+  async getTicketDetail(user, ticketId) {
+    if (String(ticketId).startsWith('schedule:')) return this.getTicketById(ticketId);
+    try {
+      const payload = await api(this.queryWithCompany(`/tickets/${encodeURIComponent(ticketId)}`, user));
+      return payload.ticket || null;
+    } catch (error) {
+      return this.getTicketById(ticketId);
+    }
+  }
+
+  async sendTicketMessage(_user, ticketId, body, photoFile = null) {
+    if (photoFile && photoFile.size > 0) {
+      const form = new FormData();
+      form.append('body', body || '');
+      form.append('attachment', photoFile);
+      const token = loadAuthToken();
+      const response = await fetch(`/portal-api/tickets/${encodeURIComponent(ticketId)}/messages`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'same-origin',
+        body: form
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.message || `Message failed (${response.status}).`);
+      return data.message;
+    }
+    const response = await api(`/tickets/${encodeURIComponent(ticketId)}/messages`, { method: 'POST', body: JSON.stringify({ body }) });
+    return response.message;
+  }
+
   async listTonerRequests() {
     const user = arguments[0];
     const payload = await api(this.queryWithCompany('/toner-requests', user));
@@ -316,6 +354,31 @@ export class DataService {
 
   async updateTicket(_user, ticketId, patch) {
     return { id: ticketId, ...patch };
+  }
+
+  // ── Internal-only (marga_admin / marga_staff): assignment, status transitions, GPS ──
+  // Used by the field-staff (tech) app. Backed by /portal-api/admin/tickets/:id/*.
+  async assignTicketToMe(user, ticketId) {
+    const response = await api(`/admin/tickets/${encodeURIComponent(ticketId)}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ staffId: user?.id, staffName: user?.name })
+    });
+    return response.ticket;
+  }
+
+  async updateTicketStatus(_user, ticketId, payload) {
+    const response = await api(`/admin/tickets/${encodeURIComponent(ticketId)}/status`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    return response.ticket;
+  }
+
+  async pingTicketLocation(_user, ticketId, { latitude, longitude }) {
+    return api(`/admin/tickets/${encodeURIComponent(ticketId)}/location`, {
+      method: 'POST',
+      body: JSON.stringify({ latitude, longitude })
+    });
   }
 
   async upsertBranch(_user, payload) {

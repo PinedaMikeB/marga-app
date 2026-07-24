@@ -172,6 +172,8 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('employeeModalCloseBtn').addEventListener('click', closeEmployeeModal);
     document.getElementById('employeeModalCancelBtn').addEventListener('click', closeEmployeeModal);
     document.getElementById('employeeModalSaveBtn').addEventListener('click', saveEmployeeDetails);
+    document.getElementById('employeeModalBrief')?.addEventListener('click', handleEmployeePhotoClick);
+    document.getElementById('employeeModalBrief')?.addEventListener('change', handleEmployeePhotoChange);
     document.getElementById('employeeDeductionSaveBtn')?.addEventListener('click', saveEmployeeDeductionPlan);
     document.getElementById('employeeDeductionCreateSuggestionsBtn')?.addEventListener('click', createEmployeeDeductionSuggestions);
     document.getElementById('employeeDeductionResetBtn')?.addEventListener('click', resetEmployeeDeductionForm);
@@ -555,6 +557,9 @@ function employeeSummaryRow(employee) {
         payroll_coop_loan_per_payroll: employee.payroll_coop_loan_per_payroll ?? employee.payroll_coop_loan ?? '',
         payroll_deduction_prefill_source: employee.payroll_deduction_prefill_source || '',
         payroll_deduction_prefill_cutoff: employee.payroll_deduction_prefill_cutoff || '',
+        imagepath: employee.imagepath || '',
+        profile_photo_url: employee.profile_photo_url || employee.profilePhotoUrl || '',
+        profile_photo_path: employee.profile_photo_path || employee.profilePhotoPath || '',
         mobile: employee.mobile || employee.contact_number || '',
         birthdate: employee.birthdate || '',
         civil_status: employee.civil_status || '',
@@ -1968,7 +1973,7 @@ function openNewEmployeeModal() {
     setInputValue('employeeAccountStatusInput', 'active');
     document.getElementById('employeeModalBrief').innerHTML = `
         <div class="hr-employee-identity">
-            <span class="hr-employee-avatar">+</span>
+            ${renderEmployeePhotoControl({ id: nextEmployeeId, _docId: nextEmployeeId }, '+', { disabled: true })}
             <div>
                 <span class="hr-kicker">New Employee · ID ${sanitize(nextEmployeeId)}</span>
                 <strong>Ready to create</strong>
@@ -1993,9 +1998,10 @@ function renderEmployeeBrief(employee) {
     const rates = payrollRatesFor(employee);
     const mobile = firstPresent(employee, ['mobile', 'mobile_no', 'phone', 'contact_no', 'contact_number']) || '-';
     const email = employee.email || employee.marga_login_email || employee.username || '-';
+    const initial = String(MargaUtils.getEmployeeFullName(employee, 'E').charAt(0) || 'E').toUpperCase();
     return `
         <div class="hr-employee-identity">
-            <span class="hr-employee-avatar">${sanitize(String(MargaUtils.getEmployeeFullName(employee, 'E').charAt(0) || 'E').toUpperCase())}</span>
+            ${renderEmployeePhotoControl(employee, initial)}
             <div>
                 <span class="hr-kicker">${active ? 'Active Employee' : 'Inactive Employee'} · ID ${sanitize(employee.id || employee._docId || '-')}</span>
                 <strong>${sanitize(MargaUtils.getEmployeeFullName(employee, employee.id || employee._docId || 'Employee'))}</strong>
@@ -2009,6 +2015,146 @@ function renderEmployeeBrief(employee) {
             <div><span>Loan</span><strong>${sanitize(formatMoneyOrDash(getLoan(employee)))}</strong></div>
         </div>
     `;
+}
+
+function employeePhotoUrl(employee = {}) {
+    const rawUrl = String(firstPresent(employee, ['profile_photo_url', 'profilePhotoUrl', 'imagepath', 'photo_url', 'avatar_url']) || '').trim();
+    const updatedAt = String(firstPresent(employee, ['profile_photo_updated_at', 'profilePhotoUpdatedAt']) || '').trim();
+    if (!rawUrl || !updatedAt || rawUrl.includes('v=')) return rawUrl;
+    return `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(updatedAt)}`;
+}
+
+function resolveEmployeePhotoSrc(value) {
+    const src = String(value || '').trim();
+    if (!src) return '';
+    if (/^(https?:|data:image\/|blob:)/i.test(src)) return src;
+    if (src.startsWith('/')) return src;
+    return `/${src.replace(/^\/+/, '')}`;
+}
+
+function renderEmployeePhotoControl(employee = {}, fallback = 'E', options = {}) {
+    const employeeId = String(employee.id || employee._docId || HR_STATE.editingEmployeeId || '').trim();
+    const photoSrc = resolveEmployeePhotoSrc(employeePhotoUrl(employee));
+    const disabled = options.disabled || !employeeId || HR_STATE.employeeModalMode === 'create';
+    const editLabel = disabled ? 'Save First' : 'Edit';
+    return `
+        <div class="hr-employee-photo-block">
+            <span class="hr-employee-avatar ${photoSrc ? 'has-photo' : ''}">
+                ${photoSrc
+                    ? `<img src="${sanitize(photoSrc)}" alt="${sanitize(MargaUtils.getEmployeeFullName(employee, 'Employee'))} photo">`
+                    : sanitize(String(fallback || 'E').charAt(0).toUpperCase())}
+            </span>
+            <button type="button" class="hr-photo-edit-btn" data-employee-photo-edit data-employee-id="${sanitize(employeeId)}" ${disabled ? 'disabled' : ''}>${editLabel}</button>
+            <input type="file" accept="image/*" data-employee-photo-input data-employee-id="${sanitize(employeeId)}" hidden>
+        </div>
+    `;
+}
+
+function handleEmployeePhotoClick(event) {
+    const button = event.target.closest('[data-employee-photo-edit]');
+    if (!button || button.disabled) return;
+    const input = button.parentElement?.querySelector('[data-employee-photo-input]');
+    input?.click();
+}
+
+function handleEmployeePhotoChange(event) {
+    const input = event.target.closest('[data-employee-photo-input]');
+    if (!input) return;
+    uploadEmployeePhoto(input);
+}
+
+async function uploadEmployeePhoto(input) {
+    const file = input.files?.[0] || null;
+    input.value = '';
+    if (!file) return;
+    const docId = String(input.dataset.employeeId || HR_STATE.editingEmployeeId || '').trim();
+    const employee = findEmployeeById(docId);
+    const status = document.getElementById('employeeModalStatus');
+    if (!docId || !employee) {
+        if (status) status.textContent = 'Save the employee first before uploading a photo.';
+        return;
+    }
+    if (!String(file.type || '').startsWith('image/')) {
+        if (status) status.textContent = 'Only image files can be uploaded as employee photos.';
+        return;
+    }
+    if (file.size > 12_000_000) {
+        if (status) status.textContent = 'Photo is too large. Use an image under 12 MB.';
+        return;
+    }
+    try {
+        if (status) status.textContent = 'Uploading employee photo...';
+        const dataUrl = await prepareEmployeePhotoDataUrl(file);
+        const response = await fetch('/margabase-api/admin/employee-photos/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                employeeId: docId,
+                employeeName: MargaUtils.getEmployeeFullName(employee, docId),
+                originalName: file.name || 'employee-photo',
+                dataUrl
+            })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.error) throw new Error(payload?.error?.message || payload?.error || 'Photo upload failed.');
+        const asset = payload.asset || {};
+        const nowIso = new Date().toISOString();
+        const basePhotoUrl = String(asset.file_url || '').trim();
+        const photoUrl = basePhotoUrl.includes('v=')
+            ? basePhotoUrl
+            : `${basePhotoUrl}${basePhotoUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(nowIso)}`;
+        const photoPath = String(asset.storage_relative_path || '').trim();
+        if (!photoUrl || !photoPath) throw new Error('Photo upload did not return a storage path.');
+        const patch = {
+            imagepath: photoUrl,
+            profile_photo_url: photoUrl,
+            profile_photo_path: photoPath,
+            profile_photo_updated_at: nowIso,
+            hr_updated_at: nowIso,
+            hr_updated_by: MargaAuth.getUser()?.email || MargaAuth.getUser()?.name || 'hr',
+            marga_updated_at: nowIso
+        };
+        await patchDocument('tbl_employee', docId, patch);
+        Object.assign(employee, patch);
+        await persistActiveEmployeeSummary(HR_STATE.employees);
+        document.getElementById('employeeModalBrief').innerHTML = renderEmployeeBrief(employee);
+        renderEmployees();
+        if (status) status.textContent = 'Employee photo saved.';
+    } catch (error) {
+        console.error('Employee photo upload failed:', error);
+        if (status) status.textContent = `Photo upload failed: ${error.message || error}`;
+    }
+}
+
+function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('Unable to read selected photo.'));
+        reader.readAsDataURL(file);
+    });
+}
+
+async function prepareEmployeePhotoDataUrl(file) {
+    const sourceUrl = await readFileAsDataUrl(file);
+    const image = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Unable to load selected photo.'));
+        img.src = sourceUrl;
+    });
+    const size = 640;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#f7fbff';
+    ctx.fillRect(0, 0, size, size);
+    const sourceSize = Math.min(image.naturalWidth || image.width, image.naturalHeight || image.height);
+    const sx = Math.max(0, ((image.naturalWidth || image.width) - sourceSize) / 2);
+    const sy = Math.max(0, ((image.naturalHeight || image.height) - sourceSize) / 2);
+    ctx.drawImage(image, sx, sy, sourceSize, sourceSize, 0, 0, size, size);
+    return canvas.toDataURL('image/jpeg', 0.86);
 }
 
 function closeEmployeeModal() {

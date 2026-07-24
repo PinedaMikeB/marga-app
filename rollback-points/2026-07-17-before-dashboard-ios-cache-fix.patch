@@ -1,0 +1,105 @@
+diff --git a/marga-service-portal/public/service-worker.js b/marga-service-portal/public/service-worker.js
+index 1c789bc..c64e8c2 100644
+--- a/marga-service-portal/public/service-worker.js
++++ b/marga-service-portal/public/service-worker.js
+@@ -1,4 +1,4 @@
+-const CACHE_NAME = 'msp-shell-v20260717-dark-3';
++const CACHE_NAME = 'msp-shell-v20260717-dark-4';
+ const SHELL_ASSETS = [
+   '/',
+   '/install/',
+@@ -47,11 +47,20 @@ self.addEventListener('activate', (event) => {
+ self.addEventListener('fetch', (event) => {
+   if (event.request.method !== 'GET') return;
+ 
++  // Never cache range/video requests — 206 Partial Content crashes the Cache API
++  const url = event.request.url;
++  const isRange = event.request.headers.has('range');
++  const isVideo = /\.(mp4|webm|ogv|mov)(\?|$)/i.test(url);
++  if (isRange || isVideo) return; // let browser handle natively
++
+   event.respondWith(
+     fetch(event.request)
+       .then((networkResponse) => {
+-        const clone = networkResponse.clone();
+-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
++        // Only cache full 200 responses (skip 206 partial, opaque, errors)
++        if (networkResponse.ok && networkResponse.status === 200) {
++          const clone = networkResponse.clone();
++          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
++        }
+         return networkResponse;
+       })
+       .catch(async () => {
+diff --git a/marga-service-portal/service-worker.js b/marga-service-portal/service-worker.js
+index c97f032..d0cb72b 100644
+--- a/marga-service-portal/service-worker.js
++++ b/marga-service-portal/service-worker.js
+@@ -1,4 +1,4 @@
+-const CACHE_NAME = 'msp-shell-v33-device-grid-custom';
++const CACHE_NAME = 'msp-shell-v34-fix-206';
+ const SHELL_ASSETS = [
+   '/',
+   '/install/',
+@@ -47,11 +47,20 @@ self.addEventListener('activate', (event) => {
+ self.addEventListener('fetch', (event) => {
+   if (event.request.method !== 'GET') return;
+ 
++  // Never cache range/video requests — 206 Partial Content crashes the Cache API
++  const url = event.request.url;
++  const isRange = event.request.headers.has('range');
++  const isVideo = /\.(mp4|webm|ogv|mov)(\?|$)/i.test(url);
++  if (isRange || isVideo) return; // let browser handle natively
++
+   event.respondWith(
+     fetch(event.request)
+       .then((networkResponse) => {
+-        const clone = networkResponse.clone();
+-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
++        // Only cache full 200 responses (skip 206 partial, opaque, errors)
++        if (networkResponse.ok && networkResponse.status === 200) {
++          const clone = networkResponse.clone();
++          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
++        }
+         return networkResponse;
+       })
+       .catch(async () => {
+diff --git a/scripts/marga-service-portal-server.mjs b/scripts/marga-service-portal-server.mjs
+index af2d532..5556275 100755
+--- a/scripts/marga-service-portal-server.mjs
++++ b/scripts/marga-service-portal-server.mjs
+@@ -3363,6 +3363,34 @@ async function handleRequest(req, res) {
+     return;
+   }
+ 
++  // Emergency SW nuke page — clears all caches and unregisters all service workers, then reloads
++  if (url.pathname === '/nuke-sw') {
++    const nukePage = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Clearing cache…</title>
++<style>body{background:#000;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px}
++.dot{width:8px;height:8px;border-radius:50%;background:#6C63FF;animation:pulse 1s infinite}@keyframes pulse{0%,100%{opacity:.2}50%{opacity:1}}</style></head>
++<body><div class="dot"></div><p id="msg">Clearing service worker cache…</p>
++<script>
++(async()=>{
++  const msg=document.getElementById('msg');
++  try{
++    if('serviceWorker' in navigator){
++      const regs=await navigator.serviceWorker.getRegistrations();
++      for(const r of regs){await r.unregister();}
++      msg.textContent='Unregistered '+regs.length+' service worker(s)…';
++    }
++    if('caches' in self){
++      const keys=await caches.keys();
++      await Promise.all(keys.map(k=>caches.delete(k)));
++      msg.textContent='Cleared '+keys.length+' cache(s). Reloading…';
++    }
++  }catch(e){msg.textContent='Done ('+e.message+'). Reloading…';}
++  setTimeout(()=>location.replace('/'),1200);
++})();
++</script></body></html>`;
++    sendResponse(res, 200, nukePage, 'text/html; charset=utf-8');
++    return;
++  }
++
+   let relativePath = resolvePortalPath(req.url);
+   let filePath = await existingFile(relativePath);
+ 

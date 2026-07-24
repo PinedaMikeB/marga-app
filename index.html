@@ -13,6 +13,19 @@
     <link rel="shortcut icon" href="/favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="/assets/icons/apple-touch-icon.png">
     <title>MARGA - Login</title>
+    <script>
+        (function blockRetiredNetlifyHost() {
+            var host = String(window.location.hostname || '').toLowerCase();
+            if (!host.endsWith('.netlify.app')) return;
+            try {
+                window.localStorage && window.localStorage.removeItem('marga_user');
+                window.sessionStorage && window.sessionStorage.removeItem('marga_user');
+            } catch (error) {
+                // Storage may be blocked in private browsing.
+            }
+            window.location.replace('https://app.marga.biz/');
+        })();
+    </script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="shared/css/styles.css">
     <style>
@@ -356,8 +369,8 @@
         </div>
     </div>
 
-    <script src="shared/js/firebase-config.js?v=20260601-local-postgres-live-1"></script>
-    <script src="shared/js/auth.js?v=20260706-login-alias-fix-1"></script>
+    <script src="shared/js/firebase-config.js?v=20260723-netlify-login-block-1"></script>
+    <script src="shared/js/auth.js?v=20260723-login-duplicate-email-fix-1"></script>
     <script src="shared/js/offline-sync.js?v=20260703-offline-queue-self-heal-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
     <script>

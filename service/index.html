@@ -459,12 +459,23 @@
                 </label>
 
                 <label class="marga-field">
-                    <span>Status</span>
+                    <span>Ticket Status</span>
                     <select id="newReqStatus">
                         <option value="1">Open</option>
                         <option value="0">Closed (Fixed)</option>
                         <option value="2">Closed (Under Observation)</option>
                         <option value="3">Closed (Over The Phone)</option>
+                    </select>
+                </label>
+
+                <label class="marga-field">
+                    <span>Field Machine Status</span>
+                    <select id="newReqFieldMachineStatus" required>
+                        <option value="">Select field machine status...</option>
+                        <option value="1">Running / Print OK</option>
+                        <option value="2">Running / Print Problem</option>
+                        <option value="3">Down / No Print</option>
+                        <option value="4">Running / Best Mode Only</option>
                     </select>
                 </label>
 
@@ -629,6 +640,6 @@
     <script src="../shared/js/marga-meetings.js?v=20260518-no-meeting-banner-1"></script>
     <script src="/shared/js/pwa-install.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script src="js/dispatch-board.js?v=20260624-service-release-dr-identity-1"></script>
+    <script src="js/dispatch-board.js?v=20260722-field-machine-status-required-1"></script>
 </body>
 </html>

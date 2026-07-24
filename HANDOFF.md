@@ -8,6 +8,19 @@ Start every new Marga-App thread by reading:
 2. `/Volumes/Wotg Drive Mike/GitHub/Marga-App/MASTERPLAN.md`
 3. `/Volumes/Wotg Drive Mike/GitHub/marga-platform/skills/marga-database-migration/SKILL.md` when the work touches database migration, backend cutover, rescue sync, Margabase compatibility APIs, or production write paths.
 
+## 2026-07-22 — care.marga.biz Cloudflare 502 Prevention
+
+**Incident:** `care.marga.biz` showed Cloudflare 502 Bad Gateway while `app.marga.biz` still loaded.
+
+**Root cause:** Cloudflare Tunnel was running, but the local Marga Care portal origin on `127.0.0.1:9200` was not healthy. The LaunchAgent `com.marga.service-portal` sources `/Users/mike/.marga-launchd/margabase.env`, and that file contained an unquoted display-name email sender value:
+`MARGA_BILLING_APPROVAL_EMAIL_FROM=Marga Billing <solutions@marga.biz>`.
+The `<...>` portion was treated by shell as redirection, causing `source margabase.env` to fail with `syntax error near unexpected token newline`; the portal never started, so Cloudflare could only return a host/origin 502.
+
+**Fix applied:** Backed up the env file to `/Users/mike/.marga-launchd/margabase.env.backup-before-care-fix-20260722-1518`, changed the sender value to quoted shell syntax, and restarted `com.marga.service-portal`. Public verification returned `HTTP/2 200` for `https://care.marga.biz/`.
+
+**Prevention rule:** Any value in `margabase.env` that contains spaces, `<`, `>`, `&`, `|`, `;`, or parentheses must be quoted. Before restarting launchd services or editing SMTP sender settings, run:
+`bash scripts/check-marga-launch-health.sh`
+
 ## Current Focus (2026-07-17)
 
 ### ⚠️ CRITICAL BUG — Black Screen After Intro (UNRESOLVED)

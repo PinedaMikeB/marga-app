@@ -37,7 +37,14 @@ const ALLOWED_PATCH_FIELDS = {
     "original_sched",
     "master_manual_assignment_override",
     "master_manual_assignment_override_at",
-    "master_manual_assignment_override_by"
+    "master_manual_assignment_override_by",
+    "close_request_status",
+    "close_request_approved_at",
+    "close_request_approved_by",
+    "master_office_closed_at",
+    "master_office_closed_by",
+    "master_office_closed_reason",
+    "master_office_closed_without_request"
   ]),
   marga_master_schedule: new Set([
     "assigned_to_id",

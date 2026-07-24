@@ -1,0 +1,53 @@
+-- Rollback note for the 2026-07-20 Marga Care dashboard schema repair.
+-- Context:
+--   The live portal code expected customer-facing service ticket tracking fields,
+--   but the production marga.portal_service_tickets table still had the older
+--   minimal schema. Dashboard / tickets returned HTTP 500 with:
+--     column t.assigned_staff_name does not exist
+--
+-- Forward repair applied with margabase_admin:
+--   - Added customer tracking/status columns to marga.portal_service_tickets.
+--   - Created marga.portal_ticket_events.
+--   - Created marga.portal_ticket_messages.
+--   - Added photo_url to marga.portal_service_tickets and marga.portal_toner_requests.
+--
+-- This file is a rollback reference only. Do not run it unless the portal code is
+-- first rolled back to a version that does not depend on these columns/tables.
+
+-- begin;
+-- alter table marga.portal_service_tickets
+--   drop column if exists assigned_staff_id,
+--   drop column if exists assigned_staff_name,
+--   drop column if exists assignment_id,
+--   drop column if exists assignment_status,
+--   drop column if exists route_status,
+--   drop column if exists customer_is_next_destination,
+--   drop column if exists tracking_enabled,
+--   drop column if exists staff_latitude,
+--   drop column if exists staff_longitude,
+--   drop column if exists last_location_update,
+--   drop column if exists destination_latitude,
+--   drop column if exists destination_longitude,
+--   drop column if exists live_eta_minutes,
+--   drop column if exists broad_visit_period,
+--   drop column if exists confirmed_window_start,
+--   drop column if exists confirmed_window_end,
+--   drop column if exists on_the_way_at,
+--   drop column if exists arrived_at,
+--   drop column if exists service_started_at,
+--   drop column if exists completed_at,
+--   drop column if exists location_permission_status,
+--   drop column if exists technician_contact_enabled,
+--   drop column if exists technician_chat_mode,
+--   drop column if exists communication_grace_period_ends_at,
+--   drop column if exists cancel_reason,
+--   drop column if exists internal_priority_score,
+--   drop column if exists photo_url;
+--
+-- alter table marga.portal_toner_requests
+--   drop column if exists photo_url;
+--
+-- drop table if exists marga.portal_ticket_messages;
+-- drop table if exists marga.portal_ticket_events;
+-- commit;
+

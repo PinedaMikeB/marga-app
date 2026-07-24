@@ -45,7 +45,14 @@ const state = {
   deviceDetail: null,
   deviceDetailRequestId: 0,
   selectedTicketId: null,
-  ticketFilter: 'all'
+  ticketFilter: 'all',
+  ticketTab: 'my-tickets',    // 'my-tickets' | 'create'
+  ticketDetailOpen: false,
+  ticketDetailLoading: false,
+  ticketDetail: null,
+  ticketDetailRequestId: 0,
+  ticketMessageSending: false,
+  highlightTicketId: null     // newly created ticket to visually highlight in My Tickets
 };
 
 // Expose state for data-service group switcher integration
@@ -449,8 +456,8 @@ function setView(viewKey, replaceHash = true) {
   const safe = findView(viewKey)?.key || 'dashboard';
   state.currentView = safe;
   const viewMeta = findView(safe);
-  viewTitle.textContent = viewMeta?.label || 'Dashboard';
-  viewSubtitle.textContent = viewMeta?.subtitle || '';
+  if (viewTitle) viewTitle.textContent = viewMeta?.label || 'Dashboard';
+  if (viewSubtitle) viewSubtitle.textContent = viewMeta?.subtitle || '';
   renderNav();
   if (replaceHash && location.hash !== `#${safe}`) {
     history.replaceState(null, '', `#${safe}`);
@@ -934,9 +941,12 @@ async function renderDashboard() {
 
   const lastServiceText = smartServiceText(lastServiceData, 'No service on record');
   const lastTonerText = smartServiceText(lastTonerData, 'No deliveries on record');
-  const nextBillingText = summary.nextBillingDue
-    ? `Due ${formatDatePH(summary.nextBillingDue)}`
-    : (summary.unpaidAmount > 0 ? formatMoney(summary.unpaidAmount) : 'No outstanding balance');
+  const billingCardText = summary.unpaidAmount > 0
+    ? formatMoney(summary.unpaidAmount)
+    : (summary.nextBillingDue ? `Due ${formatDatePH(summary.nextBillingDue)}` : 'No outstanding balance');
+  const billingCardLabel = summary.unpaidInvoices > 0
+    ? `${summary.unpaidInvoices} open balance line${summary.unpaidInvoices > 1 ? 's' : ''}`
+    : 'Billing & payments';
 
   // Honest fleet health from server
   const fleetData = summary.fleet || {};
@@ -944,8 +954,8 @@ async function renderDashboard() {
   const fleetPrintingOk     = fleetData.printingNormally ?? fleetTotal;
   const fleetAffected       = fleetData.affectedMachines ?? 0;
   const fleetUptimePct      = fleetData.uptimePct      ?? 100;
-  const fleetActive         = devicesForFleet.filter(d => d.status === 'Active').length;
-  const fleetAttention      = fleetData.attentionCount  ?? devicesForFleet.filter(d => d.status === 'Needs Attention').length;
+  const fleetActive         = devicesForFleet.filter(d => (d.fleetStatus || d.status) === 'Active').length;
+  const fleetAttention      = fleetData.attentionCount  ?? devicesForFleet.filter(d => (d.fleetStatus || d.status) === 'Needs Attention').length;
   const fleetReplacement    = devicesForFleet.filter(d => d.status === 'For Replacement').length;
   const fleetInactive       = devicesForFleet.filter(d => d.status === 'Inactive').length;
   const fleetUptimeClass    = fleetUptimePct >= 95 ? 'uptime-green' : fleetUptimePct >= 80 ? 'uptime-amber' : 'uptime-red';
@@ -992,8 +1002,8 @@ async function renderDashboard() {
     <!-- COMBINED HERO + FLEET HEALTH — repair video background -->
     <section class="care-combined-hero">
       <video class="care-combined-video" autoplay muted loop playsinline poster="/public/assets/marga-bg-poster.jpg">
-        <source src="/public/assets/fleet-repair-desktop.mp4" media="(min-width: 640px)" type="video/mp4" />
-        <source src="/public/assets/fleet-repair-mobile.mp4" type="video/mp4" />
+        <source src="/public/assets/fleet-repair-desktop.mp4?v=20260717c" media="(min-width: 640px)" type="video/mp4" />
+        <source src="/public/assets/fleet-repair-mobile.mp4?v=20260717c" type="video/mp4" />
       </video>
       <div class="care-combined-veil"></div>
       <div class="care-combined-content">
@@ -1011,12 +1021,6 @@ async function renderDashboard() {
             <span class="fleet-pill-num fleet-green">${fleetPrintingOk} <span style="font-size:11px;font-weight:500">of ${fleetTotal}</span></span>
             <span class="fleet-pill-label">Printing Normally</span>
           </div>
-          ${fleetAffected > 0 ? `
-          <div class="fleet-pill-div"></div>
-          <div class="fleet-pill fleet-pill--link" data-nav="tickets">
-            <span class="fleet-pill-num fleet-red">${fleetAffected}</span>
-            <span class="fleet-pill-label">Need Attention</span>
-          </div>` : ''}
         </div>
       </div>
     </section>
@@ -1033,9 +1037,9 @@ async function renderDashboard() {
         ${canViewBilling() ? `
         <div class="kpi-card kpi-card--billing kpi-card--link" data-nav="billing" role="button" tabindex="0">
           <div class="kpi-card-inner">
-            <div class="kpi-eyebrow">Next Billing</div>
-            <div class="value value--text">${nextBillingText}</div>
-            <div class="label">${summary.unpaidInvoices > 0 ? `${summary.unpaidInvoices} unpaid invoice${summary.unpaidInvoices > 1 ? 's' : ''}` : 'Billing & payments'}</div>
+            <div class="kpi-eyebrow">${summary.unpaidAmount > 0 ? 'Open Balance' : 'Next Billing'}</div>
+            <div class="value value--text">${billingCardText}</div>
+            <div class="label">${billingCardLabel}</div>
           </div>
           <div class="kpi-arrow">→</div>
         </div>` : ''}
@@ -1217,6 +1221,12 @@ async function renderQuickSheet() {
              </select>
            </div>`
       }
+      <div class="qr-field">
+        <label class="qr-label">Field Machine Status</label>
+        <select name="fieldWorkMachineStatusId" class="qr-select" required>
+          ${machineWorkStatusOptionsHtml()}
+        </select>
+      </div>
       ${isService
         ? `<div class="qr-field">
              <label class="qr-label">What's the issue? <span class="qr-optional">(optional)</span></label>
@@ -1254,18 +1264,29 @@ async function renderQuickSheet() {
       const device = quickReq.devices.find(d => String(d.id) === String(deviceId));
       const branchId = device?.branchId || fd.get('branchId') || state.user.branchId;
       const companyId = device?.companyId || activeCompanyId();
+      const fieldWorkMachineStatusId = Number(fd.get('fieldWorkMachineStatusId') || 0);
+      const fieldWorkMachineStatus = machineWorkStatusLabel(fieldWorkMachineStatusId);
+      if (!fieldWorkMachineStatusId || !fieldWorkMachineStatus) {
+        throw new Error('Please choose a Field Machine Status.');
+      }
 
       if (isService) {
         await service.createTicket(state.user, {
           companyId, branchId, deviceId,
           category: 'Service',
           priority: 'Normal',
-          description: fd.get('description') || 'Service request via portal'
+          description: fd.get('description') || 'Service request via portal',
+          fieldWorkMachineStatusId,
+          fieldWorkMachineStatus
         });
       } else {
-        await service.createTonerRequest(state.user, {
+        await service.createTicket(state.user, {
           companyId, branchId, deviceId,
-          notes: fd.get('notes') || 'Toner request via portal'
+          category: 'Toner / Ink',
+          priority: 'Normal',
+          description: fd.get('notes') || 'Toner request via portal',
+          fieldWorkMachineStatusId,
+          fieldWorkMachineStatus
         });
       }
       closeQuickRequest();
@@ -1395,7 +1416,7 @@ async function renderDevices() {
     const matchSearch = !searchNeedle || [branchName, device.serial, device.model]
       .filter(Boolean)
       .some((v) => String(v).toLowerCase().includes(searchNeedle));
-    const matchStatus = !statusNeedle || String(device.status || '').toLowerCase() === statusNeedle;
+    const matchStatus = !statusNeedle || String(device.fleetStatus || device.status || '').toLowerCase() === statusNeedle;
     return matchSearch && matchStatus;
   });
 
@@ -1410,12 +1431,41 @@ async function renderDevices() {
   const detail = state.deviceDetailOpen && selectedDevice && String(state.deviceDetail?.device?.id) === String(selectedDevice.id)
     ? state.deviceDetail
     : null;
+  const showingAttention = statusNeedle === 'needs attention';
+  const attentionRowsHtml = showingAttention && filteredDevices.length
+    ? `<div class="care-attention-list">
+        <div class="care-attention-head">
+          <div>Account / Branch</div>
+          <div>Why It Needs Attention</div>
+          <div>Machine</div>
+          <div></div>
+        </div>
+        <div class="care-attention-body">
+          ${filteredDevices.map((device) => {
+            const branchName = branchMap.get(device.branchId) || cleanBranchName(device.branchName) || device.branchId || '-';
+            const reason = device.attentionReason || device.machineStatusLabel || 'Not marked as printing normally';
+            return `<div class="care-attention-row${selectedDevice && device.id === selectedDevice.id ? ' is-selected' : ''}">
+              <div>
+                <strong>${escapeHtml(branchName)}</strong>
+                <span>${escapeHtml(state.company?.name || 'MARGA Care account')}</span>
+              </div>
+              <div><span class="tag tag-attention">${escapeHtml(reason)}</span></div>
+              <div>
+                <strong>${escapeHtml(device.model || '-')}</strong>
+                <span>${escapeHtml(device.serial || 'No serial')}</span>
+              </div>
+              <div><button class="btn btn-secondary btn-sm" data-device-id="${device.id}" ${state.deviceDetailLoading && String(selectedDevice?.id) === String(device.id) ? 'disabled' : ''}>${state.deviceDetailLoading && String(selectedDevice?.id) === String(device.id) ? 'Loading...' : 'Details'}</button></div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`
+    : '';
 
   viewContainer.innerHTML = `
     ${renderBackBar('Machines')}
     <div class="panel glass">
         <div class="care-device-title-block">
-          <h3>Rented Devices</h3>
+          <h3>${showingAttention ? 'Accounts Needing Attention' : 'Rented Devices'}</h3>
           <span class="muted">${filteredDevices.length} of ${devices.length}</span>
         </div>
         <div class="care-device-toolbar">
@@ -1439,7 +1489,7 @@ async function renderDevices() {
           ['For Replacement', 'For Replacement'],
           ['Inactive', 'Inactive']
         ].map(([val, label]) => {
-          const count = val ? devices.filter(d => d.status === val).length : devices.length;
+          const count = val ? devices.filter(d => (d.fleetStatus || d.status) === val).length : devices.length;
           const active = state.deviceStatusFilter === val;
           return `<button class="device-filter-chip ${active ? 'active' : ''} ${val ? 'chip-' + val.toLowerCase().replace(/\s+/g,'-') : ''}"
             data-status="${escapeHtml(val)}">${escapeHtml(label)} <span class="chip-count">${count}</span></button>`;
@@ -1447,7 +1497,9 @@ async function renderDevices() {
       </div>
       ${
         filteredDevices.length
-          ? `<div class="care-device-table-wrap" data-drag-scroll="devices" tabindex="0" role="region" aria-label="Rented devices table. Swipe or drag horizontally to view more columns.">
+          ? showingAttention
+            ? attentionRowsHtml
+            : `<div class="care-device-table-wrap" data-drag-scroll="devices" tabindex="0" role="region" aria-label="Rented devices table. Swipe or drag horizontally to view more columns.">
               <div class="care-device-grid care-device-grid--with-history">
                 <div class="care-device-grid-head">
                   <div>Model</div>
@@ -1481,8 +1533,8 @@ async function renderDevices() {
                 </div>
               </div>
             </div>`
-          + `<div class="care-device-scroll-hint">Swipe or drag to see more columns</div>`
-          : '<div class="empty-state">No device matched that branch or serial.</div>'
+            + `<div class="care-device-scroll-hint">Swipe or drag to see more columns</div>`
+          : `<div class="empty-state">No ${showingAttention ? 'account needs attention' : 'device matched that branch or serial'}.</div>`
       }
     </div>
 
@@ -1617,44 +1669,398 @@ async function openDeviceDetail(deviceId) {
   }
 }
 
-function renderTicketTimeline(ticket) {
-  if (!ticket) return '<div class="empty-state">Select a ticket to see timeline.</div>';
+const TICKET_STATUS_ICON = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>`;
+const INFO_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>`;
+const CHAT_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>`;
+const CALL_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.24 1.24 2 2 0 012.24 0h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 14.92z"/></svg>`;
 
-  const items = [
-    {
-      label: 'Created',
-      details: ticket.description,
-      at: ticket.createdAt
-    },
-    {
-      label: 'Latest Update',
-      details: `Status: ${ticket.status || 'Open'}`,
-      at: ticket.updatedAt
-    }
-  ];
+const MACHINE_WORK_STATUS_OPTIONS = [
+  [1, 'Running / Print OK'],
+  [2, 'Running / Print Problem'],
+  [3, 'Down / No Print'],
+  [4, 'Running / Best Mode Only']
+];
 
-  const notes = Array.isArray(ticket.workNotes) ? ticket.workNotes : [];
-  notes.slice(0, 4).forEach((note) => {
-    items.push({ label: 'Work Note', details: note, at: ticket.updatedAt });
-  });
+function machineWorkStatusOptionsHtml(selected = '') {
+  const selectedNumber = Number(selected || 0);
+  return `<option value="">Select field machine status...</option>` + MACHINE_WORK_STATUS_OPTIONS
+    .map(([value, label]) => `<option value="${value}" ${selectedNumber === value ? 'selected' : ''}>${escapeHtml(label)}</option>`)
+    .join('');
+}
 
-  if (ticket.completion) {
-    items.push({
-      label: 'Completed',
-      details: `Ack: ${ticket.completion.acknowledgedByName || '-'} (${ticket.completion.ackMethod || 'PIN'})`,
-      at: ticket.completion.completedAt
-    });
+function machineWorkStatusLabel(value) {
+  const found = MACHINE_WORK_STATUS_OPTIONS.find(([id]) => Number(value) === id);
+  return found ? found[1] : '';
+}
+
+// Display order for the My Tickets list (spec §7): active/in-motion states first,
+// completed/cancelled last. Independent from the raw DB status column.
+const TICKET_STATUS_ORDER = [
+  'on_the_way', 'arrived', 'in_progress', 'waiting_customer', 'waiting_parts',
+  'included_in_route', 'next_destination', 'assigned', 'queued', 'submitted', 'under_review',
+  'for_follow_up', 'completed', 'cancelled'
+];
+
+function ticketSortWeight(ticket) {
+  const idx = TICKET_STATUS_ORDER.indexOf(ticket.customerStatus?.routeStatus || 'submitted');
+  return idx === -1 ? TICKET_STATUS_ORDER.length : idx;
+}
+
+// Pill color per route_status — teal is reserved for "technician engaged" states
+// to match the live-tracking design language (spec §33).
+function ticketStatusTagClass(routeStatus) {
+  if (['on_the_way', 'arrived', 'in_progress', 'waiting_customer'].includes(routeStatus)) return 'tag-live';
+  if (routeStatus === 'completed') return 'tag-ok';
+  if (routeStatus === 'cancelled') return 'tag-attention';
+  if (['waiting_parts', 'for_follow_up'].includes(routeStatus)) return 'tag-watch';
+  return 'tag-accent';
+}
+
+function ticketCardHtml(ticket) {
+  const cs = ticket.customerStatus || {};
+  const tagClass = ticketStatusTagClass(cs.routeStatus);
+  const requestedAt = ticket.createdAt || ticket.scheduledDate || ticket.updatedAt;
+  const scheduledAt = ticket.scheduledDate || null;
+  const requestedAge = daysAgoShort(requestedAt);
+  const isLate = requestedAt && Date.parse(requestedAt) < Date.now() - 2 * 86400000;
+  let note = '';
+  if (cs.showLiveEta) {
+    note = `<div class="ticket-card-note">Live ETA: <b>${cs.liveEtaMinutes != null ? `${cs.liveEtaMinutes} min` : 'Calculating\u2026'}</b></div>`;
+  } else if (cs.showArrivalNotConfirmed) {
+    note = `<div class="ticket-card-note">Arrival time not yet confirmed.${cs.routeStatus === 'included_in_route' ? ' Included in today\u2019s service route.' : ''}</div>`;
+  } else if (cs.showBroadVisitPeriod && cs.broadVisitPeriod) {
+    note = `<div class="ticket-card-note">Expected visit period: <b>${escapeHtml(cs.broadVisitPeriod)}</b></div>`;
   }
 
-  return `<div class="timeline">${items
-    .map(
-      (item) => `<article class="timeline-item">
-      <strong>${escapeHtml(item.label)}</strong>
-      <p>${escapeHtml(item.details || '')}</p>
-      <p>${formatDate(item.at)}</p>
-    </article>`
-    )
+  return `<div class="ticket-card">
+    <div class="ticket-card-head">
+      <div>
+        <p class="ticket-card-title">${escapeHtml(ticket.category || 'Service Request')}</p>
+        <p class="ticket-card-sub">Ticket #${escapeHtml(ticket.ticketNo || ticket.id)}</p>
+      </div>
+      <span class="tag ${tagClass}">${escapeHtml(cs.label || ticket.status || '-')}</span>
+    </div>
+    <div class="ticket-card-meta">
+      <span>Branch: <b>${escapeHtml(ticket.branchName || '-')}</b></span>
+      ${ticket.trouble ? `<span>Trouble: <b>${escapeHtml(ticket.trouble)}</b></span>` : ''}
+      ${ticket.fieldWorkMachineStatus ? `<span>Field Machine Status: <b>${escapeHtml(ticket.fieldWorkMachineStatus)}</b></span>` : ''}
+      <span>Priority: <b>${escapeHtml(ticket.priority || '-')}</b></span>
+      <span>Date Requested: <b>${formatDate(requestedAt)}</b></span>
+      ${scheduledAt ? `<span>Scheduled: <b>${formatDate(scheduledAt)}</b></span>` : ''}
+      ${requestedAge ? `<span class="${isLate ? 'ticket-age ticket-age--late' : 'ticket-age'}">Age: <b>${escapeHtml(requestedAge)}</b></span>` : ''}
+    </div>
+    ${note}
+    <div class="ticket-card-actions">
+      ${cs.showTracking ? `<button class="btn btn-primary btn-sm" data-ticket-id="${ticket.id}">Track Technician</button>` : ''}
+      ${cs.ticketMessageAvailable ? `<button class="btn btn-secondary btn-sm" data-ticket-id="${ticket.id}">${escapeHtml(cs.ticketMessageLabel || 'Message Service Team')}</button>` : ''}
+      <button class="btn btn-secondary btn-sm" data-ticket-id="${ticket.id}">View Details</button>
+    </div>
+  </div>`;
+}
+
+function renderMyTicketsTab(tickets) {
+  let visible = tickets;
+  if (state.ticketFilter !== 'all') {
+    visible = tickets.filter((ticket) => (ticket.customerStatus?.routeStatus || '') === state.ticketFilter);
+  }
+  const totalCount = tickets.length;
+  const visibleCount = visible.length;
+  visible = [...visible].sort(
+    (a, b) => ticketSortWeight(a) - ticketSortWeight(b) || new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)
+  );
+
+  const filterOptions = [
+    ['all', 'All'],
+    ['on_the_way', 'On the Way'], ['arrived', 'Arrived'], ['in_progress', 'In Progress'],
+    ['waiting_customer', 'Waiting for Customer'], ['waiting_parts', 'Waiting for Parts'],
+    ['included_in_route', 'Scheduled for Today'], ['assigned', 'Assigned / Queued'],
+    ['submitted', 'Submitted / Under Review'], ['for_follow_up', 'Follow-up'],
+    ['completed', 'Completed'], ['cancelled', 'Cancelled']
+  ];
+
+  return `
+    <div class="panel glass">
+      <div class="panel-head stack-on-mobile">
+        <h3>My Tickets <span class="ticket-total-count">${state.ticketFilter === 'all' ? totalCount : `${visibleCount} of ${totalCount}`}</span></h3>
+        <div class="panel-actions">
+          <select id="ticketStatusFilter" class="input">
+            ${filterOptions.map(([value, label]) => `<option value="${value}" ${state.ticketFilter === value ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      ${visible.length ? visible.map(ticketCardHtml).join('') : '<div class="empty-state">No tickets found for this filter.</div>'}
+    </div>
+  `;
+}
+
+function renderCreateTicketTab(devices, branches) {
+  const deviceOptions = devices
+    .map((device) => `<option value="${device.id}">${escapeHtml(device.model)} - ${escapeHtml(device.serial)}</option>`)
+    .join('');
+  const branchOptions = branches.map((branch) => `<option value="${branch.id}">${escapeHtml(cleanBranchName(branch.name))}</option>`).join('');
+
+  return `
+    <div class="panel glass">
+      <div class="panel-head"><h3>Create Service Ticket</h3></div>
+      <form id="createTicketForm" class="form-grid">
+        ${
+          ['marga_admin', 'marga_staff', 'corporate_admin', 'company_admin'].includes(state.user.role)
+            ? `<label>Branch<select name="branchId" required>${branchOptions}</select></label>`
+            : `<input type="hidden" name="branchId" value="${escapeHtml(state.user.branchId || '')}" />`
+        }
+        <label>Device<select name="deviceId" required>${deviceOptions}</select></label>
+        <label>Category
+          <select name="category" required>
+            <option>Paper Jam</option>
+            <option>Print Quality</option>
+            <option>Connectivity</option>
+            <option>Hardware Error</option>
+            <option>Preventive Maintenance</option>
+          </select>
+        </label>
+        <label>Priority
+          <select name="priority" required>
+            <option>Low</option>
+            <option selected>Medium</option>
+            <option>High</option>
+            <option>Critical</option>
+          </select>
+        </label>
+        <label>Field Machine Status
+          <select name="fieldWorkMachineStatusId" required>
+            ${machineWorkStatusOptionsHtml()}
+          </select>
+        </label>
+        <label class="full">Description<textarea name="description" rows="3" required placeholder="Describe the issue clearly..."></textarea></label>
+        <label class="full">Attach Photo (optional)<input type="file" name="attachment" accept="image/*" /></label>
+        <button type="submit" class="btn btn-primary full">Submit Ticket</button>
+      </form>
+    </div>
+  `;
+}
+
+// ── Ticket Details overlay (spec §9): status hero + step tracker + assigned staff
+// + ticket-linked messaging + timeline. Appended to <body> (not viewContainer) so it
+// survives sibling re-renders and never gets clipped by the module grid.
+function renderStatusHero(cs) {
+  const heroClass = cs.routeStatus === 'on_the_way' ? 'status-hero live' : 'status-hero';
+  let box = '';
+  if (cs.showLiveEta) {
+    box = `<div class="status-hero-box live">
+      <p class="status-hero-box-label">Live ETA</p>
+      <p class="status-hero-box-value live">${cs.liveEtaMinutes != null ? `${cs.liveEtaMinutes} min` : 'Calculating\u2026'}</p>
+      <p class="status-hero-box-note">You are the technician\u2019s next stop.</p>
+    </div>`;
+  } else if (cs.showArrivalNotConfirmed) {
+    box = `<div class="status-hero-box">
+      <p class="status-hero-box-label">Arrival Time</p>
+      <p class="status-hero-box-value">Not Yet Confirmed</p>
+      <p class="status-hero-box-note">We\u2019ll notify you when your assigned field staff is approaching.</p>
+    </div>`;
+  } else if (cs.showBroadVisitPeriod && cs.broadVisitPeriod) {
+    box = `<div class="status-hero-box">
+      <p class="status-hero-box-label">Expected Visit Period</p>
+      <p class="status-hero-box-value">${escapeHtml(cs.broadVisitPeriod)}</p>
+      <p class="status-hero-box-note">This is an estimate, not a guarantee.</p>
+    </div>`;
+  }
+  return `<div class="${heroClass}">
+    <div class="status-hero-icon-row">
+      <div class="status-hero-icon">${TICKET_STATUS_ICON}</div>
+      <div>
+        <p class="status-hero-title">${escapeHtml(cs.label || 'Request Received')}</p>
+        <span class="tag ${ticketStatusTagClass(cs.routeStatus)}">${escapeHtml((cs.routeStatus || '').replace(/_/g, ' '))}</span>
+      </div>
+    </div>
+    ${box}
+    <p class="status-hero-info">${INFO_ICON} <span>${escapeHtml(cs.message || '')}</span></p>
+  </div>`;
+}
+
+function renderStepTracker(steps) {
+  const currentIdx = steps.length - 1;
+  return `<div class="step-tracker">${steps
+    .map((label, i) => {
+      const cls = i < currentIdx ? 'done' : i === currentIdx ? 'current' : '';
+      const dot = i < currentIdx ? '\u2713' : String(i + 1);
+      return `${i > 0 ? `<div class="step-line ${i <= currentIdx ? 'done' : ''}"></div>` : ''}<div class="step ${cls}">
+          <div class="step-dot">${dot}</div>
+          <div class="step-label">${escapeHtml(label)}</div>
+        </div>`;
+    })
     .join('')}</div>`;
+}
+
+function renderTechCard(cs, isLive) {
+  const initials = (cs.assignedStaffName || '').trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join('').toUpperCase() || '?';
+  return `<div class="tech-card">
+    <div class="avatar">${initials}</div>
+    <div class="tech-card-body">
+      <p class="tech-card-name">${escapeHtml(cs.assignedStaffName)}</p>
+      <p class="tech-card-role">${isLive ? 'Assigned Field Staff' : 'Assigned to your request'}</p>
+    </div>
+  </div>`;
+}
+
+function renderTicketDetailContent(ticket) {
+  const cs = ticket.customerStatus || {};
+  const isLive = ['on_the_way', 'arrived', 'in_progress', 'waiting_customer'].includes(cs.routeStatus);
+  const steps = cs.progressSteps && cs.progressSteps.length ? cs.progressSteps : ['Received'];
+  const messages = Array.isArray(ticket.messages) ? ticket.messages : [];
+  const events = Array.isArray(ticket.events) ? ticket.events : [];
+
+  return `
+    <div class="panel-head">
+      <h3>${escapeHtml(ticket.category || 'Service Request')}</h3>
+      <button class="btn btn-ghost-dark" id="closeTicketDetail" style="width:auto">Close</button>
+    </div>
+    <div class="ticket-detail-columns">
+      <div>
+        ${renderStatusHero(cs)}
+        ${renderStepTracker(steps)}
+        ${cs.showAssignedStaffProfile && cs.assignedStaffName ? renderTechCard(cs, isLive) : ''}
+        <div class="ticket-card-actions" style="margin-top:10px">
+          <a class="btn btn-secondary btn-sm" href="tel:+63281234567">${CALL_ICON} Call Marga Care</a>
+          <a class="btn btn-secondary btn-sm" href="mailto:support@marga.biz">${CHAT_ICON} Chat with Marga Care</a>
+        </div>
+      </div>
+      <div>
+        <div class="panel glass" style="margin-bottom:14px">
+          <div class="panel-head"><h3>Request Details</h3></div>
+          <div class="ticket-card-meta" style="flex-direction:column;align-items:flex-start;gap:6px">
+            <span>Ticket No: <b>${escapeHtml(ticket.ticketNo || ticket.id)}</b></span>
+            <span>Branch: <b>${escapeHtml(ticket.branchName || '-')}</b></span>
+            <span>Priority: <b>${escapeHtml(ticket.priority || '-')}</b></span>
+            <span>Submitted: <b>${formatDate(ticket.createdAt)}</b></span>
+          </div>
+          <p style="font-size:12px;color:var(--ink-2);margin-top:10px">${escapeHtml(ticket.description || '')}</p>
+        </div>
+
+        ${
+          cs.ticketMessageAvailable
+            ? `<div class="panel glass">
+                <div class="panel-head"><h3>${escapeHtml(cs.ticketMessageLabel || 'Message Service Team')}</h3></div>
+                <div class="message-thread">
+                  ${
+                    messages.length
+                      ? messages
+                          .map(
+                            (m) => `<div class="message-bubble ${m.senderType === 'customer' ? 'mine' : ''}">
+                              <p class="msg-sender">${escapeHtml(m.senderName || (m.senderType === 'customer' ? 'You' : 'Marga Service Team'))}</p>
+                              <p class="msg-body">${escapeHtml(m.body || '')}</p>
+                              <p class="msg-time">${formatDate(m.createdAt)}</p>
+                            </div>`
+                          )
+                          .join('')
+                      : '<div class="empty-state">Messages are attached to this service request. The assigned team will respond when available.</div>'
+                  }
+                </div>
+                <form id="ticketMessageForm" class="message-composer">
+                  <textarea name="body" placeholder="Type a message..." required></textarea>
+                  <button type="submit" class="btn btn-primary btn-sm">Send</button>
+                </form>
+                ${cs.callTechnicianEnabled ? `<button type="button" class="btn btn-secondary btn-sm" data-tech-call style="margin-top:8px;width:100%">${CALL_ICON} Call Assigned Technician</button>` : ''}
+              </div>`
+            : '<div class="panel glass"><div class="empty-state">Messaging opens once your request is assigned.</div></div>'
+        }
+
+        <div class="panel glass" style="margin-top:14px">
+          <div class="panel-head"><h3>Timeline</h3></div>
+          ${
+            events.length
+              ? `<div class="timeline">${events
+                  .map(
+                    (e) => `<article class="timeline-item">
+                      <strong>${escapeHtml((e.status || '').replace(/_/g, ' '))}</strong>
+                      <p>${escapeHtml(e.customerVisibleNote || '')}</p>
+                      <p>${formatDate(e.createdAt)}</p>
+                    </article>`
+                  )
+                  .join('')}</div>`
+              : '<div class="empty-state">No timeline events yet.</div>'
+          }
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function closeTicketDetailOverlay() {
+  document.getElementById('ticketDetailOverlay')?.remove();
+  state.ticketDetailOpen = false;
+  state.ticketDetail = null;
+}
+
+function renderTicketDetailOverlay() {
+  document.getElementById('ticketDetailOverlay')?.remove();
+  if (!state.ticketDetailOpen) return;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'ticketDetailOverlay';
+  overlay.className = 'ticket-detail-overlay';
+  overlay.innerHTML = `<div class="ticket-detail-panel">${
+    state.ticketDetailLoading || !state.ticketDetail
+      ? '<div class="empty-state">Loading ticket details\u2026</div>'
+      : renderTicketDetailContent(state.ticketDetail)
+  }</div>`;
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener('click', (event) => {
+    if (event.target === overlay) {
+      closeTicketDetailOverlay();
+      renderTickets();
+    }
+  });
+  document.getElementById('closeTicketDetail')?.addEventListener('click', () => {
+    closeTicketDetailOverlay();
+    renderTickets();
+  });
+  document.querySelectorAll('#ticketDetailOverlay [data-tech-call]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      showNotice('In-app technician calling is coming soon. Use Chat Assigned Technician for now.', 'info');
+    });
+  });
+
+  const messageForm = document.getElementById('ticketMessageForm');
+  messageForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (state.ticketMessageSending) return;
+    const textarea = messageForm.querySelector('textarea[name="body"]');
+    const body = (textarea?.value || '').trim();
+    if (!body) return;
+    state.ticketMessageSending = true;
+    try {
+      await service.sendTicketMessage(state.user, state.ticketDetail.id, body);
+      state.ticketDetail = await service.getTicketDetail(state.user, state.ticketDetail.id);
+      renderTicketDetailOverlay();
+    } catch (error) {
+      showNotice(error.message || 'Failed to send message.', 'error');
+    } finally {
+      state.ticketMessageSending = false;
+    }
+  });
+}
+
+async function openTicketDetail(ticketId) {
+  state.selectedTicketId = ticketId;
+  state.ticketDetailOpen = true;
+  state.ticketDetailLoading = true;
+  state.ticketDetail = null;
+  state.ticketDetailRequestId += 1;
+  const requestId = state.ticketDetailRequestId;
+  renderTicketDetailOverlay();
+  try {
+    const detail = await service.getTicketDetail(state.user, ticketId);
+    if (requestId !== state.ticketDetailRequestId) return;
+    state.ticketDetail = detail;
+  } catch (error) {
+    if (requestId !== state.ticketDetailRequestId) return;
+    showNotice(error.message || 'Failed to load ticket detail.', 'error');
+  } finally {
+    if (requestId !== state.ticketDetailRequestId) return;
+    state.ticketDetailLoading = false;
+    renderTicketDetailOverlay();
+  }
 }
 
 async function renderTickets() {
@@ -1664,99 +2070,26 @@ async function renderTickets() {
     service.listTickets(state.user)
   ]);
 
-  let visibleTickets = tickets;
-  if (state.ticketFilter !== 'all') {
-    visibleTickets = tickets.filter((ticket) => String(ticket.status || '').toLowerCase() === state.ticketFilter);
-  }
-
-  if (!state.selectedTicketId && visibleTickets.length) state.selectedTicketId = visibleTickets[0].id;
-  const selectedTicket = tickets.find((ticket) => ticket.id === state.selectedTicketId) || null;
-
-  const deviceOptions = devices
-    .map((device) => `<option value="${device.id}">${escapeHtml(device.model)} - ${escapeHtml(device.serial)}</option>`)
-    .join('');
-  const branchOptions = branches.map((branch) => `<option value="${branch.id}">${escapeHtml(cleanBranchName(branch.name))}</option>`).join('');
-
   viewContainer.innerHTML = `
-    <div class="grid-2">
-      ${renderBackBar('Service Requests')}
-      <div class="panel glass">
-        <div class="panel-head"><h3>Create Service Ticket</h3></div>
-        <form id="createTicketForm" class="form-grid">
-          ${
-            ['marga_admin', 'marga_staff', 'corporate_admin', 'company_admin'].includes(state.user.role)
-              ? `<label>Branch<select name="branchId" required>${branchOptions}</select></label>`
-              : `<input type="hidden" name="branchId" value="${escapeHtml(state.user.branchId || '')}" />`
-          }
-          <label>Device<select name="deviceId" required>${deviceOptions}</select></label>
-          <label>Category
-            <select name="category" required>
-              <option>Paper Jam</option>
-              <option>Print Quality</option>
-              <option>Connectivity</option>
-              <option>Hardware Error</option>
-              <option>Preventive Maintenance</option>
-            </select>
-          </label>
-          <label>Priority
-            <select name="priority" required>
-              <option>Low</option>
-              <option selected>Medium</option>
-              <option>High</option>
-              <option>Critical</option>
-            </select>
-          </label>
-          <label class="full">Description<textarea name="description" rows="3" required placeholder="Describe the issue clearly..."></textarea></label>
-          <label class="full">Attach Photo (optional)<input type="file" name="attachment" accept="image/*" /></label>
-          <button type="submit" class="btn btn-primary full">Submit Ticket</button>
-        </form>
-      </div>
-
-      <div class="panel glass">
-        <div class="panel-head">
-          <h3>Ticket Timeline</h3>
-          <span class="muted">${selectedTicket ? escapeHtml(selectedTicket.ticketNo || selectedTicket.id) : 'No ticket selected'}</span>
-        </div>
-        ${renderTicketTimeline(selectedTicket)}
-      </div>
+    ${renderBackBar('Service Requests')}
+    <div class="ticket-tabs">
+      <button class="ticket-tab ${state.ticketTab === 'my-tickets' ? 'active' : ''}" data-ticket-tab="my-tickets" type="button">My Tickets</button>
+      <button class="ticket-tab ${state.ticketTab === 'create' ? 'active' : ''}" data-ticket-tab="create" type="button">Create Ticket</button>
     </div>
-
-    <div class="panel glass">
-      <div class="panel-head stack-on-mobile">
-        <h3>Ticket List</h3>
-        <div class="panel-actions">
-          <select id="ticketStatusFilter" class="input">
-            <option value="all" ${state.ticketFilter === 'all' ? 'selected' : ''}>All statuses</option>
-            <option value="open" ${state.ticketFilter === 'open' ? 'selected' : ''}>Open</option>
-            <option value="assigned" ${state.ticketFilter === 'assigned' ? 'selected' : ''}>Assigned</option>
-            <option value="in progress" ${state.ticketFilter === 'in progress' ? 'selected' : ''}>In Progress</option>
-            <option value="pending follow up" ${state.ticketFilter === 'pending follow up' ? 'selected' : ''}>Pending Follow Up</option>
-            <option value="completed" ${state.ticketFilter === 'completed' ? 'selected' : ''}>Completed</option>
-          </select>
-        </div>
-      </div>
-      ${
-        visibleTickets.length
-          ? `<div class="table-wrap"><table class="data-table"><thead><tr>
-              <th>Ticket No</th><th>Category</th><th>Priority</th><th>Status</th><th>Updated</th><th></th>
-            </tr></thead><tbody>
-            ${visibleTickets
-              .map(
-                (ticket) => `<tr>
-                  <td>${escapeHtml(ticket.ticketNo || ticket.id)}</td>
-                  <td>${escapeHtml(ticket.category || '-')}</td>
-                  <td>${escapeHtml(ticket.priority || '-')}</td>
-                  <td><span class="tag ${statusClass(ticket.status)}">${escapeHtml(ticket.status || '-')}</span></td>
-                  <td>${formatDate(ticket.updatedAt || ticket.createdAt)}</td>
-                  <td><button class="btn btn-secondary btn-sm" data-ticket-id="${ticket.id}">View</button></td>
-                </tr>`
-              )
-              .join('')}
-            </tbody></table></div>`
-          : '<div class="empty-state">No tickets found for this filter.</div>'
-      }
-    </div>
+    ${state.ticketTab === 'create' ? renderCreateTicketTab(devices, branches) : renderMyTicketsTab(tickets)}
   `;
+
+  viewContainer.querySelectorAll('[data-ticket-tab]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      state.ticketTab = btn.getAttribute('data-ticket-tab');
+      await renderTickets();
+    });
+  });
+
+  document.getElementById('ticketStatusFilter')?.addEventListener('change', async (event) => {
+    state.ticketFilter = event.target.value;
+    await renderTickets();
+  });
 
   document.getElementById('createTicketForm')?.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -1771,27 +2104,38 @@ async function renderTickets() {
       deviceId: formData.get('deviceId'),
       category: formData.get('category'),
       priority: formData.get('priority'),
-      description: formData.get('description')
+      description: formData.get('description'),
+      fieldWorkMachineStatusId: formData.get('fieldWorkMachineStatusId'),
+      fieldWorkMachineStatus: machineWorkStatusLabel(formData.get('fieldWorkMachineStatusId'))
     };
+    if (!payload.fieldWorkMachineStatusId || !payload.fieldWorkMachineStatus) {
+      showNotice('Please choose a Field Machine Status.', 'error');
+      return;
+    }
 
     const attachment = formData.get('attachment');
     const hasFile = attachment && attachment.size > 0;
 
     try {
-      await service.createTicket(state.user, payload, hasFile ? attachment : null);
+      const ticket = await service.createTicket(state.user, payload, hasFile ? attachment : null);
       showNotice('Ticket submitted successfully.', 'success');
       form.reset();
+      state.ticketTab = 'my-tickets';
+      state.highlightTicketId = ticket?.id || null;
       await renderTickets();
     } catch (error) {
       showNotice(error.message || 'Unable to create ticket.', 'error');
     }
   });
 
-  document.getElementById('ticketStatusFilter')?.addEventListener('change', async (event) => {
-    state.ticketFilter = event.target.value;
-    await renderTickets();
-  });
+  // Just-created ticket: land on My Tickets and open its detail (spec §8).
+  if (state.highlightTicketId) {
+    const idToOpen = state.highlightTicketId;
+    state.highlightTicketId = null;
+    await openTicketDetail(idToOpen);
+  }
 }
+
 
 async function renderToner() {
   const [devices, requests, branches] = await Promise.all([
@@ -1889,6 +2233,7 @@ async function renderBilling() {
     const key = inv.invoiceNo || inv.id;
     if (!groupMap.has(key)) {
       groupMap.set(key, {
+        key,
         invoiceNo: inv.invoiceNo,
         period: inv.period,
         dueDate: inv.dueDate,
@@ -1901,7 +2246,11 @@ async function renderBilling() {
     const g = groupMap.get(key);
     g.total += Number(inv.amount || 0);
     if (inv.branchName || inv.branchId) {
-      g.branches.push({ name: cleanBranchName(inv.branchName || String(inv.branchId)), amount: Number(inv.amount || 0), status: inv.status });
+      g.branches.push({
+        name: cleanBranchName(inv.branchName || String(inv.branchId)),
+        amount: Number(inv.amount || 0),
+        status: inv.status
+      });
       if (g.branches.length > 1) g.isGrouped = true;
     }
     // Normalize status: if any branch is Unpaid, whole group is Unpaid
@@ -1918,29 +2267,29 @@ async function renderBilling() {
   function renderInvoiceRows() {
     return invoiceGroups.map((group, idx) => {
       const displayStatus = group.status && group.status !== '0' ? group.status : 'Unpaid';
-      const isExpanded = state_expanded.has(idx);
-      const branchRows = group.isGrouped && isExpanded
+      const groupKey = group.key || String(idx);
+      const isExpanded = state_expanded.has(groupKey);
+      const branchRows = isExpanded
         ? group.branches.map(b => `
             <tr class="invoice-branch-row">
-              <td class="invoice-branch-name">${escapeHtml(b.name)}</td>
-              <td>${formatMoney(b.amount)}</td>
               <td></td>
+              <td class="invoice-branch-name">${escapeHtml(b.name)}</td>
+              <td></td>
+              <td>${formatMoney(b.amount)}</td>
               <td><span class="tag ${statusClass(displayStatus)}">${escapeHtml(displayStatus)}</span></td>
-              <td>-</td>
+              <td></td>
             </tr>`).join('')
         : '';
       return `
-        <tr class="invoice-group-row${group.isGrouped ? ' invoice-grouped' : ''}" data-invoice-idx="${idx}">
-          <td>${escapeHtml(formatBillingPeriod(group.period, group.dueDate))}</td>
-          <td>${formatMoney(group.total)}</td>
+        <tr class="invoice-group-row${group.isGrouped ? ' invoice-grouped' : ''}" data-invoice-key="${escapeHtml(groupKey)}">
+          <td><strong>${escapeHtml(group.invoiceNo || '-')}</strong></td>
+          <td>${group.branches.length} ${group.branches.length === 1 ? 'branch / department' : 'branches / departments'}</td>
           <td>${escapeHtml(formatDatePH(group.dueDate))}</td>
+          <td>${formatMoney(group.total)}</td>
           <td><span class="tag ${statusClass(displayStatus)}">${escapeHtml(displayStatus)}</span></td>
-          <td>${group.isGrouped
-            ? `<button class="btn btn-secondary btn-sm invoice-expand-btn" data-invoice-idx="${idx}">
-                ${isExpanded ? '▲ Hide' : `▼ ${group.branches.length} branches`}
-               </button>`
-            : '-'
-          }</td>
+          <td><button class="btn btn-secondary btn-sm invoice-expand-btn" data-invoice-key="${escapeHtml(groupKey)}">
+            ${isExpanded ? 'Hide Details' : 'View Details'}
+          </button></td>
         </tr>
         ${branchRows}`;
     }).join('');
@@ -1951,18 +2300,18 @@ async function renderBilling() {
     <div class="panel glass">
       <div class="panel-head"><h3>Billing Summary</h3>${activityChip('Visible proof', 'ok')}</div>
       <div class="kpi-grid">
-        <div class="kpi-card"><div class="value">${invoiceGroups.length}</div><div class="label">Invoice Groups</div></div>
-        <div class="kpi-card"><div class="value">${unpaid.length}</div><div class="label">Unpaid Line Items</div></div>
-        <div class="kpi-card"><div class="value">${formatMoney(totalUnpaid)}</div><div class="label">Unpaid Amount</div></div>
+        <div class="kpi-card"><div class="value">${invoiceGroups.length}</div><div class="label">Open Invoices</div></div>
+        <div class="kpi-card"><div class="value">${unpaid.length}</div><div class="label">Branch / Department Lines</div></div>
+        <div class="kpi-card"><div class="value">${formatMoney(totalUnpaid)}</div><div class="label">Open Balance</div></div>
       </div>
     </div>
 
     <div class="panel glass">
-      <div class="panel-head"><h3>Invoices</h3><span class="muted">Statements and due dates</span></div>
+      <div class="panel-head"><h3>Open Invoices</h3><span class="muted">Click View Details to see branch / department lines</span></div>
       ${
         invoiceGroups.length
           ? `<div class="table-wrap"><table class="data-table" id="billingTable"><thead><tr>
-              <th>Period</th><th>Amount</th><th>Due Date</th><th>Status</th><th>Breakdown</th>
+              <th>Invoice No</th><th>Branches / Departments</th><th>Invoice Date</th><th>Open Amount</th><th>Status</th><th>Details</th>
             </tr></thead><tbody id="billingTableBody">
             ${renderInvoiceRows()}
             </tbody></table></div>`
@@ -1975,12 +2324,10 @@ async function renderBilling() {
   document.getElementById('billingTableBody')?.addEventListener('click', (e) => {
     const btn = e.target.closest('.invoice-expand-btn');
     if (!btn) return;
-    const idx = Number(btn.getAttribute('data-invoice-idx'));
-    if (state_expanded.has(idx)) state_expanded.delete(idx);
-    else state_expanded.add(idx);
+    const key = btn.getAttribute('data-invoice-key');
+    if (state_expanded.has(key)) state_expanded.delete(key);
+    else state_expanded.add(key);
     document.getElementById('billingTableBody').innerHTML = renderInvoiceRows();
-    // Re-wire after innerHTML replace
-    document.getElementById('billingTableBody')?.addEventListener('click', arguments.callee);
   });
 }
 
@@ -2800,8 +3147,7 @@ async function renderView() {
 
   viewContainer.querySelectorAll('[data-ticket-id]').forEach((button) => {
     button.addEventListener('click', async () => {
-      state.selectedTicketId = button.getAttribute('data-ticket-id');
-      await renderTickets();
+      await openTicketDetail(button.getAttribute('data-ticket-id'));
     });
   });
 }

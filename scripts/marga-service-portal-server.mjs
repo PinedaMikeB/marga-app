@@ -15,6 +15,8 @@ const port = Number(process.env.MSP_PORT || 9200);
 const platformRequire = createRequire('/Volumes/Wotg Drive Mike/GitHub/marga-platform/package.json');
 const { Pool } = platformRequire('pg');
 const DATABASE_URL = process.env.MARGABASE_DATABASE_URL || 'postgresql://margabase_admin@127.0.0.1:5432/margabase';
+const MARGABASE_DOCUMENTS_BASE_URL = process.env.MARGABASE_DOCUMENTS_BASE_URL || 'http://127.0.0.1:8787/v1/projects/sah-spiritual-journal/databases/(default)/documents';
+const MARGABASE_API_KEY = process.env.MARGABASE_API_KEY || 'margabase-local';
 const SESSION_SECRET = process.env.MARGA_SESSION_SECRET || 'marga-local-session-secret-change-me';
 const CARE_SMTP_HOST = process.env.MARGA_CARE_SMTP_HOST || 'smtp.hostinger.com';
 const CARE_SMTP_PORT = Number(process.env.MARGA_CARE_SMTP_PORT || 465);
@@ -25,6 +27,7 @@ const pool = new Pool({ connectionString: DATABASE_URL });
 const loginAttempts = new Map();
 const previewLaunches = new Map();
 let portalSchemaReadyPromise = null;
+let portalSchemaBootstrapSkipped = false;
 let machineStatusCache = null;
 let purposeLabelCache = null;
 
@@ -34,8 +37,35 @@ const REQUIRED_PORTAL_TABLES = [
   'portal_accounts',
   'audit_logs',
   'care_company_profiles',
-  'care_account_scopes'
+  'care_account_scopes',
+  'portal_ticket_events',
+  'portal_ticket_messages'
 ];
+
+// Canonical customer-facing ticket status machine (spec §10).
+// routeStatus values are internal/backend-facing; customer-facing labels are derived
+// by computeCustomerFacingStatus() below so we never expose internal dispatch language.
+const TICKET_ROUTE_STATUSES = [
+  'submitted', 'under_review', 'assigned', 'queued', 'included_in_route',
+  'next_destination', 'on_the_way', 'arrived', 'in_progress',
+  'waiting_customer', 'waiting_parts', 'for_follow_up', 'completed', 'cancelled'
+];
+
+// Legacy free-text `status` values (as currently stored) mapped to the new route_status enum.
+// Used to backfill/interpret old tickets without breaking existing data (spec: "map existing
+// database statuses to the new customer-facing labels where practical").
+const LEGACY_STATUS_TO_ROUTE_STATUS = {
+  'open': 'submitted',
+  'assigned': 'assigned',
+  'in progress': 'in_progress',
+  'pending follow up': 'for_follow_up',
+  'completed': 'completed',
+  'fulfilled': 'completed',
+  'cancelled': 'cancelled'
+};
+
+// Ticket-linked messaging channel modes (spec §25/§29).
+const TECH_CHAT_MODES = ['marga_support_only', 'shared_service_team', 'assigned_technician_direct', 'read_only', 'closed'];
 
 const REQUIRED_PORTAL_ACCOUNT_COLUMNS = [
   'must_change_password',
@@ -70,6 +100,10 @@ const mimeTypes = new Map([
   ['.png', 'image/png'],
   ['.jpg', 'image/jpeg'],
   ['.jpeg', 'image/jpeg'],
+  ['.mp4', 'video/mp4'],
+  ['.webm', 'video/webm'],
+  ['.mov', 'video/quicktime'],
+  ['.ogv', 'video/ogg'],
   ['.svg', 'image/svg+xml; charset=utf-8'],
   ['.webp', 'image/webp'],
   ['.ico', 'image/x-icon']
@@ -474,11 +508,79 @@ async function ensurePortalTables() {
         coalesce(machine_id, 0),
         coalesce(contractmain_id, 0)
       );
+
+    -- ── Care Portal: Service Request tracking / assignment / communication (additive) ──
+    alter table marga.portal_service_tickets add column if not exists assigned_staff_id text;
+    alter table marga.portal_service_tickets add column if not exists assigned_staff_name text;
+    alter table marga.portal_service_tickets add column if not exists assignment_id text;
+    alter table marga.portal_service_tickets add column if not exists assignment_status text not null default 'unassigned';
+    alter table marga.portal_service_tickets add column if not exists route_status text not null default 'submitted';
+    alter table marga.portal_service_tickets add column if not exists customer_is_next_destination boolean not null default false;
+    alter table marga.portal_service_tickets add column if not exists tracking_enabled boolean not null default false;
+    alter table marga.portal_service_tickets add column if not exists staff_latitude double precision;
+    alter table marga.portal_service_tickets add column if not exists staff_longitude double precision;
+    alter table marga.portal_service_tickets add column if not exists last_location_update timestamptz;
+    alter table marga.portal_service_tickets add column if not exists destination_latitude double precision;
+    alter table marga.portal_service_tickets add column if not exists destination_longitude double precision;
+    alter table marga.portal_service_tickets add column if not exists live_eta_minutes integer;
+    alter table marga.portal_service_tickets add column if not exists broad_visit_period text;
+    alter table marga.portal_service_tickets add column if not exists confirmed_window_start timestamptz;
+    alter table marga.portal_service_tickets add column if not exists confirmed_window_end timestamptz;
+    alter table marga.portal_service_tickets add column if not exists on_the_way_at timestamptz;
+    alter table marga.portal_service_tickets add column if not exists arrived_at timestamptz;
+    alter table marga.portal_service_tickets add column if not exists service_started_at timestamptz;
+    alter table marga.portal_service_tickets add column if not exists completed_at timestamptz;
+    alter table marga.portal_service_tickets add column if not exists location_permission_status text;
+    alter table marga.portal_service_tickets add column if not exists technician_contact_enabled boolean not null default false;
+    alter table marga.portal_service_tickets add column if not exists technician_chat_mode text not null default 'marga_support_only';
+    alter table marga.portal_service_tickets add column if not exists communication_grace_period_ends_at timestamptz;
+    alter table marga.portal_service_tickets add column if not exists cancel_reason text;
+    alter table marga.portal_service_tickets add column if not exists internal_priority_score integer;
+    alter table marga.portal_service_tickets add column if not exists field_work_machine_status_id integer;
+    alter table marga.portal_service_tickets add column if not exists field_work_machine_status text;
+    alter table marga.portal_service_tickets add column if not exists schedule_legacy_id text;
+    alter table marga.portal_service_tickets add column if not exists schedule_created_at timestamptz;
+
+    create table if not exists marga.portal_ticket_events (
+      id bigserial primary key,
+      ticket_id bigint not null references marga.portal_service_tickets(id) on delete cascade,
+      status text not null,
+      customer_visible_note text not null default '',
+      internal_note text not null default '',
+      reason text,
+      next_action text,
+      responsible_staff_id text,
+      responsible_staff_name text,
+      staff_latitude double precision,
+      staff_longitude double precision,
+      tracking_enabled boolean,
+      assignment_id text,
+      customer_visible boolean not null default true,
+      created_by_user_id text,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists portal_ticket_events_ticket_idx on marga.portal_ticket_events(ticket_id, created_at);
+
+    create table if not exists marga.portal_ticket_messages (
+      id bigserial primary key,
+      ticket_id bigint not null references marga.portal_service_tickets(id) on delete cascade,
+      channel text not null default 'shared_service_team',
+      sender_type text not null,
+      sender_user_id text,
+      sender_name text not null default '',
+      body text not null default '',
+      photo_url text,
+      video_url text,
+      visible_to_customer boolean not null default true,
+      read_at timestamptz,
+      created_at timestamptz not null default now()
+    );
+    create index if not exists portal_ticket_messages_ticket_idx on marga.portal_ticket_messages(ticket_id, created_at);
   `);
 }
 
 function isSchemaCreatePermissionError(error) {
-  return error?.code === '42501' && /schema marga/i.test(String(error?.message || ''));
+  return error?.code === '42501';
 }
 
 async function portalSchemaAlreadyBootstrapped() {
@@ -514,7 +616,10 @@ async function ensurePortalSchemaReady() {
         }
         throw error;
       }
-    })();
+    })().catch((error) => {
+      portalSchemaReadyPromise = null;
+      throw error;
+    });
   }
   return portalSchemaReadyPromise;
 }
@@ -749,6 +854,258 @@ const CUSTOMER_STATUS_LABELS = new Map([
   [17, 'Inactive'],
   [18, 'Incoming'],
 ]);
+
+function machineWorkStatusLabel(statusId) {
+  const id = Number(statusId || 0);
+  if (id === 1) return 'Running / Print OK';
+  if (id === 2) return 'Running / Print Problem';
+  if (id === 3) return 'Down / No Print';
+  if (id === 4) return 'Running / Best Mode Only';
+  return '';
+}
+
+function firestoreValue(value) {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === 'boolean') return { booleanValue: value };
+  if (typeof value === 'number') {
+    if (Number.isInteger(value)) return { integerValue: String(value) };
+    return { doubleValue: value };
+  }
+  return { stringValue: String(value) };
+}
+
+async function patchFirestoreDocument(collection, docId, fields) {
+  const body = { fields: {} };
+  Object.entries(fields).forEach(([key, value]) => {
+    body.fields[key] = firestoreValue(value);
+  });
+  const url = `${MARGABASE_DOCUMENTS_BASE_URL}/${encodeURIComponent(collection)}/${encodeURIComponent(String(docId))}?key=${encodeURIComponent(MARGABASE_API_KEY)}`;
+  const response = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.error) {
+    throw new Error(payload?.error?.message || `Failed to write ${collection}/${docId}.`);
+  }
+  return payload;
+}
+
+function manilaDateTimeParts(date = new Date()) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-PH', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).formatToParts(date).map((part) => [part.type, part.value])
+  );
+  const hour = parts.hour === '24' ? '00' : parts.hour;
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    datetime: `${parts.year}-${parts.month}-${parts.day} ${hour}:${parts.minute}:${parts.second}`
+  };
+}
+
+function purposeForPortalTicket(category = '') {
+  const value = String(category || '').toLowerCase();
+  if (value.includes('cartridge')) return { id: 4, label: 'Deliver Cartridge' };
+  if (value.includes('toner') || value.includes('ink')) return { id: 3, label: 'Deliver Ink / Toner' };
+  return { id: 5, label: 'Service' };
+}
+
+function nextManilaServiceSlotParts(date = new Date()) {
+  const today = manilaDateTimeParts(date).date;
+  const nextDay = new Date(`${today}T00:00:00+08:00`);
+  nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+  const nextDate = manilaDateTimeParts(nextDay).date;
+  return {
+    date: nextDate,
+    datetime: `${nextDate} 08:00:00`
+  };
+}
+
+function allowedCompanyIdsForPortalUser(user) {
+  if (user.activeCompanyId) return [Number(user.activeCompanyId)].filter((id) => Number.isFinite(id) && id > 0);
+  if (Array.isArray(user.companyIds) && user.companyIds.length) {
+    return user.companyIds.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0);
+  }
+  return [Number(user.companyId || 0)].filter((id) => Number.isFinite(id) && id > 0);
+}
+
+async function resolvePortalRequestScope(user, body = {}) {
+  const internal = user.role === 'marga_admin' || user.role === 'marga_staff';
+  const requestedBranchId = Number(body.branchId || user.branchId || 0) || null;
+  const requestedCompanyId = Number(body.companyId || user.activeCompanyId || user.companyId || 0) || null;
+  if (!requestedBranchId) {
+    const error = new Error('Branch is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (internal) return { branchId: requestedBranchId, companyId: requestedCompanyId };
+  if (user.branchId && Number(user.branchId) !== requestedBranchId) {
+    const error = new Error('Selected branch is outside this account.');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const { rows } = await pool.query(
+    `select id as branch_id, company_id
+     from marga.branches
+     where id = $1
+     limit 1`,
+    [requestedBranchId]
+  );
+  const resolvedCompanyId = Number(rows[0]?.company_id || requestedCompanyId || 0) || null;
+  const allowedCompanyIds = allowedCompanyIdsForPortalUser(user);
+  if (!resolvedCompanyId || (allowedCompanyIds.length && !allowedCompanyIds.includes(resolvedCompanyId))) {
+    const error = new Error('Selected branch is outside this account.');
+    error.statusCode = 403;
+    throw error;
+  }
+  return { branchId: requestedBranchId, companyId: resolvedCompanyId };
+}
+
+async function allocateNextScheduleLegacyId() {
+  const { rows } = await pool.query(`
+    select greatest(
+      coalesce((select max(legacy_id::bigint) from marga.service_schedules where legacy_id ~ '^[0-9]+$'), 0),
+      coalesce((select max((data->>'id')::bigint) from app_meta.firestore_documents where collection = 'tbl_schedule' and coalesce(data->>'id', '') ~ '^[0-9]+$'), 0)
+    ) + 1 as next_id
+  `);
+  const nextId = Number(rows[0]?.next_id || 0);
+  if (!Number.isFinite(nextId) || nextId <= 0) throw new Error('Unable to allocate schedule id.');
+  return nextId;
+}
+
+async function buildPortalScheduleContext({ companyId, branchId, deviceId }) {
+  const { rows } = await pool.query(
+    `select g.company_id, g.company_name, g.branch_id, g.branch_name, g.branch_legacy_id,
+            g.machine_id, g.machine_legacy_id, g.contract_id, g.display_serial, g.machine_serial,
+            coalesce(nullif(b.area_id, ''), '0') as area_id,
+            ${machineModelSql('m')} as machine_model
+     from api.active_customer_graph g
+     left join marga.branches b on b.id = g.branch_id
+     left join marga.machines m on m.id = g.machine_id
+     where g.branch_id = $1
+       and ($2::bigint is null or g.machine_id = $2)
+     order by case when g.company_id = $3 then 0 else 1 end, g.contract_id desc
+     limit 1`,
+    [branchId, deviceId || null, companyId || null]
+  );
+  if (rows[0]) return rows[0];
+
+  const fallback = await pool.query(
+    `select b.company_id, c.name as company_name, b.id as branch_id, b.name as branch_name,
+            b.legacy_id as branch_legacy_id, $2::bigint as machine_id, null as machine_legacy_id,
+            null as contract_id, null as display_serial, null as machine_serial,
+            coalesce(nullif(b.area_id, ''), '0') as area_id, '' as machine_model
+     from marga.branches b
+     left join marga.companies c on c.id = b.company_id
+     where b.id = $1
+     limit 1`,
+    [branchId, deviceId || null]
+  );
+  return fallback.rows[0] || null;
+}
+
+async function createScheduleForPortalTicket({ user, ticket, body, machineStatusId, machineStatusLabel }) {
+  const branchId = Number(ticket.branchId || body.branchId || 0) || null;
+  const companyId = Number(ticket.companyId || body.companyId || 0) || null;
+  if (!branchId) throw new Error('Branch is required before creating a service schedule.');
+  const deviceId = Number(ticket.deviceId || body.deviceId || body.machineId || 0) || null;
+  const context = await buildPortalScheduleContext({ companyId, branchId, deviceId });
+  if (!context) throw new Error('Unable to resolve customer branch for service schedule.');
+
+  const nextId = await allocateNextScheduleLegacyId();
+  const slot = nextManilaServiceSlotParts();
+  const purpose = purposeForPortalTicket(ticket.category || body.category);
+  const description = cleanText(body.description || ticket.description || 'Customer portal service request');
+  const trouble = cleanText(body.trouble || body.category || ticket.category || 'Customer Portal Request');
+  const serialNumber = cleanText(context.display_serial || context.machine_serial || '');
+  const scheduleDoc = {
+    id: nextId,
+    source_module: 'customer_portal',
+    portal_ticket_id: Number(ticket.id || 0) || ticket.id,
+    portal_ticket_no: ticket.ticketNo || '',
+    company_id: Number(context.company_id || companyId || 0) || 0,
+    branch_id: Number(context.branch_id || branchId || 0) || 0,
+    company_name: cleanText(context.company_name || ''),
+    branch_name: cleanText(context.branch_name || ''),
+    area_id: Number(context.area_id || 0) || 0,
+    serial: Number(context.machine_id || deviceId || 0) || 0,
+    field_serial_selected: serialNumber,
+    machine_model: cleanText(context.machine_model || ''),
+    caller: cleanText(user?.name || ticket.requesterName || 'Customer Portal'),
+    phone_number: '',
+    purpose_id: purpose.id,
+    purpose: purpose.label,
+    task_datetime: slot.datetime,
+    original_sched: slot.datetime,
+    tech_id: 0,
+    trouble_id: 0,
+    trouble,
+    remarks: description,
+    status: 1,
+    field_work_machine_status_id: machineStatusId,
+    field_work_machine_status: machineStatusLabel,
+    isongoing: 0,
+    date_finished: '0000-00-00 00:00:00',
+    iscancel: 0,
+    iscancelled: 0,
+    scheduled: 1,
+    withcomplain: 0,
+    withrequest: 1,
+    super_urgent: String(ticket.priority || body.priority || '').toLowerCase() === 'critical' ? 1 : 0,
+    request_origin: 'customer_portal',
+    request_serial_number: serialNumber,
+    customer_request: description,
+    contractmain_id: Number(context.contract_id || 0) || 0,
+    active_customer_graph_source: 'active_contract_customer_graph',
+    from_mobileapp: 1,
+    from_customer_portal: 1,
+    bridge_updated_at: new Date().toISOString(),
+    bridge_updated_by: 0,
+    automove: 0,
+    empty_cart: 0,
+    order_cart: 0,
+    priority: 0,
+    user_id: 0,
+    pcname: 'CARE-PORTAL',
+    ipadd: '',
+    invoice_num: 0,
+    collectioninfo_id: 0,
+    returning_cart: 0,
+    userlog_id: 0,
+    closedby: 0,
+    amt_collected: 0,
+    from_other_source: 0,
+    invoice_count: 0,
+    commitment_date: '0000-00-00 00:00:00',
+    shutdown_date: '0000-00-00 00:00:00',
+    committed_by: '',
+    oldest_invoice_age: 0,
+    soa_status: 0,
+    willsettle: 0,
+    firebase_key: '',
+    iscancelleddate: '',
+    csr_status: 0,
+    csr_remarks: '',
+    meter_reading: 0,
+    tl_status: 0,
+    tl_remarks: '',
+    collocutor: '',
+    dev_remarks: ''
+  };
+
+  await patchFirestoreDocument('tbl_schedule', nextId, scheduleDoc);
+  return { id: nextId, taskDatetime: slot.datetime };
+}
 
 async function loadMachineStatuses() {
   if (machineStatusCache) return machineStatusCache;
@@ -1536,6 +1893,8 @@ async function listDevices(user) {
             coalesce(nullif(trim(coalesce(g.display_serial, '')), ''), nullif(trim(coalesce(g.machine_serial, '')), ''), 'N/A') as serial,
             ${machineModelSql('m')} as model,
             coalesce(m.status_id::text, g.machine_status_id::text, '') as status,
+            g.machine_status_id::text as "graphStatusId",
+            coalesce(attention.reasons, array[]::text[]) as "attentionReasons",
             case
               when g.machine_id is null then 'Machine assignment pending. Your service contract is active.'
               else coalesce(nullif(trim(coalesce(m.source_data->>'remarks','')), ''), '')
@@ -1551,20 +1910,69 @@ async function listDevices(user) {
             ) as "hasChangeUnitRequest"
      from api.active_customer_graph g
      left join marga.machines m on m.id = g.machine_id
+     left join lateral (
+       select array_agg(distinct reason order by reason) as reasons
+       from (
+         select case
+                  when lower(coalesce(t.category, '') || ' ' || coalesce(t.description, '')) like '%change%unit%' then 'Open change unit request'
+                  when lower(coalesce(t.category, '') || ' ' || coalesce(t.description, '')) like '%part%' then 'Open change parts request'
+                  when lower(coalesce(t.category, '') || ' ' || coalesce(t.description, '')) like '%toner%'
+                    or lower(coalesce(t.category, '') || ' ' || coalesce(t.description, '')) like '%ink%' then 'Open toner / ink request'
+                  else 'Open service request'
+                end as reason
+         from marga.portal_service_tickets t
+         where t.branch_id = g.branch_id
+           and (t.machine_id is null or t.machine_id = g.machine_id)
+           and lower(coalesce(t.status, '')) not in ('completed','closed','done','cancelled','canceled')
+
+         union all
+
+         select 'Open toner / ink request' as reason
+         from marga.portal_toner_requests r
+         where r.branch_id = g.branch_id
+           and (r.machine_id is null or r.machine_id = g.machine_id)
+           and lower(coalesce(r.status, '')) not in ('fulfilled','completed','closed','done','cancelled','canceled')
+
+         union all
+
+         select case
+                  when lower(coalesce(s.customer_request, '') || ' ' || coalesce(s.remarks, '')) like '%change%unit%' then 'Scheduled change unit'
+                  when lower(coalesce(s.customer_request, '') || ' ' || coalesce(s.remarks, '')) like '%part%' then 'Scheduled change parts'
+                  when coalesce(s.source_data->>'field_work_machine_status', '') <> '' then 'Machine status: ' || (s.source_data->>'field_work_machine_status')
+                  when coalesce(s.source_data->>'trouble', '') <> '' then 'Trouble: ' || (s.source_data->>'trouble')
+                  when s.purpose_id in ('3','4') then 'Scheduled toner / ink delivery'
+                  when s.purpose_id in ('5','9') then 'Scheduled service / repair'
+                  else 'Scheduled customer service'
+                end as reason
+         from marga.service_schedules s
+         where s.branch_id = g.branch_id
+           and (s.machine_id is null or s.machine_id = g.machine_id)
+           and s.purpose_id in ('3','4','5','9')
+           and s.date_finished is null
+           and coalesce(s.source_data->>'iscancel', '0') <> '1'
+           and lower(coalesce(s.status, '')) not in ('completed','done','cancelled','canceled')
+       ) reasons
+     ) attention on true
      where true ${scope.sql}
      order by ${activeGraphDeviceKeySql('g')}, lower(coalesce(g.branch_name, '')) nulls last, coalesce(g.display_serial, g.machine_serial, '') nulls last, g.contract_id desc
      limit 1000`,
     scope.params
   );
   return rows.map((row) => {
-    const hasSerial = Boolean(row.serial && row.serial !== 'N/A' && row.serial.trim() !== '');
-    let customerLabel = deriveCustomerStatus(hasSerial, row.status);
-    // Override to "For Replacement" if a CHANGE UNIT was formally requested
-    if (row.hasChangeUnitRequest && customerLabel === 'Active') customerLabel = 'For Replacement';
+    const graphStatusId = Number(row.graphStatusId || row.status || 0);
+    const machineStatusLabel = statusMap.get(graphStatusId) || (graphStatusId ? `Status ${graphStatusId}` : '');
+    const attentionReasons = Array.isArray(row.attentionReasons) ? row.attentionReasons.filter(Boolean) : [];
+    const customerLabel = attentionReasons.length ? 'Needs Attention' : 'Active';
+    const attentionReason = attentionReasons.join(', ');
     return {
       ...row,
       status: customerLabel,
-      pendingSetup: !hasSerial && !Number(row.status),
+      fleetStatus: customerLabel,
+      graphStatusId,
+      machineStatusLabel,
+      attentionReasons,
+      attentionReason,
+      pendingSetup: false,
       hasChangeUnitRequest: Boolean(row.hasChangeUnitRequest)
     };
   });
@@ -1796,15 +2204,35 @@ async function listTonerRequests(user) {
 
 async function listTickets(user) {
   const scope = portalScopeWhere(user, 't');
-  const { rows: portalRows } = await pool.query(
+  const { rows: portalRowsRaw } = await pool.query(
     `select t.id::text, t.ticket_no as "ticketNo", t.company_id as "companyId", t.branch_id as "branchId",
+            regexp_replace(coalesce(b.name, ''), '^~x+\\s*', '', 'i') as "branchName",
             t.machine_id as "deviceId", t.requester_user_id as "requesterUserId", t.category,
-            t.description, t.priority, t.status, t.created_at as "createdAt", t.updated_at as "updatedAt"
+            t.description, t.priority, t.status, t.created_at as "createdAt", t.updated_at as "updatedAt",
+            t.field_work_machine_status as "fieldWorkMachineStatus",
+            t.field_work_machine_status_id as "fieldWorkMachineStatusId",
+            t.assigned_staff_name as "assignedStaffName", t.assignment_status as "assignmentStatus",
+            t.route_status as "routeStatus", t.customer_is_next_destination as "customerIsNextDestination",
+            t.tracking_enabled as "trackingEnabled", t.live_eta_minutes as "liveEtaMinutes",
+            t.broad_visit_period as "broadVisitPeriod", t.confirmed_window_start as "confirmedWindowStart",
+            t.confirmed_window_end as "confirmedWindowEnd", t.on_the_way_at as "onTheWayAt",
+            t.arrived_at as "arrivedAt", t.service_started_at as "serviceStartedAt", t.completed_at as "completedAt",
+            t.technician_contact_enabled as "technicianContactEnabled", t.technician_chat_mode as "technicianChatMode",
+            t.communication_grace_period_ends_at as "communicationGracePeriodEndsAt", t.cancel_reason as "cancelReason",
+            t.schedule_legacy_id as "scheduleLegacyId", t.schedule_created_at as "scheduleCreatedAt",
+            coalesce(
+              nullif(s.source_data->>'task_datetime', ''),
+              nullif(s.source_data->>'original_sched', ''),
+              nullif(s.scheduled_date::text, '2000-12-31')
+            ) as "scheduledDate"
      from marga.portal_service_tickets t
+     left join marga.branches b on b.id = t.branch_id
+     left join marga.service_schedules s on s.legacy_id = t.schedule_legacy_id
      where true ${scope.sql}
      order by t.updated_at desc limit 250`,
     scope.params
   );
+  const portalRows = portalRowsRaw.map((t) => ({ ...t, customerStatus: computeCustomerFacingStatus(t) }));
   const graphScope = portalScopeWhere(user, 'g');
   const { rows: scheduleRows } = await pool.query(
     `with scoped_branches as (
@@ -1818,30 +2246,241 @@ async function listTickets(user) {
             s.branch_id as "branchId",
             s.machine_id as "deviceId",
             null as "requesterUserId",
-            'Service' as category,
+            case when s.purpose_id in ('3','4') then 'Toner / Ink' else 'Service' end as category,
             coalesce(nullif(s.customer_request, ''), nullif(s.remarks, ''), 'Service schedule') as description,
+            nullif(s.source_data->>'trouble', '') as trouble,
+            nullif(s.source_data->>'trouble_id', '') as "troubleId",
+            nullif(s.source_data->>'field_work_machine_status', '') as "fieldWorkMachineStatus",
+            nullif(s.source_data->>'field_work_machine_status_id', '') as "fieldWorkMachineStatusId",
             'Normal' as priority,
             'Open' as status,
-            s.scheduled_date::text as "createdAt",
-            coalesce(s.date_finished::text, s.scheduled_date::text) as "updatedAt"
+            s.created_at::text as "createdAt",
+            coalesce(
+              nullif(s.source_data->>'task_datetime', ''),
+              nullif(s.source_data->>'original_sched', ''),
+              nullif(s.scheduled_date::text, '2000-12-31')
+            ) as "scheduledDate",
+            coalesce(s.updated_at::text, s.scheduled_date::text) as "updatedAt",
+            regexp_replace(coalesce(b.name, ''), '^~x+\\s*', '', 'i') as "branchName"
      from marga.service_schedules s
      left join marga.branches b on b.id = s.branch_id
      where s.branch_id in (select branch_id from scoped_branches)
-       and s.purpose_id = '5'
+       and s.purpose_id in ('3','4','5','9')
        and s.date_finished is null
-       and coalesce(s.is_ongoing, false) is false
-       and s.scheduled_date >= current_date - interval '180 days'
-     order by s.scheduled_date desc, s.id desc
-     limit 150`,
+       and coalesce(s.source_data->>'iscancel', '0') <> '1'
+       and lower(coalesce(s.status, '')) not in ('completed','done','cancelled','canceled')
+       and coalesce(s.source_data->>'portal_ticket_id', '') = ''
+     order by s.created_at asc nulls last, s.scheduled_date asc nulls last, s.id desc
+     limit 250`,
     graphScope.params
   );
-  return [...portalRows, ...scheduleRows].slice(0, 250);
+  const scheduleRowsWithStatus = scheduleRows.map((t) => ({ ...t, customerStatus: computeCustomerFacingStatus(t) }));
+  return [...portalRows, ...scheduleRowsWithStatus].slice(0, 250);
+}
+
+async function getTicketDetail(user, ticketId) {
+  const scope = portalScopeWhere(user, 't');
+  const { rows } = await pool.query(
+    `select t.id::text, t.ticket_no as "ticketNo", t.company_id as "companyId", t.branch_id as "branchId",
+            regexp_replace(coalesce(b.name, ''), '^~x+\s*', '', 'i') as "branchName",
+            t.machine_id as "deviceId", t.requester_user_id as "requesterUserId", t.category,
+            t.description, t.priority, t.status, t.photo_url as "photoUrl",
+            t.field_work_machine_status as "fieldWorkMachineStatus",
+            t.field_work_machine_status_id as "fieldWorkMachineStatusId",
+            t.created_at as "createdAt", t.updated_at as "updatedAt",
+            t.assigned_staff_name as "assignedStaffName", t.assignment_status as "assignmentStatus",
+            t.route_status as "routeStatus", t.customer_is_next_destination as "customerIsNextDestination",
+            t.tracking_enabled as "trackingEnabled", t.staff_latitude as "staffLatitude",
+            t.staff_longitude as "staffLongitude", t.last_location_update as "lastLocationUpdate",
+            t.live_eta_minutes as "liveEtaMinutes", t.broad_visit_period as "broadVisitPeriod",
+            t.confirmed_window_start as "confirmedWindowStart", t.confirmed_window_end as "confirmedWindowEnd",
+            t.on_the_way_at as "onTheWayAt", t.arrived_at as "arrivedAt",
+            t.service_started_at as "serviceStartedAt", t.completed_at as "completedAt",
+            t.technician_contact_enabled as "technicianContactEnabled", t.technician_chat_mode as "technicianChatMode",
+            t.communication_grace_period_ends_at as "communicationGracePeriodEndsAt", t.cancel_reason as "cancelReason"
+     from marga.portal_service_tickets t
+     left join marga.branches b on b.id = t.branch_id
+     where t.id = $1 ${scope.sql.replace(/\$(\d+)/g, (_, n) => `$${Number(n) + 1}`)}
+     limit 1`,
+    [Number(ticketId), ...scope.params]
+  ).catch(() => ({ rows: [] }));
+  const ticket = rows[0];
+  if (!ticket) return null;
+  const includeInternal = isInternalUser(user);
+  const [events, messages] = await Promise.all([
+    listTicketEvents(ticket.id, { includeInternal }),
+    listTicketMessages(user, ticket.id, { includeInternal })
+  ]);
+  return { ...ticket, customerStatus: computeCustomerFacingStatus(ticket), events, messages };
+}
+
+// ── Ticket-linked messaging (spec §4, §25) ───────────────────────────────────
+// Separate from the permanent Marga Care top-bar channel. `channel` reflects the
+// mode at send time (shared_service_team vs assigned_technician_direct) so history
+// stays accurate even after the ticket moves to a different phase.
+async function listTicketMessages(user, ticketId, { includeInternal = false } = {}) {
+  const { rows } = await pool.query(
+    `select id::text, channel, sender_type as "senderType", sender_name as "senderName",
+            body, photo_url as "photoUrl", video_url as "videoUrl", created_at as "createdAt"
+     from marga.portal_ticket_messages
+     where ticket_id = $1 ${includeInternal ? '' : 'and visible_to_customer = true'}
+     order by created_at asc`,
+    [ticketId]
+  );
+  return rows;
+}
+
+async function sendTicketMessage(user, ticketId, body, photoFile = null) {
+  const ticket = await getTicketDetail(user, ticketId);
+  if (!ticket) throw Object.assign(new Error('Ticket not found or not accessible.'), { status: 404 });
+
+  const mode = ticket.technicianChatMode || 'shared_service_team';
+  if (mode === 'closed') throw Object.assign(new Error('This conversation is closed.'), { status: 403 });
+  if (mode === 'read_only' && !isInternalUser(user)) throw Object.assign(new Error('This conversation is now read-only.'), { status: 403 });
+
+  const senderType = isInternalUser(user) ? 'staff' : 'customer';
+  const photoUrl = photoFile ? (await saveUploadedFile(photoFile, 'ticket-message').catch(() => null)) : null;
+  const { rows } = await pool.query(
+    `insert into marga.portal_ticket_messages (ticket_id, channel, sender_type, sender_user_id, sender_name, body, photo_url)
+     values ($1,$2,$3,$4,$5,$6,$7)
+     returning id::text, channel, sender_type as "senderType", sender_name as "senderName",
+       body, photo_url as "photoUrl", created_at as "createdAt"`,
+    [Number(ticketId), mode, senderType, user.id, user.name, String(body || ''), photoUrl]
+  );
+  await pool.query(`update marga.portal_service_tickets set updated_at = now() where id = $1`, [Number(ticketId)]);
+  await auditLog({ userId: user.id, action: 'ticket_message_sent', entityType: 'portal_service_ticket', entityId: String(ticketId), metadata: { channel: mode } });
+  return rows[0];
+}
+
+// ── Internal-only: assignment, status transitions, live location (spec §5, §12-§20, §30) ──
+// These are called from Marga-internal tooling (dispatcher UI / tech app), never directly
+// by the customer portal. Every call is required to write a timeline event.
+async function assignTicketStaff(user, ticketId, { staffId, staffName }) {
+  requireInternalUser(user);
+  const assignmentId = `AS-${Date.now()}`;
+  await pool.query(
+    `update marga.portal_service_tickets
+     set assigned_staff_id = $2, assigned_staff_name = $3, assignment_id = $4,
+         assignment_status = 'assigned', route_status = 'assigned', updated_at = now()
+     where id = $1`,
+    [Number(ticketId), staffId, staffName, assignmentId]
+  );
+  await insertTicketEvent(Number(ticketId), {
+    status: 'assigned',
+    customerVisibleNote: `${staffName} is now assigned to this request.`,
+    staffId, staffName, assignmentId, createdByUserId: user.id
+  });
+  await auditLog({ userId: user.id, action: 'ticket_assigned', entityType: 'portal_service_ticket', entityId: String(ticketId), metadata: { staffId, staffName } });
+  return getTicketDetail(user, ticketId);
+}
+
+// Allowed route_status transitions and the side effects each one applies, per spec:
+// tracking only turns on for on_the_way; technician direct contact only for
+// on_the_way/arrived/in_progress/waiting_customer (+ configurable grace period after completed).
+const STATUS_SIDE_EFFECTS = {
+  under_review: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'marga_support_only' },
+  assigned: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'shared_service_team' },
+  queued: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'shared_service_team' },
+  included_in_route: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'shared_service_team' },
+  next_destination: { trackingEnabled: false, customerIsNextDestination: true, technicianChatMode: 'shared_service_team' },
+  on_the_way: { trackingEnabled: true, customerIsNextDestination: true, technicianContactEnabled: true, technicianChatMode: 'assigned_technician_direct', stampField: 'on_the_way_at' },
+  arrived: { trackingEnabled: false, technicianContactEnabled: true, technicianChatMode: 'assigned_technician_direct', stampField: 'arrived_at' },
+  in_progress: { trackingEnabled: false, technicianContactEnabled: true, technicianChatMode: 'assigned_technician_direct', stampField: 'service_started_at' },
+  waiting_customer: { trackingEnabled: false, technicianContactEnabled: true, technicianChatMode: 'assigned_technician_direct' },
+  waiting_parts: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'shared_service_team' },
+  for_follow_up: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'shared_service_team' },
+  completed: { trackingEnabled: false, stampField: 'completed_at', gracePeriodHours: 2 },
+  cancelled: { trackingEnabled: false, technicianContactEnabled: false, technicianChatMode: 'closed' }
+};
+
+async function updateTicketStatus(user, ticketId, { routeStatus, customerVisibleNote, internalNote, reason, liveEtaMinutes, broadVisitPeriod, cancelReason }) {
+  requireInternalUser(user);
+  if (!TICKET_ROUTE_STATUSES.includes(routeStatus)) {
+    throw Object.assign(new Error('Invalid status.'), { status: 400 });
+  }
+  const effects = STATUS_SIDE_EFFECTS[routeStatus] || {};
+  const sets = ['route_status = $2', 'updated_at = now()'];
+  const params = [Number(ticketId), routeStatus];
+  let i = params.length;
+
+  if ('trackingEnabled' in effects) { sets.push(`tracking_enabled = $${++i}`); params.push(effects.trackingEnabled); }
+  if ('customerIsNextDestination' in effects) { sets.push(`customer_is_next_destination = $${++i}`); params.push(effects.customerIsNextDestination); }
+  if ('technicianContactEnabled' in effects) { sets.push(`technician_contact_enabled = $${++i}`); params.push(effects.technicianContactEnabled); }
+  if (effects.technicianChatMode) { sets.push(`technician_chat_mode = $${++i}`); params.push(effects.technicianChatMode); }
+  if (effects.stampField) { sets.push(`${effects.stampField} = now()`); }
+  if (effects.gracePeriodHours) { sets.push(`communication_grace_period_ends_at = now() + interval '${Number(effects.gracePeriodHours)} hours'`); }
+  if (liveEtaMinutes !== undefined) { sets.push(`live_eta_minutes = $${++i}`); params.push(liveEtaMinutes); }
+  if (broadVisitPeriod !== undefined) { sets.push(`broad_visit_period = $${++i}`); params.push(broadVisitPeriod); }
+  if (routeStatus === 'cancelled' && cancelReason) { sets.push(`cancel_reason = $${++i}`); params.push(cancelReason); }
+
+  await pool.query(`update marga.portal_service_tickets set ${sets.join(', ')} where id = $1`, params);
+  await insertTicketEvent(Number(ticketId), {
+    status: routeStatus,
+    customerVisibleNote: customerVisibleNote || '',
+    internalNote: internalNote || '',
+    reason: reason || null,
+    trackingEnabled: 'trackingEnabled' in effects ? effects.trackingEnabled : null,
+    createdByUserId: user.id
+  });
+  await auditLog({ userId: user.id, action: 'ticket_status_changed', entityType: 'portal_service_ticket', entityId: String(ticketId), metadata: { routeStatus } });
+  return getTicketDetail(user, ticketId);
+}
+
+// Field-staff location ping while status = on_the_way. Auto-disables tracking on any
+// condition from spec §30 (not on_the_way, stale ping, no assignment, etc.).
+async function updateTicketLocation(user, ticketId, { latitude, longitude }) {
+  requireInternalUser(user);
+  const { rows } = await pool.query(
+    `update marga.portal_service_tickets
+     set staff_latitude = $2, staff_longitude = $3, last_location_update = now()
+     where id = $1 and route_status = 'on_the_way' and tracking_enabled = true
+     returning id::text`,
+    [Number(ticketId), latitude, longitude]
+  );
+  if (!rows.length) throw Object.assign(new Error('Tracking is not active for this ticket.'), { status: 409 });
+  return { ok: true };
 }
 
 async function listInvoices(user) {
   const scope = portalScopeWhere(user, 'i');
   const { rows } = await pool.query(
-    `select i.id::text, i.company_id as "companyId", i.branch_id as "branchId",
+    `with scoped_invoices as (
+       select i.id, i.company_id, i.branch_id, i.invoice_no, i.invoice_date,
+              i.billing_year, i.billing_month, coalesce(i.total_amount, 0) as total_amount
+       from marga.billing_invoices i
+       where true ${scope.sql}
+         and nullif(trim(coalesce(i.invoice_no, '')), '') is not null
+         and coalesce(i.total_amount, 0) > 0
+     ),
+     payments_by_invoice_id as (
+       select p.invoice_id,
+              max(p.balance_amount) filter (where p.balance_amount is not null) as recorded_balance,
+              coalesce(sum(p.payment_amount), 0) as paid_amount
+       from marga.payments p
+       join scoped_invoices i on i.id = p.invoice_id
+       group by p.invoice_id
+     ),
+     payments_by_invoice_no as (
+       select i.id as invoice_id,
+              max(p.balance_amount) filter (where p.balance_amount is not null) as recorded_balance,
+              coalesce(sum(p.payment_amount), 0) as paid_amount
+       from scoped_invoices i
+       join marga.payments p on p.invoice_no = i.invoice_no
+       where p.invoice_id is null
+       group by i.id
+     ),
+     invoice_balances as (
+       select i.*,
+              case
+                when coalesce(pid.recorded_balance, pno.recorded_balance) is not null
+                then greatest(coalesce(pid.recorded_balance, pno.recorded_balance), 0)
+                else greatest(i.total_amount - coalesce(pid.paid_amount, 0) - coalesce(pno.paid_amount, 0), 0)
+              end as unpaid_balance
+       from scoped_invoices i
+       left join payments_by_invoice_id pid on pid.invoice_id = i.id
+       left join payments_by_invoice_no pno on pno.invoice_id = i.id
+     )
+     select i.id::text, i.company_id as "companyId", i.branch_id as "branchId",
             coalesce(nullif(b.name,''), '') as "branchName",
             i.invoice_no as "invoiceNo",
             case
@@ -1853,16 +2492,14 @@ async function listInvoices(user) {
               then to_char(i.invoice_date, 'YYYY-MM')
               else ''
             end as period,
-            i.total_amount as amount,
+            i.unpaid_balance as amount,
+            i.total_amount as "originalAmount",
             i.invoice_date as "dueDate",
-            case
-              when i.status is null or i.status = '' or i.status = '0' then 'Unpaid'
-              else i.status
-            end as status
-     from marga.billing_invoices i
+            'Unpaid' as status
+     from invoice_balances i
      left join marga.branches b on b.id = i.branch_id
-     where true ${scope.sql}
-     order by i.invoice_date desc nulls last, i.invoice_no, b.name limit 500`,
+     where i.unpaid_balance > 0.01
+     order by i.invoice_date desc nulls last, i.invoice_no, b.name`,
     scope.params
   );
   return rows;
@@ -1904,9 +2541,7 @@ async function listSigners(user) {
 }
 
 async function createTonerRequest(user, body, photoFile = null) {
-  const internal = user.role === 'marga_admin' || user.role === 'marga_staff';
-  const branchId = internal ? (Number(body.branchId || user.branchId || 0) || null) : (user.branchId || null);
-  const companyId = internal ? (Number(body.companyId || user.companyId || 0) || null) : (user.companyId || null);
+  const { branchId, companyId } = await resolvePortalRequestScope(user, body);
   const deviceId = Number(body.deviceId || body.machineId || 0) || null;
   const photoUrl = photoFile ? (await saveUploadedFile(photoFile, 'toner').catch(() => null)) : null;
   const { rows } = await pool.query(
@@ -1934,33 +2569,254 @@ async function createTonerRequest(user, body, photoFile = null) {
 }
 
 async function createTicket(user, body, photoFile = null) {
-  const internal = user.role === 'marga_admin' || user.role === 'marga_staff';
-  const branchId = internal ? (Number(body.branchId || user.branchId || 0) || null) : (user.branchId || null);
-  const companyId = internal ? (Number(body.companyId || user.companyId || 0) || null) : (user.companyId || null);
+  const { branchId, companyId } = await resolvePortalRequestScope(user, body);
   const deviceId = Number(body.deviceId || body.machineId || 0) || null;
   const ticketNo = `CARE-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomInt(1000, 9999)}`;
   const photoUrl = photoFile ? (await saveUploadedFile(photoFile, 'ticket').catch(() => null)) : null;
+  const machineStatusId = Number(body.fieldWorkMachineStatusId || body.machineStatusId || 0) || null;
+  const machineStatusLabel = cleanText(body.fieldWorkMachineStatus || machineWorkStatusLabel(machineStatusId));
+  if (!machineStatusId || !machineStatusLabel || machineStatusId < 1 || machineStatusId > 4) {
+    const error = new Error('Field Machine Status is required.');
+    error.statusCode = 400;
+    throw error;
+  }
   const { rows } = await pool.query(
-    `insert into marga.portal_service_tickets (ticket_no, company_id, branch_id, machine_id, requester_user_id, requester_name, category, description, priority, photo_url)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `insert into marga.portal_service_tickets (ticket_no, company_id, branch_id, machine_id, requester_user_id, requester_name, category, description, priority, photo_url, field_work_machine_status_id, field_work_machine_status)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      returning id::text, ticket_no as "ticketNo", company_id as "companyId", branch_id as "branchId",
        machine_id as "deviceId", requester_user_id as "requesterUserId", category, description, priority, status,
+       field_work_machine_status as "fieldWorkMachineStatus", field_work_machine_status_id as "fieldWorkMachineStatusId",
+       schedule_legacy_id as "scheduleLegacyId", schedule_created_at as "scheduleCreatedAt",
        photo_url as "photoUrl", created_at as "createdAt", updated_at as "updatedAt"`,
-    [ticketNo, companyId, branchId, deviceId, user.id, user.name, String(body.category || 'Service'), String(body.description || ''), String(body.priority || 'Normal'), photoUrl]
-  ).catch(async () => {
-    // Fallback if photo_url column does not exist yet
-    return pool.query(
-      `insert into marga.portal_service_tickets (ticket_no, company_id, branch_id, machine_id, requester_user_id, requester_name, category, description, priority)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       returning id::text, ticket_no as "ticketNo", company_id as "companyId", branch_id as "branchId",
-         machine_id as "deviceId", requester_user_id as "requesterUserId", category, description, priority, status,
-         created_at as "createdAt", updated_at as "updatedAt"`,
-      [ticketNo, companyId, branchId, deviceId, user.id, user.name, String(body.category || 'Service'), String(body.description || ''), String(body.priority || 'Normal')]
-    );
-  });
+    [ticketNo, companyId, branchId, deviceId, user.id, user.name, String(body.category || 'Service'), String(body.description || ''), String(body.priority || 'Normal'), photoUrl, machineStatusId, machineStatusLabel]
+  );
   const result = rows[0] || {};
+  try {
+    const schedule = await createScheduleForPortalTicket({
+      user,
+      ticket: result,
+      body,
+      machineStatusId,
+      machineStatusLabel
+    });
+    await pool.query(
+      `update marga.portal_service_tickets
+       set schedule_legacy_id = $2, schedule_created_at = now(), route_status = 'queued', updated_at = now()
+       where id = $1`,
+      [Number(result.id), String(schedule.id)]
+    );
+    result.scheduleLegacyId = String(schedule.id);
+    result.scheduleCreatedAt = new Date().toISOString();
+    result.scheduledDate = schedule.taskDatetime;
+  } catch (error) {
+    await pool.query(
+      `delete from marga.portal_service_tickets where id = $1`,
+      [Number(result.id)]
+    ).catch(() => {});
+    throw error;
+  }
   await auditLog({ userId: user.id, action: 'ticket_created', entityType: 'portal_service_ticket', entityId: result.id, metadata: { branchId, companyId, deviceId, hasPhoto: !!photoUrl } });
+  if (result.id) {
+    await insertTicketEvent(result.id, {
+      status: 'submitted',
+      customerVisibleNote: 'We are reviewing your service request.',
+      createdByUserId: user.id
+    }).catch(() => {});
+  }
   return result;
+}
+
+// ── Ticket timeline / status-event log (spec §10, §26) ──────────────────────
+// Every status change is recorded here. Internal notes never reach the customer
+// unless explicitly marked customer_visible.
+async function insertTicketEvent(ticketId, {
+  status,
+  customerVisibleNote = '',
+  internalNote = '',
+  reason = null,
+  nextAction = null,
+  staffId = null,
+  staffName = null,
+  staffLat = null,
+  staffLng = null,
+  trackingEnabled = null,
+  assignmentId = null,
+  customerVisible = true,
+  createdByUserId = null
+}) {
+  await pool.query(
+    `insert into marga.portal_ticket_events
+      (ticket_id, status, customer_visible_note, internal_note, reason, next_action,
+       responsible_staff_id, responsible_staff_name, staff_latitude, staff_longitude,
+       tracking_enabled, assignment_id, customer_visible, created_by_user_id)
+     values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+    [ticketId, status, customerVisibleNote, internalNote, reason, nextAction, staffId, staffName,
+     staffLat, staffLng, trackingEnabled, assignmentId, customerVisible, createdByUserId]
+  );
+}
+
+async function listTicketEvents(ticketId, { includeInternal = false } = {}) {
+  const { rows } = await pool.query(
+    `select id::text, status, customer_visible_note as "customerVisibleNote",
+            ${includeInternal ? 'internal_note as "internalNote", reason, next_action as "nextAction",' : ''}
+            responsible_staff_name as "staffName", customer_visible as "customerVisible",
+            created_at as "createdAt"
+     from marga.portal_ticket_events
+     where ticket_id = $1 ${includeInternal ? '' : 'and customer_visible = true'}
+     order by created_at asc`,
+    [ticketId]
+  );
+  return rows;
+}
+
+// ── Customer-facing status derivation (spec §5, §10-§20) ────────────────────
+// route_status is the internal/dispatch-facing state. This function is the single
+// place that turns it into what the customer is allowed to see: label, supporting
+// copy, which communication channels are enabled, and whether tracking may show.
+// Never let the frontend infer these rules independently from raw status text.
+function computeCustomerFacingStatus(ticket) {
+  const routeStatus = ticket.routeStatus || LEGACY_STATUS_TO_ROUTE_STATUS[String(ticket.status || '').toLowerCase()] || 'submitted';
+  const graceExpired = ticket.communicationGracePeriodEndsAt
+    ? new Date(ticket.communicationGracePeriodEndsAt).getTime() < Date.now()
+    : false;
+
+  const base = {
+    routeStatus,
+    label: 'Request Received',
+    message: 'We are reviewing your service request.',
+    showArrivalNotConfirmed: false,
+    showBroadVisitPeriod: false,
+    broadVisitPeriod: ticket.broadVisitPeriod || null,
+    showLiveEta: false,
+    liveEtaMinutes: null,
+    showTracking: false,
+    showAssignedStaffProfile: false,
+    assignedStaffName: ticket.assignedStaffName || null,
+    ticketMessageLabel: 'Message Service Team',
+    ticketMessageAvailable: false,
+    chatTechnicianEnabled: false,
+    callTechnicianEnabled: false,
+    callMargaCareEnabled: true,
+    chatMargaCareEnabled: true,
+    progressSteps: ['Received']
+  };
+
+  switch (routeStatus) {
+    case 'submitted':
+    case 'under_review':
+      return { ...base, label: 'Request Received', message: 'We are reviewing your service request. We will update you once it has been assigned or included in a field route.' };
+
+    case 'assigned':
+      return {
+        ...base, label: 'Assigned to Service Team', message: 'Arrival time is not yet confirmed.',
+        showAssignedStaffProfile: !!ticket.assignedStaffName,
+        ticketMessageAvailable: true,
+        progressSteps: ['Received', 'Assigned']
+      };
+
+    case 'queued':
+      return {
+        ...base, label: 'Assigned to Service Team', message: 'Messages are attached to this service request. The assigned team will respond when available.',
+        showAssignedStaffProfile: !!ticket.assignedStaffName,
+        ticketMessageAvailable: true,
+        progressSteps: ['Received', 'Assigned', 'Queued']
+      };
+
+    case 'included_in_route':
+      return {
+        ...base, label: 'Scheduled for Today', message: 'Your request is included in today\u2019s service route. Exact arrival time is not yet available. We\u2019ll notify you when your assigned field staff is approaching.',
+        showArrivalNotConfirmed: !ticket.confirmedWindowStart,
+        showBroadVisitPeriod: !!ticket.broadVisitPeriod,
+        showAssignedStaffProfile: !!ticket.assignedStaffName,
+        ticketMessageAvailable: true,
+        progressSteps: ['Received', 'Assigned', 'Queued']
+      };
+
+    case 'next_destination':
+      return {
+        ...base, label: 'You Are the Next Destination', message: 'Your assigned field staff will travel to your location next. We\u2019ll notify you as soon as the trip begins.',
+        showAssignedStaffProfile: !!ticket.assignedStaffName,
+        ticketMessageAvailable: true,
+        chatTechnicianEnabled: !!ticket.technicianContactEnabled,
+        progressSteps: ['Received', 'Assigned', 'Queued']
+      };
+
+    case 'on_the_way':
+      return {
+        ...base, label: 'Technician On the Way', message: 'You are the technician\u2019s next stop.',
+        showLiveEta: true, liveEtaMinutes: ticket.liveEtaMinutes ?? null,
+        showTracking: !!ticket.trackingEnabled,
+        showAssignedStaffProfile: true,
+        ticketMessageLabel: 'Chat Assigned Technician',
+        ticketMessageAvailable: true,
+        chatTechnicianEnabled: true, callTechnicianEnabled: true,
+        progressSteps: ['Received', 'Assigned', 'On the Way']
+      };
+
+    case 'arrived':
+      return {
+        ...base, label: 'Technician Has Arrived', message: ticket.arrivedAt ? `Arrival confirmed at ${new Date(ticket.arrivedAt).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}.` : 'Your technician has arrived.',
+        showAssignedStaffProfile: true,
+        ticketMessageLabel: 'Chat Assigned Technician', ticketMessageAvailable: true,
+        chatTechnicianEnabled: true, callTechnicianEnabled: true,
+        progressSteps: ['Received', 'Assigned', 'On the Way', 'Arrived']
+      };
+
+    case 'in_progress':
+      return {
+        ...base, label: 'Service in Progress', message: ticket.serviceStartedAt ? `Started at ${new Date(ticket.serviceStartedAt).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}.` : 'Your technician is working on this request.',
+        showAssignedStaffProfile: true,
+        ticketMessageLabel: 'Chat Assigned Technician', ticketMessageAvailable: true,
+        chatTechnicianEnabled: true, callTechnicianEnabled: true,
+        progressSteps: ['Received', 'Assigned', 'On the Way', 'Arrived', 'In Progress']
+      };
+
+    case 'waiting_customer':
+      return {
+        ...base, label: 'Waiting for Customer Access', message: 'Our technician is waiting for access to the machine or service area.',
+        showAssignedStaffProfile: true,
+        ticketMessageLabel: 'Chat Assigned Technician', ticketMessageAvailable: true,
+        chatTechnicianEnabled: true, callTechnicianEnabled: true,
+        progressSteps: ['Received', 'Assigned', 'On the Way', 'Arrived', 'In Progress']
+      };
+
+    case 'waiting_parts':
+      return {
+        ...base, label: 'Waiting for Parts', message: 'A required part is being prepared. We\u2019ll notify you when the follow-up visit is scheduled.',
+        showAssignedStaffProfile: !!ticket.assignedStaffName,
+        ticketMessageAvailable: true,
+        callTechnicianEnabled: !!ticket.technicianContactEnabled,
+        progressSteps: ['Received', 'Assigned', 'On the Way', 'Arrived', 'In Progress']
+      };
+
+    case 'for_follow_up':
+      return {
+        ...base, label: 'Follow-up Scheduled', message: 'A follow-up visit is being arranged for this request.',
+        ticketMessageAvailable: true,
+        progressSteps: ['Received', 'Assigned', 'Completed (Follow-up Pending)']
+      };
+
+    case 'completed':
+      return {
+        ...base, label: 'Service Completed', message: ticket.completedAt ? `Completed at ${new Date(ticket.completedAt).toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}.` : 'This request has been completed.',
+        showAssignedStaffProfile: true,
+        ticketMessageLabel: graceExpired ? 'Message Service Team' : 'Chat Assigned Technician',
+        ticketMessageAvailable: true,
+        chatTechnicianEnabled: !graceExpired,
+        callTechnicianEnabled: !graceExpired,
+        progressSteps: ['Received', 'Assigned', 'On the Way', 'Arrived', 'In Progress', 'Completed']
+      };
+
+    case 'cancelled':
+      return {
+        ...base, label: 'Request Cancelled', message: ticket.cancelReason || 'This service request was cancelled.',
+        chatTechnicianEnabled: false, callTechnicianEnabled: false,
+        progressSteps: ['Received', 'Cancelled']
+      };
+
+    default:
+      return base;
+  }
 }
 
 // Get per-branch service history from marga.service_schedules (relational, clean typed dates).
@@ -2085,31 +2941,116 @@ async function listServiceHistory(user) {
 
 async function summary(user) {
   const graphScope = portalScopeWhere(user, 'g');
+  const invoiceScope = portalScopeWhere(user, 'i');
 
-  const [devices, tickets, toner, invoices, serviceHistory, fleetData] = await Promise.all([
+  const [devices, tickets, toner, billingSummaryData, serviceHistory, fleetData] = await Promise.all([
     listDevices(user),
     listTickets(user),
     listTonerRequests(user),
-    listInvoices(user),
+    pool.query(`
+      with scoped_invoices as (
+        select i.id, i.invoice_no, i.invoice_date, coalesce(i.total_amount, 0) as total_amount
+        from marga.billing_invoices i
+        where true ${invoiceScope.sql}
+          and nullif(trim(coalesce(i.invoice_no, '')), '') is not null
+          and coalesce(i.total_amount, 0) > 0
+      ),
+      payments_by_invoice_id as (
+        select p.invoice_id,
+               max(p.balance_amount) filter (where p.balance_amount is not null) as recorded_balance,
+               coalesce(sum(p.payment_amount), 0) as paid_amount
+        from marga.payments p
+        join scoped_invoices i on i.id = p.invoice_id
+        group by p.invoice_id
+      ),
+      payments_by_invoice_no as (
+        select i.id as invoice_id,
+               max(p.balance_amount) filter (where p.balance_amount is not null) as recorded_balance,
+               coalesce(sum(p.payment_amount), 0) as paid_amount
+        from scoped_invoices i
+        join marga.payments p on p.invoice_no = i.invoice_no
+        where p.invoice_id is null
+        group by i.id
+      ),
+      invoice_balances as (
+        select i.id,
+               i.invoice_date,
+               case
+                 when coalesce(pid.recorded_balance, pno.recorded_balance) is not null
+                 then greatest(coalesce(pid.recorded_balance, pno.recorded_balance), 0)
+                 else greatest(i.total_amount - coalesce(pid.paid_amount, 0) - coalesce(pno.paid_amount, 0), 0)
+               end as unpaid_balance
+        from scoped_invoices i
+        left join payments_by_invoice_id pid on pid.invoice_id = i.id
+        left join payments_by_invoice_no pno on pno.invoice_id = i.id
+      )
+      select count(*) filter (where unpaid_balance > 0.01)::int as unpaid_invoices,
+             coalesce(sum(unpaid_balance) filter (where unpaid_balance > 0.01), 0)::numeric as unpaid_amount,
+             min(invoice_date) filter (where unpaid_balance > 0.01) as next_billing_due
+      from invoice_balances
+    `, invoiceScope.params),
     listServiceHistory(user).catch(() => ({ summary: null })),
-    // Real uptime: open portal tickets + machines with no serial (Needs Attention)
+    // Real fleet health: customer-safe "printing normally" means active graph status DELIVERED.
     pool.query(`
       with scoped as (
         select distinct g.branch_id, g.branch_legacy_id
         from api.active_customer_graph g
         where true ${graphScope.sql}
       ),
-      total_machines as (
-        select count(*) as total
+      fleet_devices as (
+        select distinct on (${activeGraphDeviceKeySql('g')})
+               ${activeGraphDeviceKeySql('g')} as device_key,
+               g.branch_id,
+               g.machine_id,
+               g.machine_status_id::text as machine_status_id,
+               coalesce(nullif(trim(coalesce(g.display_serial, '')), ''), nullif(trim(coalesce(g.machine_serial, '')), '')) as serial
         from api.active_customer_graph g
         where true ${graphScope.sql}
+        order by ${activeGraphDeviceKeySql('g')}, lower(coalesce(g.branch_name, '')) nulls last, coalesce(g.display_serial, g.machine_serial, '') nulls last, g.contract_id desc
       ),
-      no_serial_machines as (
-        select count(*) as cnt
-        from api.active_customer_graph g
+      open_customer_machine_issues as (
+        select distinct fd.device_key
+        from fleet_devices fd
+        join marga.service_schedules s
+          on s.branch_id = fd.branch_id
+         and (s.machine_id is null or s.machine_id = fd.machine_id)
+        where s.purpose_id in ('3','4','5','9')
+          and s.date_finished is null
+          and coalesce(s.source_data->>'iscancel', '0') <> '1'
+          and lower(coalesce(s.status, '')) not in ('completed','done','cancelled','canceled')
+          and (
+            case
+              when coalesce(s.source_data->>'field_work_machine_status_id', '') ~ '^[0-9]+$'
+              then (s.source_data->>'field_work_machine_status_id')::int between 2 and 4
+              else false
+            end
+            or lower(coalesce(s.source_data->>'field_work_machine_status', '')) ~ '(print problem|down|no print|best mode)'
+          )
+
+        union
+
+        select distinct ${activeGraphDeviceKeySql('g')} as device_key
+        from marga.portal_service_tickets t
+        join api.active_customer_graph g
+          on g.branch_id = t.branch_id
+         and (t.machine_id is null or t.machine_id = g.machine_id)
         where true ${graphScope.sql}
-          and (g.machine_serial is null or g.machine_serial = '')
-          and g.machine_status_id is null
+          and lower(coalesce(t.status,'')) not in ('completed','closed','done','cancelled','canceled')
+          and t.field_work_machine_status_id between 2 and 4
+      ),
+      fleet_status as (
+        select count(*) as total,
+               count(*) filter (
+                 where machine_status_id = '3'
+                   and serial is not null
+                   and issue.device_key is null
+               ) as printing_normally,
+               count(*) filter (
+                 where serial is null
+               ) as missing_serial,
+               count(distinct issue.device_key) as customer_issue_machines
+        from fleet_devices fd
+        left join open_customer_machine_issues issue on issue.device_key = fd.device_key
       ),
       open_ticket_branches as (
         select count(distinct t.branch_id) as cnt
@@ -2117,24 +3058,34 @@ async function summary(user) {
         join scoped s on s.branch_id = t.branch_id
         where lower(coalesce(t.status,'')) not in ('completed','closed','done','cancelled','canceled')
       ),
+      unlinked_portal_tickets as (
+        select count(*) as cnt
+        from marga.portal_service_tickets t
+        join scoped s on s.branch_id = t.branch_id
+        where lower(coalesce(t.status,'')) not in ('completed','closed','done','cancelled','canceled')
+          and nullif(trim(coalesce(t.schedule_legacy_id, '')), '') is null
+      ),
       open_schedules as (
         select
-          -- Truly open = status='0' AND no date_finished
-          -- status='1' means completed by tech in field app
+          -- Customer-facing open work is unfinished by completion date. Numeric
+          -- schedule status is not reliable for old CSR-created schedules.
           count(*) filter (
             where s.purpose_id in ('5','9')
             and s.date_finished is null
-            and s.status not in ('1','completed','done','cancelled','canceled','2','3')
+            and coalesce(s.source_data->>'iscancel', '0') <> '1'
+            and lower(coalesce(s.status, '')) not in ('completed','done','cancelled','canceled')
           ) as service_open,
           count(*) filter (
             where s.purpose_id in ('3','4')
             and s.date_finished is null
-            and s.status not in ('1','completed','done','cancelled','canceled','2','3')
+            and coalesce(s.source_data->>'iscancel', '0') <> '1'
+            and lower(coalesce(s.status, '')) not in ('completed','done','cancelled','canceled')
           ) as toner_open,
           count(*) filter (
             where s.purpose_id in ('5','9')
             and s.date_finished is null
-            and s.status not in ('1','completed','done','cancelled','canceled','2','3')
+            and coalesce(s.source_data->>'iscancel', '0') <> '1'
+            and lower(coalesce(s.status, '')) not in ('completed','done','cancelled','canceled')
             and s.scheduled_date = current_date
           ) as service_today
         from marga.service_schedules s
@@ -2142,51 +3093,50 @@ async function summary(user) {
         where coalesce(s.status,'') not in ('cancelled','canceled')
       )
       select
-        (select total from total_machines)::int as total_machines,
-        (select cnt from no_serial_machines)::int as attention_machines,
+        (select total from fleet_status)::int as total_machines,
+        (select printing_normally from fleet_status)::int as printing_normally,
+        (select missing_serial from fleet_status)::int as missing_serial_machines,
+        (select customer_issue_machines from fleet_status)::int as customer_issue_machines,
         (select cnt from open_ticket_branches)::int as open_ticket_branches,
+        (select cnt from unlinked_portal_tickets)::int as unlinked_portal_open,
         (select service_open from open_schedules)::int as service_open,
         (select toner_open from open_schedules)::int as toner_open,
         (select service_today from open_schedules)::int as service_today
     `, graphScope.params)
   ]);
 
-  const unpaid = invoices.filter((invoice) => String(invoice.status || '').toLowerCase() !== 'paid');
-
   // fleet must be declared BEFORE using it
   const fleet = fleetData.rows[0] || {};
-  const totalMachines      = Number(fleet.total_machines       || devices.length);
-  const attentionCount     = Number(fleet.attention_machines   || 0);
+  const billingSummary = billingSummaryData.rows[0] || {};
+  const totalMachines      = devices.length || Number(fleet.total_machines || 0);
+  const affectedMachines   = Number(fleet.customer_issue_machines || 0);
+  const printingNormally   = Number(fleet.printing_normally ?? Math.max(0, totalMachines - affectedMachines));
+  const statusAttention    = affectedMachines;
+  const missingSerialCount = Number(fleet.missing_serial_machines || 0);
   const openTicketBranches = Number(fleet.open_ticket_branches || 0);
-  const affectedMachines   = Math.min(totalMachines, attentionCount + openTicketBranches);
-  const printingNormally   = Math.max(0, totalMachines - affectedMachines);
   const uptimePct          = totalMachines > 0 ? Math.round((printingNormally / totalMachines) * 100) : 100;
   const serviceOpen        = Number(fleet.service_open  || 0);
   const tonerOpen          = Number(fleet.toner_open    || 0);
   const serviceToday       = Number(fleet.service_today || 0);
 
-  // Open tickets = portal tickets + truly open field schedules
-  const portalOpenTickets = tickets.filter((ticket) => {
-    const status = String(ticket.status || '').toLowerCase();
-    return !['completed', 'closed', 'done', 'cancelled', 'canceled'].includes(status);
-  }).length;
-  const openTickets = portalOpenTickets + serviceOpen;
+  // Open tickets = real unfinished schedules plus any older portal-only tickets not yet linked.
+  const portalOpenTickets = Number(fleet.unlinked_portal_open || 0);
+  const openTickets = portalOpenTickets + serviceOpen + tonerOpen;
   const pendingToner = toner.filter((request) => {
     const status = String(request.status || '').toLowerCase();
     return ['pending', 'requested', 'open', 'assigned'].includes(status);
   }).length;
-  const nextBillingDue = unpaid
-    .map((i) => cleanText(i.dueDate || ''))
-    .filter((d) => d && d > '2020-01-01')
-    .sort()[0] || null;
+  const nextBillingDue = cleanText(billingSummary.next_billing_due || '') || null;
+  const unpaidInvoices = Number(billingSummary.unpaid_invoices || 0);
+  const unpaidAmount = Number(billingSummary.unpaid_amount || 0);
 
   // (fleet, totalMachines, etc already declared above — no duplicate needed)
   return {
     activeDevices: totalMachines,
     openTickets,
     pendingToner,
-    unpaidInvoices: unpaid.length,
-    unpaidAmount: unpaid.reduce((sum, invoice) => sum + Number(invoice.amount || 0), 0),
+    unpaidInvoices,
+    unpaidAmount,
     nextBillingDue,
     lastService: serviceHistory?.summary?.lastService || null,
     lastToner:   serviceHistory?.summary?.lastToner   || null,
@@ -2196,7 +3146,9 @@ async function summary(user) {
       printingNormally,
       affectedMachines,
       uptimePct,
-      attentionCount,
+      attentionCount: affectedMachines,
+      nonDeliveredCount: statusAttention,
+      missingSerialCount,
       openTicketBranches,
       serviceOpen,
       tonerOpen,
@@ -2707,7 +3659,12 @@ async function emailCredentialPreview(user, accountId, body, req) {
 }
 
 async function handlePortalApi(req, res, url) {
-  await ensurePortalSchemaReady();
+  if (!portalSchemaBootstrapSkipped) {
+    ensurePortalSchemaReady().catch((error) => {
+      if (isSchemaCreatePermissionError(error)) portalSchemaBootstrapSkipped = true;
+      console.warn('Portal schema bootstrap skipped:', error.message || error);
+    });
+  }
   if (url.pathname === '/portal-api/login' && req.method === 'POST') {
     const result = await login(await readJson(req), req);
     if (result.status === 200 && result.data.token) {
@@ -2917,6 +3874,59 @@ async function handlePortalApi(req, res, url) {
     }
     return json(res, 200, { ok: true, ticket: await createTicket(user, await readJson(req)) });
   }
+
+  // ── Ticket Details / messaging / internal dispatch actions (spec §9, §25, §5) ──
+  const ticketDetailMatch = url.pathname.match(/^\/portal-api\/tickets\/(\d+)$/);
+  if (ticketDetailMatch && req.method === 'GET') {
+    const detail = await getTicketDetail(previewScopedUser(user, url.searchParams.get('companyId'), url.searchParams.get('branchId'), url.searchParams.get('companyIds')), ticketDetailMatch[1]);
+    if (!detail) return json(res, 404, { ok: false, message: 'Ticket not found.' });
+    return json(res, 200, { ok: true, ticket: detail });
+  }
+  const ticketMessagesMatch = url.pathname.match(/^\/portal-api\/tickets\/(\d+)\/messages$/);
+  if (ticketMessagesMatch && req.method === 'POST') {
+    try {
+      const ct = String(req.headers['content-type'] || '');
+      let message;
+      if (ct.includes('multipart/form-data')) {
+        const { fields, files } = await readMultipart(req);
+        message = await sendTicketMessage(user, ticketMessagesMatch[1], fields.body, files.attachment || null);
+      } else {
+        const body = await readJson(req);
+        message = await sendTicketMessage(user, ticketMessagesMatch[1], body.body);
+      }
+      return json(res, 200, { ok: true, message });
+    } catch (error) {
+      return json(res, error.statusCode || error.status || 500, { ok: false, message: error.message || 'Failed to send message.' });
+    }
+  }
+  const ticketAssignMatch = url.pathname.match(/^\/portal-api\/admin\/tickets\/(\d+)\/assign$/);
+  if (ticketAssignMatch && req.method === 'POST') {
+    try {
+      const body = await readJson(req);
+      return json(res, 200, { ok: true, ticket: await assignTicketStaff(user, ticketAssignMatch[1], { staffId: body.staffId, staffName: body.staffName }) });
+    } catch (error) {
+      return json(res, error.statusCode || error.status || 500, { ok: false, message: error.message || 'Failed to assign ticket.' });
+    }
+  }
+  const ticketStatusMatch = url.pathname.match(/^\/portal-api\/admin\/tickets\/(\d+)\/status$/);
+  if (ticketStatusMatch && req.method === 'POST') {
+    try {
+      const body = await readJson(req);
+      return json(res, 200, { ok: true, ticket: await updateTicketStatus(user, ticketStatusMatch[1], body) });
+    } catch (error) {
+      return json(res, error.statusCode || error.status || 500, { ok: false, message: error.message || 'Failed to update ticket status.' });
+    }
+  }
+  const ticketLocationMatch = url.pathname.match(/^\/portal-api\/admin\/tickets\/(\d+)\/location$/);
+  if (ticketLocationMatch && req.method === 'POST') {
+    try {
+      const body = await readJson(req);
+      return json(res, 200, { ok: true, ...(await updateTicketLocation(user, ticketLocationMatch[1], { latitude: Number(body.latitude), longitude: Number(body.longitude) })) });
+    } catch (error) {
+      return json(res, error.statusCode || error.status || 500, { ok: false, message: error.message || 'Failed to update location.' });
+    }
+  }
+
   if (url.pathname === '/portal-api/toner-requests' && req.method === 'GET') {
     return json(res, 200, { ok: true, tonerRequests: await listTonerRequests(previewScopedUser(user, url.searchParams.get('companyId'), url.searchParams.get('branchId'), url.searchParams.get('companyIds'))) });
   }
@@ -3363,6 +4373,34 @@ async function handleRequest(req, res) {
     return;
   }
 
+  // Emergency SW nuke page — clears all caches and unregisters all service workers, then reloads
+  if (url.pathname === '/nuke-sw') {
+    const nukePage = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Clearing cache…</title>
+<style>body{background:#000;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:12px}
+.dot{width:8px;height:8px;border-radius:50%;background:#6C63FF;animation:pulse 1s infinite}@keyframes pulse{0%,100%{opacity:.2}50%{opacity:1}}</style></head>
+<body><div class="dot"></div><p id="msg">Clearing service worker cache…</p>
+<script>
+(async()=>{
+  const msg=document.getElementById('msg');
+  try{
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      for(const r of regs){await r.unregister();}
+      msg.textContent='Unregistered '+regs.length+' service worker(s)…';
+    }
+    if('caches' in self){
+      const keys=await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+      msg.textContent='Cleared '+keys.length+' cache(s). Reloading…';
+    }
+  }catch(e){msg.textContent='Done ('+e.message+'). Reloading…';}
+  setTimeout(()=>location.replace('/'),1200);
+})();
+</script></body></html>`;
+    sendResponse(res, 200, nukePage, 'text/html; charset=utf-8');
+    return;
+  }
+
   let relativePath = resolvePortalPath(req.url);
   let filePath = await existingFile(relativePath);
 
@@ -3381,6 +4419,41 @@ async function handleRequest(req, res) {
   const cacheControl = ext === '.html' || ext === '.js' || ext === '.css'
     ? 'no-store'
     : 'public, max-age=86400';
+  const isVideo = contentType.startsWith('video/');
+  const fileStat = await stat(filePath);
+
+  if (isVideo) {
+    const range = req.headers.range;
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Type', contentType);
+
+    if (range) {
+      const match = String(range).match(/^bytes=(\d*)-(\d*)$/);
+      if (!match) {
+        res.writeHead(416, { 'Content-Range': `bytes */${fileStat.size}` });
+        res.end();
+        return;
+      }
+      const start = match[1] ? Number(match[1]) : 0;
+      const end = match[2] ? Number(match[2]) : fileStat.size - 1;
+      if (start >= fileStat.size || end >= fileStat.size || start > end) {
+        res.writeHead(416, { 'Content-Range': `bytes */${fileStat.size}` });
+        res.end();
+        return;
+      }
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileStat.size}`,
+        'Content-Length': String(end - start + 1)
+      });
+      createReadStream(filePath, { start, end }).pipe(res);
+      return;
+    }
+
+    res.writeHead(200, { 'Content-Length': String(fileStat.size) });
+    createReadStream(filePath).pipe(res);
+    return;
+  }
 
   res.writeHead(200, {
     'Content-Type': contentType,

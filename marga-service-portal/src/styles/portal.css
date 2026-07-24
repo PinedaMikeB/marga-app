@@ -235,6 +235,56 @@
 .device-hist--ok   { color: var(--green); }
 .device-hist--none { color: var(--ink-muted); font-weight: 400; }
 
+.care-attention-list {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.care-attention-head,
+.care-attention-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(220px, 1.6fr) minmax(160px, 1fr) 80px;
+  align-items: center;
+  gap: 12px;
+}
+.care-attention-head {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+.care-attention-head > div {
+  padding: 10px 14px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--ink-3);
+}
+.care-attention-body {
+  max-height: 520px;
+  overflow-y: auto;
+}
+.care-attention-row {
+  border-bottom: 1px solid var(--border);
+}
+.care-attention-row:last-child { border-bottom: none; }
+.care-attention-row:hover { background: var(--surface-2); }
+.care-attention-row.is-selected { background: rgba(139,120,255,.06); border-left: 2px solid var(--accent); }
+.care-attention-row > div {
+  min-width: 0;
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.care-attention-row strong,
+.care-attention-row span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.care-attention-row span { color: var(--ink-3); margin-top: 3px; }
+
 /* ── Quick Request FAB ── */
 #quickReqFab { position: fixed; bottom: 24px; right: 24px; z-index: 900; }
 .fab-btn {
@@ -1070,4 +1120,160 @@
   gap: 8px;
   flex-shrink: 0;
   margin-left: auto;
+}
+
+
+/* ═══════════════════════════════════════════
+   SERVICE REQUESTS — tabs, ticket cards, status hero,
+   step tracker, technician card, message thread
+   2026-07-20
+   ═══════════════════════════════════════════ */
+
+/* ── Tabs ── */
+.ticket-tabs {
+  display: flex; gap: 6px; margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.ticket-tab {
+  background: none; border: none; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600;
+  color: var(--ink-3); padding: 10px 4px; margin-right: 18px;
+  border-bottom: 2px solid transparent;
+  transition: color var(--dur-fast), border-color var(--dur-fast);
+}
+.ticket-tab:hover { color: var(--ink-2); }
+.ticket-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ── Extra tag colors for route-status pills ── */
+.tag-accent { background: var(--accent-soft); color: var(--accent); border: 1px solid var(--border-accent); }
+.tag-live   { background: var(--teal-soft);   color: var(--teal);   border: 1px solid rgba(45,212,191,.3); }
+
+/* ── Ticket card (My Tickets list) ── */
+.ticket-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px; margin-bottom: 10px;
+  transition: border-color var(--dur-fast);
+}
+.ticket-card:hover { border-color: var(--border-strong); }
+.ticket-card-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 10px; margin-bottom: 8px;
+}
+.ticket-card-title { font-size: 13px; font-weight: 700; color: var(--ink); margin: 0; }
+.ticket-card-sub { font-size: 11px; color: var(--ink-3); margin: 2px 0 0; }
+.ticket-total-count {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--accent-2);
+  font-size: 11px;
+  font-weight: 700;
+}
+.ticket-card-meta {
+  display: flex; flex-wrap: wrap; gap: 6px 14px;
+  font-size: 11px; color: var(--ink-2); margin: 8px 0;
+}
+.ticket-card-meta span b { color: var(--ink); font-weight: 600; }
+.ticket-card-meta .ticket-age--late,
+.ticket-card-meta .ticket-age--late b { color: var(--amber); }
+.ticket-card-note {
+  font-size: 11px; color: var(--ink-3); margin: 6px 0 10px;
+  padding: 8px 10px; background: var(--bg-2); border-radius: var(--radius-sm);
+}
+.ticket-card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── Status hero (Ticket Details top card) ── */
+.status-hero {
+  border-radius: var(--radius-lg); padding: 16px;
+  background: var(--surface-2); border: 1px solid var(--border-accent);
+  margin-bottom: 14px;
+}
+.status-hero.live {
+  background: var(--teal-soft); border-color: rgba(45,212,191,.35);
+  box-shadow: 0 0 0 1px rgba(45,212,191,.08), 0 8px 24px var(--teal-glow);
+}
+.status-hero-icon-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.status-hero-icon {
+  width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+  background: var(--accent-soft); border: 1px solid var(--border-accent);
+  display: flex; align-items: center; justify-content: center; color: var(--accent);
+}
+.status-hero.live .status-hero-icon { background: var(--teal-soft); border-color: rgba(45,212,191,.35); color: var(--teal); }
+.status-hero-title { font-size: 14px; font-weight: 700; color: var(--ink); margin: 0; }
+.status-hero-box {
+  background: var(--bg-2); border-radius: var(--radius); padding: 12px 14px; margin-top: 8px;
+}
+.status-hero-box.live { background: rgba(45,212,191,.06); }
+.status-hero-box-label { font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .06em; margin: 0; }
+.status-hero-box-value { font-size: 20px; font-weight: 700; color: var(--ink); margin: 2px 0 4px; }
+.status-hero-box-value.live { color: var(--teal); }
+.status-hero-box-note { font-size: 11px; color: var(--ink-2); margin: 0; line-height: 1.5; }
+.status-hero-info {
+  font-size: 11px; color: var(--ink-2); margin-top: 10px; line-height: 1.6;
+  display: flex; gap: 8px; align-items: flex-start;
+}
+.status-hero-info svg { flex-shrink: 0; margin-top: 1px; color: var(--accent); }
+
+/* ── Step tracker ── */
+.step-tracker { display: flex; align-items: center; margin: 14px 0; }
+.step { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 0 0 auto; }
+.step-dot {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--ink-3);
+  font-size: 10px; flex-shrink: 0;
+}
+.step.done .step-dot { background: var(--accent); border-color: var(--accent); color: #fff; }
+.step.current .step-dot { background: var(--teal-soft); border: 2px solid var(--teal); color: var(--teal); }
+.step-label { font-size: 9px; color: var(--ink-3); white-space: nowrap; text-align: center; }
+.step.done .step-label, .step.current .step-label { color: var(--ink-2); }
+.step-line { flex: 1 1 auto; height: 2px; background: var(--border-strong); margin: 0 4px; margin-bottom: 16px; }
+.step-line.done { background: var(--accent); }
+
+/* ── Assigned staff / technician card ── */
+.tech-card {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px; margin: 12px 0;
+}
+.tech-card .avatar { width: 42px; height: 42px; font-size: 15px; }
+.tech-card-body { flex: 1; min-width: 0; }
+.tech-card-name { font-size: 13px; font-weight: 700; color: var(--ink); margin: 0; }
+.tech-card-role { font-size: 11px; color: var(--ink-3); margin: 2px 0 0; }
+.tech-card-actions { display: flex; flex-direction: column; gap: 6px; }
+
+/* ── Message thread ── */
+.message-thread {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 320px; overflow-y: auto; padding: 4px 2px; margin-bottom: 10px;
+}
+.message-bubble {
+  max-width: 82%; padding: 8px 12px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  font-size: 12px; color: var(--ink-2); align-self: flex-start;
+}
+.message-bubble.mine {
+  background: var(--accent-soft); border-color: var(--border-accent);
+  color: var(--ink); align-self: flex-end;
+}
+.message-bubble .msg-sender { font-size: 10px; font-weight: 700; color: var(--accent); margin: 0 0 3px; }
+.message-bubble .msg-body { margin: 0; line-height: 1.5; white-space: pre-wrap; }
+.message-bubble .msg-time { font-size: 9px; color: var(--ink-3); margin: 4px 0 0; }
+.message-composer { display: flex; gap: 8px; }
+.message-composer textarea { resize: none; min-height: 38px; }
+.ticket-detail-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 90;
+  display: flex; justify-content: flex-end;
+}
+.ticket-detail-panel {
+  background: var(--bg-1); width: 100%; max-width: 560px; height: 100%;
+  overflow-y: auto; padding: 16px; border-left: 1px solid var(--border);
+}
+@media (min-width: 900px) {
+  .ticket-detail-overlay { align-items: center; justify-content: center; }
+  .ticket-detail-panel { max-width: 920px; height: 90vh; border-radius: var(--radius-lg); border: 1px solid var(--border); }
+  .ticket-detail-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
 }

@@ -23,7 +23,7 @@
 
 .accounting-toolbar {
     display: grid;
-    grid-template-columns: auto 150px 150px minmax(240px, 1fr);
+    grid-template-columns: auto 150px 150px 220px minmax(240px, 1fr);
     align-items: end;
     gap: 12px;
     padding: 14px;
@@ -39,7 +39,8 @@
     text-transform: uppercase;
 }
 
-.accounting-toolbar input {
+.accounting-toolbar input,
+.accounting-toolbar select {
     width: 100%;
     border: 1px solid #cbd8e5;
     border-radius: 6px;

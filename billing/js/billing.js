@@ -152,6 +152,7 @@ const BILLING_EXCLUSION_REASONS = [
     'Duplicate/wrong contract row',
     'Other'
 ];
+const BILLING_SPOILAGE_APPROVAL_ENDPOINT = '/.netlify/functions/billing-spoilage-approval';
 const CONTRACT_CATEGORY_META = {
     1: { code: 'RTP', label: 'Rental Per Page' },
     2: { code: 'RTF', label: 'Rental Fixed Rate' },
@@ -1843,6 +1844,14 @@ function buildBillingRecordFields({ row, context, estimate, snapshot, docId }) {
         approval_note: String(estimate?.approvalNote || '').trim(),
         approved_by: String(estimate?.approvedBy || '').trim(),
         approved_at: String(estimate?.approvedAt || '').trim(),
+        approval_email_sent_at: '',
+        approval_email_status: '',
+        approval_email_error: '',
+        approval_recipients: '',
+        approval_action: '',
+        approval_acted_at: '',
+        approval_acted_by: '',
+        approval_action_source: '',
         updated_at: now.toISOString(),
         source_module: 'billing_dashboard',
         status: 0,
@@ -1985,6 +1994,21 @@ async function saveBillingRecord({ row, context, estimate, snapshot, existingDoc
         invoiceNo,
         fields
     };
+}
+
+async function notifyBillingSpoilageApproval(docId) {
+    const cleanDocId = String(docId || '').trim();
+    if (!cleanDocId) throw new Error('Billing document ID is required for spoilage approval email.');
+    const response = await fetch(BILLING_SPOILAGE_APPROVAL_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ docId: cleanDocId })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+        throw new Error(payload?.error || `Spoilage approval email failed (${response.status})`);
+    }
+    return payload;
 }
 
 async function deleteBillingRecord({ row, monthKey, invoiceNo = '' }) {
@@ -10728,6 +10752,11 @@ async function openBillingCalcModal(rowId, monthKey) {
                 approval_note: approvalNote,
                 approved_by: approvedBy,
                 approved_at: approvedAt,
+                approval_email_status: 'actioned',
+                approval_action: nextStatus === 'approved' ? 'approve' : 'reject',
+                approval_acted_at: nowIso,
+                approval_acted_by: audit.name,
+                approval_action_source: 'billing_modal',
                 approval_updated_by: audit.name,
                 approval_updated_at: nowIso,
                 updated_at: nowIso
@@ -10963,6 +10992,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                 snapshot: currentSnapshot,
                 existingDocs: existingBillingDocs
             });
+            const previousSavedBillingDoc = existingBillingDocs.find((doc) => String(doc?._docId || '').trim() === String(result.docId || '').trim()) || null;
             savedSnapshot = currentSnapshot;
             savedDocExists = true;
             existingBillingDocs = [
@@ -10987,6 +11017,49 @@ async function openBillingCalcModal(rowId, monthKey) {
                 });
             }
             approvalStatus = String(result.fields?.approval_status || approvalStatus || 'none');
+            let approvalEmailMessage = '';
+            const priorApprovalEmailStatus = String(previousSavedBillingDoc?.approval_email_status || '').trim().toLowerCase();
+            const shouldSendApprovalEmail = approvalStatus === 'pending'
+                && Number(activeEstimate?.actualSpoilagePages || 0) > 0
+                && !['sent', 'actioned'].includes(priorApprovalEmailStatus);
+            if (shouldSendApprovalEmail) {
+                try {
+                    const notifyResult = await notifyBillingSpoilageApproval(result.docId || savedBillingDocId);
+                    const emailNowIso = new Date().toISOString();
+                    const emailStatus = notifyResult?.email?.sent === false ? 'skipped' : 'sent';
+                    const emailError = String(notifyResult?.email?.reason || '').trim();
+                    await setFirestoreDocument('tbl_billing', result.docId || savedBillingDocId, {
+                        approval_email_sent_at: emailNowIso,
+                        approval_email_status: emailStatus,
+                        approval_email_error: emailError,
+                        approval_recipients: Array.isArray(notifyResult?.recipients) ? notifyResult.recipients.join(', ') : '',
+                        updated_at: emailNowIso
+                    }, {
+                        mode: 'patch',
+                        label: `Billing spoilage approval email ${currentSnapshot.invoiceNo || result.docId || savedBillingDocId}`,
+                        dedupeKey: `tbl_billing:${result.docId || savedBillingDocId}:approval-email:${emailNowIso}`
+                    });
+                    approvalEmailMessage = emailStatus === 'sent'
+                        ? ' Approval email sent to admin.'
+                        : (emailError ? ` Approval email skipped: ${emailError}.` : ' Approval email skipped.');
+                } catch (emailError) {
+                    const emailNowIso = new Date().toISOString();
+                    const emailMessage = String(emailError?.message || emailError || '').trim();
+                    await setFirestoreDocument('tbl_billing', result.docId || savedBillingDocId, {
+                        approval_email_sent_at: emailNowIso,
+                        approval_email_status: 'failed',
+                        approval_email_error: emailMessage,
+                        updated_at: emailNowIso
+                    }, {
+                        mode: 'patch',
+                        label: `Billing spoilage approval email failed ${currentSnapshot.invoiceNo || result.docId || savedBillingDocId}`,
+                        dedupeKey: `tbl_billing:${result.docId || savedBillingDocId}:approval-email-failed:${emailNowIso}`
+                    }).catch((patchError) => {
+                        console.warn('Unable to save spoilage approval email failure state.', patchError);
+                    });
+                    approvalEmailMessage = ' Approval email failed, so use the Billing module buttons for now.';
+                }
+            }
             let scheduleTask = null;
             let scheduleError = '';
             try {
@@ -11061,10 +11134,10 @@ async function openBillingCalcModal(rowId, monthKey) {
                 scheduleError
                     ? `Invoice ${currentSnapshot.invoiceNo} saved. Table schedule update needs retry.`
                     : approvalStatus === 'pending'
-                        ? `Invoice ${currentSnapshot.invoiceNo} saved - pending admin approval.`
-                    : result.queued
-                        ? `Invoice ${currentSnapshot.invoiceNo} queued for Billing and table schedule.`
-                        : `Saved Invoice ${currentSnapshot.invoiceNo} - schedule saved.`,
+                        ? `Invoice ${currentSnapshot.invoiceNo} saved - pending admin approval.${approvalEmailMessage}`
+                        : result.queued
+                            ? `Invoice ${currentSnapshot.invoiceNo} queued for Billing and table schedule.`
+                            : `Saved Invoice ${currentSnapshot.invoiceNo} - schedule saved.`,
                 scheduleError ? 'error' : 'success'
             );
             showBillingSaveResult({
@@ -11073,7 +11146,7 @@ async function openBillingCalcModal(rowId, monthKey) {
                 message: scheduleError
                     ? scheduleMessage
                     : approvalStatus === 'pending'
-                        ? `${scheduleMessage} Print ${printContractCode || 'Invoice'} is locked until approval.`
+                        ? `${scheduleMessage}${approvalEmailMessage} Print ${printContractCode || 'Invoice'} is locked until approval.`
                         : `${scheduleMessage} Print ${printContractCode || 'Invoice'} is ready.`
             });
             if (!result.queued) {

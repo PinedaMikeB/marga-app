@@ -1101,21 +1101,58 @@
 
 .hr-employee-identity {
     display: grid;
-    grid-template-columns: 54px minmax(0, 1fr);
+    grid-template-columns: 1in minmax(0, 1fr);
     gap: 0.75rem;
     align-items: center;
 }
 
+.hr-employee-photo-block {
+    display: grid;
+    justify-items: center;
+    gap: 0.35rem;
+    width: 1in;
+}
+
 .hr-employee-avatar {
     display: grid;
-    width: 54px;
-    height: 54px;
+    width: 1in;
+    height: 1in;
     place-items: center;
     border-radius: 8px;
     background: #19345c;
     color: #fff;
-    font-size: 1.35rem;
+    overflow: hidden;
+    font-size: 1.8rem;
     font-weight: 900;
+}
+
+.hr-employee-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.hr-photo-edit-btn {
+    width: 100%;
+    min-height: 28px;
+    border: 1px solid rgba(36, 82, 143, 0.22);
+    border-radius: 7px;
+    background: #f8fbff;
+    color: #23568f;
+    font-size: 0.78rem;
+    font-weight: 900;
+    cursor: pointer;
+}
+
+.hr-photo-edit-btn:hover:not(:disabled) {
+    background: #eaf4ff;
+    border-color: rgba(47, 139, 226, 0.38);
+}
+
+.hr-photo-edit-btn:disabled {
+    color: #7b8ca5;
+    cursor: not-allowed;
 }
 
 .hr-employee-identity strong {

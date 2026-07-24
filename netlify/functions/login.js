@@ -281,6 +281,18 @@ async function queryEmployee(fieldPath, value) {
   return users.find(isEmployeeActive) || users[0] || null;
 }
 
+function dedupeEmployees(rows) {
+  const seen = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    const key = String(row?._docId || row?.id || row?.staff_id || "").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+}
+
 async function queryEmployees(fieldPath, value, limit = 25) {
   const lookupValue = String(value || "").trim();
   if (!lookupValue) return [];
@@ -377,6 +389,53 @@ async function findEmployee(ident) {
   return null;
 }
 
+async function findEmployeeCandidates(ident) {
+  const rawIdent = String(ident || "").trim();
+  const normalizedIdent = rawIdent.toLowerCase();
+  const normalizedNameIdent = normalizeNameKey(rawIdent);
+  const looksLikeEmail = normalizedIdent.includes("@");
+  const username = normalizeUsername(rawIdent);
+  const emailLocalPart = looksLikeEmail ? normalizeUsername(normalizedIdent.split("@")[0]) : "";
+  const lookups = looksLikeEmail
+    ? [["email", normalizedIdent], ["marga_login_email", normalizedIdent], ["username", emailLocalPart], ["username", username]]
+    : [["username", username], ["marga_username", username], ["email", normalizedIdent], ["marga_login_email", normalizedIdent]];
+  const directCandidates = [];
+  const seenLookups = new Set();
+  for (const [fieldPath, value] of lookups) {
+    const key = `${fieldPath}:${value}`;
+    if (seenLookups.has(key)) continue;
+    seenLookups.add(key);
+    directCandidates.push(...await queryEmployees(fieldPath, value, 10).catch(() => []));
+  }
+
+  const nameCandidates = [];
+  const pushNameCandidates = (rows) => {
+    rows.forEach((row) => {
+      const keys = [
+        row?.nickname,
+        row?.marga_fullname,
+        row?.name,
+        `${String(row?.firstname || "").trim()} ${String(row?.lastname || "").trim()}`.trim(),
+        `${String(row?.firstname || "").trim()}${String(row?.lastname || "").trim()}`.trim(),
+      ].map(normalizeNameKey).filter(Boolean);
+      if (keys.includes(normalizedNameIdent)) nameCandidates.push(row);
+    });
+  };
+  if (rawIdent.includes(" ")) {
+    const parts = rawIdent.split(/\s+/).filter(Boolean);
+    if (parts[0]) pushNameCandidates(await queryEmployees("firstname", parts[0], 20).catch(() => []));
+    if (parts.length > 1) pushNameCandidates(await queryEmployees("lastname", parts[parts.length - 1], 20).catch(() => []));
+  } else if (!looksLikeEmail && normalizedNameIdent) {
+    pushNameCandidates(await queryEmployees("nickname", rawIdent, 20).catch(() => []));
+    pushNameCandidates(await queryEmployees("firstname", rawIdent, 20).catch(() => []));
+    pushNameCandidates(await queryEmployees("lastname", rawIdent, 20).catch(() => []));
+  }
+
+  const candidates = dedupeEmployees([...directCandidates, ...nameCandidates]);
+  const active = candidates.filter(isEmployeeActive);
+  return active.length ? active : candidates;
+}
+
 function verifyPassword(user, password) {
   const provided = String(password || "");
   if (user.password && String(user.password) === provided) return true;
@@ -446,7 +505,8 @@ exports.handler = async function login(event) {
     const ident = String(body.username || body.email || "").trim();
     const password = String(body.password || "");
     if (!ident || !password) return json({ success: false, message: "Email and password are required." }, 400);
-    const employee = await findEmployee(ident);
+    const candidates = await findEmployeeCandidates(ident);
+    const employee = candidates.find((candidate) => isEmployeeActive(candidate) && verifyPassword(candidate, password));
     if (!employee || !isEmployeeActive(employee) || !verifyPassword(employee, password)) {
       return json({ success: false, message: "Invalid email or password" }, 401);
     }
