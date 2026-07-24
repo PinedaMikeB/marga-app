@@ -43,18 +43,33 @@
 Both images must be:
 - Same aspect ratio (or close)
 - PNG or JPG format
-- Hosted at a public URL that Kling servers can fetch
+- Hosted at a **public URL** that Kling's servers can fetch over the internet
 
-**To host images on the Marga portal server:**
+**⚠️ CRITICAL — Kling cannot use local file paths or base64 data.** The `start_image_url` and `end_image_url` parameters must be real `https://` URLs. A local path like `/Users/mike/Downloads/frame.png`, a `file://` path, or a base64 data URI will fail or silently produce bad results — Kling's servers fetch the image themselves over the internet; they never receive uploaded bytes from us directly.
+
+**If the user pasted/uploaded the images directly in the chat**, those images only exist in the conversation (and possibly somewhere on local disk like Desktop/Downloads) — Kling has no access to either. The image must be re-hosted on a domain that's already publicly reachable before it can be used:
+
 ```bash
-cp "/path/to/start-frame.png" "/Volumes/Wotg Drive Mike/GitHub/Marga-App/marga-service-portal/public/assets/start-frame.png"
-cp "/path/to/end-frame.png" "/Volumes/Wotg Drive Mike/GitHub/Marga-App/marga-service-portal/public/assets/end-frame.png"
+# 1. Locate where the pasted/uploaded image actually landed
+ls -t ~/Desktop/*.png ~/Downloads/*.png 2>/dev/null | head -5
+ls /mnt/user-data/uploads/ 2>/dev/null
+
+# 2. Copy BOTH frames into the Marga portal's public assets folder — this piggybacks
+#    on care.marga.biz, which is already live via the Cloudflare tunnel
+cp "~/Desktop/ChatGPT Image ....png" \
+   "/Volumes/Wotg Drive Mike/GitHub/Marga-App/marga-service-portal/public/assets/start-frame.png"
+cp "~/Desktop/ChatGPT Image ....png" \
+   "/Volumes/Wotg Drive Mike/GitHub/Marga-App/marga-service-portal/public/assets/end-frame.png"
 ```
-Then verify they're accessible:
+
+**Never skip this step.** Even if the image already exists as a local file, copy it into `public/assets/` and use the resulting `care.marga.biz` URL — don't pass base64 data, blob URLs, or local `/Users/...` paths to `start_image_url` / `end_image_url`.
+
+Then verify both are actually reachable from the public internet — this is the same path Kling's servers will hit — before calling Kling:
 ```bash
 curl -s -o /dev/null -w "%{http_code}" https://care.marga.biz/assets/start-frame.png
 curl -s -o /dev/null -w "%{http_code}" https://care.marga.biz/assets/end-frame.png
 ```
+Both must return `200`. If either returns `404`, the file wasn't copied to the right place — fix that before proceeding to Step 2.
 
 ### Step 2: Generate the Video
 
