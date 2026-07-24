@@ -118,11 +118,19 @@ const MargaUtils = {
 
     getEmployeeFullName(employee, fallbackId = '') {
         if (!employee) return fallbackId ? `ID ${fallbackId}` : '';
+        // Prefer name/marga_fullname over firstname+lastname. Found 2026-07-24: an ongoing
+        // HR/Settings data-entry pattern repeatedly leaves firstname/lastname stale or
+        // cross-assigned to a different employee while name/marga_fullname gets updated
+        // correctly (7 active employees affected as of 2026-07-24, including fresh cases
+        // from the same day). name/marga_fullname has proven reliable in every case checked;
+        // firstname/lastname has not. See MASTERPLAN.md for details.
+        const preferredName = String(employee.name || employee.marga_fullname || employee.fullname || '').trim();
+        if (preferredName) return preferredName;
         const first = String(employee.firstname || '').trim();
         const last = String(employee.lastname || '').trim();
         const fullName = `${first} ${last}`.trim();
         return fullName
-            || String(employee.name || employee.marga_fullname || employee.fullname || employee.nickname || '').trim()
+            || String(employee.nickname || '').trim()
             || (fallbackId ? `ID ${fallbackId}` : '');
     },
 
